@@ -1,0 +1,75 @@
+services:
+  celery_concurrent:
+    build: .
+    command: celery -A celery_app worker -Q concurrent --pool=prefork --concurrency=8 --loglevel=info --without-gossip --without-mingle
+    user: "0:0"
+    volumes:
+      - ./data:/mnt/data:ro
+      - ./uploads:/mnt/uploads:rw
+      - ./exports:/mnt/exports:rw
+      - "/d/Data Analytical/DATA:/mnt/data_raw:ro"
+    deploy:
+      resources:
+        limits:
+          cpus: "8.0"
+          memory: 16g
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    networks:
+      - tbg-network
+  celery_heavy:
+    build: .
+    command: celery -A celery_app worker -Q heavy --pool=solo --loglevel=info --without-gossip --without-mingle
+    user: "0:0"
+    volumes:
+      - ./data:/mnt/data:ro
+      - ./uploads:/mnt/uploads:rw
+      - ./exports:/mnt/exports:rw
+      - "/d/Data Analytical/DATA:/mnt/data_raw:ro"
+    deploy:
+      resources:
+        limits:
+          cpus: "10.0"
+          memory: 24g
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    networks:
+      - tbg-network
+
+  flower:
+    build: .
+    command: celery -A celery_app flower --port=5555
+    user: "0:0"
+    volumes:
+      - ./data:/mnt/data:ro
+      - ./uploads:/mnt/uploads:rw
+      - ./exports:/mnt/exports:rw
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    networks:
+      - tbg-network
+
+  fastapi:
+    build: .
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./data:/mnt/data:ro
+      - ./uploads:/mnt/uploads:rw
+      - ./exports:/mnt/exports:rw
+      - "/d/Data Analytical/DATA:/mnt/data_raw:ro"
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    networks:
+      - tbg-network
+
+networks:
+  tbg-network:
+    external: true
