@@ -1,0 +1,137 @@
+# =====================================
+#  PYTHON / DATA SCIENCE / GIS PROJECTS
+# =====================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Environment variables
+*.env
+.env.*
+!env.example
+
+# IDE settings
+.vscode/
+.idea/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Caches
+.ipynb_checkpoints/
+.cache/
+pytest_cache/
+
+# Logs
+*.log
+logs/
+
+# =====================================
+#  GIS / GEOSPATIAL FILES (LARGE)
+# =====================================
+
+# Do NOT track heavy geospatial files
+*.tif
+*.tiff
+*.geotiff
+*.jp2
+*.img
+*.kmz
+*.kml
+*.gdb
+*.mdb
+*.sqlite
+*.geojson
+*.shp
+*.shx
+*.dbf
+*.prj
+*.sbx
+*.fbn
+*.fbp
+*.cpg
+*.qpj
+*.gpkg
+*.osm
+*.pbf
+
+# GeoPandas / Parquet / Feather big files
+*.parquet
+*.feather
+*.arrow
+
+# Spatial indexes
+*.qix
+*.qmx
+
+# =====================================
+#  NOTEBOOK / EXPERIMENT ARTIFACTS
+# =====================================
+
+# Auto-save checkpoints
+.ipynb_checkpoints/
+
+# Temporary experiment outputs
+outputs/
+artifacts/
+results/
+
+# =====================================
+#  SYSTEM FILES
+# =====================================
+
+# Windows / Mac system files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Temp files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# =====================================
+#  DOCKER
+# =====================================
+docker-data/
+docker-compose.override.yml
+
+# =====================================
+#  SECRETS / TOKENS
+# =====================================
+
+# Never track sensitive data
+*.key
+*.pem
+*.crt
+*.p12
+*.token
+*.json
+secrets/
+config.json
+
+# =====================================
+#  CUSTOM FOR YOUR PROJECTS (TBIG, GIS, API)
+# =====================================
+
+# Heavy data folders
+data/
+dataset/
+uploads/
+export/
+upload/
+dump/
