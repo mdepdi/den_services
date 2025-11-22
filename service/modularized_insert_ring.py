@@ -8,7 +8,7 @@ from shapely.ops import linemerge
 from tqdm import tqdm
 import sys
 
-sys.path.append(r"D:\Data Analytical\SERVICE\API")
+sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from modules.data import fiber_utilization
 from modules.utils import create_topology, route_path, dropwire_connection
@@ -428,6 +428,7 @@ def insert_ring_processing(
     print(f"🔄 Processing Ring: {ring}")
     print(f"==============================")
     start_time = time()
+    
     # FO HUB AND SITELIST
     fo_hub = target_point[target_point['site_type'] == 'FO Hub'].reset_index(drop=True)
     site_list = target_point[target_point['site_type'] == 'Site List'].reset_index(drop=True)
@@ -916,10 +917,10 @@ if __name__ == "__main__":
     # INPUT & OUTPUT PATH
     INPUT_DIR = f"{DATA_DIR}/data"
     EXCEL_FILE = os.path.join(INPUT_DIR, f"Template Fiberization IOH.xlsx")
-    PREV_FIBER_PATH = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 1\FIBERIZATION\data\Route Fiber Week 34.parquet"
-    PREV_POINT_PATH = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 1\FIBERIZATION\data\Point Ring Week 34.parquet"
-    EXPORT_DIR = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 3\FIBERISASI PAKNO\export\Insert Ring"
-    MAPPED_DATA = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 3\FIBERISASI PAKNO\20250912_110743_Identified_Insert_Data\Insert Data.xlsx"
+    PREV_FIBER_PATH = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 1\FIBERIZATION\data\Route Fiber Week 34.parquet"
+    PREV_POINT_PATH = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 1\FIBERIZATION\data\Point Ring Week 34.parquet"
+    EXPORT_DIR = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 3\FIBERISASI PAKNO\export\Insert Ring"
+    MAPPED_DATA = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 3\FIBERISASI PAKNO\20250912_110743_Identified_Insert_Data\Insert Data.xlsx"
 
     if not os.path.exists(EXPORT_DIR):
         os.makedirs(EXPORT_DIR)

@@ -23,7 +23,7 @@ import multiprocessing as mp
 # ======================================================
 # PATHS & MODULE IMPORTS
 # ======================================================
-sys.path.append(r"D:\Data Analytical\SERVICE\API")
+sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from modules.table import excel_styler, sanitize_header
 from modules.data import read_gdf
@@ -979,10 +979,10 @@ if __name__ == "__main__":
     threshold_sector = 250
     max_workers = 8
     
-    export_dir = r"D:\Data Analytical\PROJECT\TASK\OKTOBER\Week 4\FWA Surge\Export\New"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\OKTOBER\Week 4\FWA Surge\Export\New"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\Data Analytical\PROJECT\TASK\OKTOBER\Week 4\FWA Surge\Sample 125413126.xlsx"
+    sitelist_path = r"D:\JACOBS\PROJECT\TASK\OKTOBER\Week 4\FWA Surge\Sample 125413126.xlsx"
     sitelist = read_gdf(sitelist_path)
 
     sitelist.columns = sitelist.columns.str.lower()

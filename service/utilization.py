@@ -4,7 +4,7 @@ import re
 import os
 import sys
 
-sys.path.append(r"D:\Data Analytical\SERVICE\API")
+sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from tqdm import tqdm
 from shapely.ops import linemerge
@@ -294,12 +294,12 @@ def main_polygonize_ring(excel_file:str, polygon_file:str, project_name):
 if __name__=="__main__":
     
     # # POLYGONIZED RING
-    # excel_file = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 5\IOH RING PROCESS\Template_Unsupervised_New site 2026 v1.2 - Combined.xlsx"
-    # polygon_file = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 5\IOH RING PROCESS\Polygon Part 1.parquet"
+    # excel_file = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 5\IOH RING PROCESS\Template_Unsupervised_New site 2026 v1.2 - Combined.xlsx"
+    # polygon_file = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 5\IOH RING PROCESS\Polygon Part 1.parquet"
     # project_name = "NewSite2026"
     # poligonized = main_polygonize_ring(excel_file, polygon_file, project_name)
 
-    # export_dir = r"D:\Data Analytical\PROJECT\TASK\SEPTEMBER\Week 5\IOH RING PROCESS"
+    # export_dir = r"D:\JACOBS\PROJECT\TASK\SEPTEMBER\Week 5\IOH RING PROCESS"
     # os.makedirs(export_dir, exist_ok=True)
 
     # poligonized.to_parquet(os.path.join(export_dir, f"Poligonized Ring {project_name}.parquet"))
@@ -307,7 +307,7 @@ if __name__=="__main__":
 
     # FIBER UTILIZATION
     # # POLYGONIZED RING
-    routes = gpd.read_parquet(r"D:\Data Analytical\PROJECT\TASK\OKTOBER\Week 4\Update BOQ\Export\Paths not Star.parquet")
+    routes = gpd.read_parquet(r"D:\JACOBS\PROJECT\TASK\OKTOBER\Week 4\Update BOQ\Export\Paths not Star.parquet")
     path_utilized = main_fiber_utilization(routes, overlap=True)
 
-    path_utilized.to_parquet(r"D:\Data Analytical\PROJECT\TASK\OKTOBER\Week 4\Update BOQ\Export\Paths FO Utilized.parquet")
+    path_utilized.to_parquet(r"D:\JACOBS\PROJECT\TASK\OKTOBER\Week 4\Update BOQ\Export\Paths FO Utilized.parquet")

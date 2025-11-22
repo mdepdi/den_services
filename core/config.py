@@ -2,11 +2,10 @@ from pydantic_settings import BaseSettings
 import os
 import sys
 
-sys.path.append(r"D:\Data Analytical\SERVICE\API")
 docker = os.getenv("DOCKER", "False").lower() in ("true", "1", "t")
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "DEN - Fiberization API"
+    PROJECT_NAME: str = "Design and Engineering API Services"
     VERSION: str = "0.1.0"
     DEBUG: bool = True
     # SYNC_DATABASE_URL: str 

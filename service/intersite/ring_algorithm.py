@@ -17,7 +17,7 @@ import random
 import zipfile
 import sys
 
-sys.path.append(r"D:\Data Analytical\SERVICE\API")
+sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from time import time
 from datetime import datetime
@@ -27,6 +27,7 @@ from shapely.ops import linemerge
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import permutations
 
+from core.logger import create_logger
 from modules.data import fiber_utilization
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection
@@ -36,12 +37,20 @@ from modules.kml import export_kml, sanitize_kml
 from boq_algorithm import main_boq
 
 
+# ------------------------------------------------------
+# LOGGING CONFIGURATION
+# ------------------------------------------------------
+logger = create_logger(__file__)
 
 # ------------------------------------------------------
 # 1) CORE DISTANCE & ROUTING
 # ------------------------------------------------------
 def map_distance(cluster_sites, G=None, weight="weight"):
     """Compute pairwise shortest-path distances for all site pairs."""
+    logger.info(
+        f"🧩 Calculating pairwise shortest-path distances for {len(cluster_sites):,} sites "
+        f"(weight='{weight}')"
+    )
     mapping = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = {}
@@ -64,9 +73,10 @@ def map_distance(cluster_sites, G=None, weight="weight"):
             mapping[(id_i, id_j)] = path_length
             mapping[(id_j, id_i)] = path_length
         except Exception as e:
-            print(f"Error calculating path between {id_i} and {id_j}: {e}")
+            logger.error(f"❌ Error calculating distance between {id_i} and {id_j}: {e}")
             mapping[(id_i, id_j)] = 999999
             mapping[(id_j, id_i)] = 999999
+    logger.info(f"🏆 Distance mapping completed with {len(mapping):,} pairs")
     return mapping
 
 
@@ -74,16 +84,16 @@ def route_bruteforce(sitelist, distance_map, start_hub, end_hub, max_samples=100
     """Brute-force (sampled) route evaluation for small multi-hub cases."""
     sites = sitelist["site_id"].unique().tolist()
     total_perms = math.factorial(len(sites))
-    print(f"ℹ️ Total permutations to check: {total_perms:,}")
 
     if total_perms > max_samples:
-        print(f"⚠️ Too many permutations ({total_perms:,}). Sampling {max_samples} random permutations.")
+        logger.warning(
+            f"⚠️ Permutations too many ({total_perms:,}). Sampling {max_samples:,} permutations."
+        )
         all_perms = list(permutations(sites))
         sampled_perms = random.sample(all_perms, max_samples)
-        print(f"ℹ️ Sampled {len(sampled_perms):,} permutations.")
     else:
+        logger.info(f"🧩 Evaluating all {total_perms:,} permutations (brute-force).")
         sampled_perms = list(permutations(sites))
-        print(f"ℹ️ Using all {len(sampled_perms):,} permutations.\n")
 
     best_length = float("inf")
     best_route = None
@@ -107,18 +117,23 @@ def route_bruteforce(sitelist, distance_map, start_hub, end_hub, max_samples=100
             executor.submit(_eval_perm, perm, distance_map, start_hub, end_hub, best_length): perm
             for perm in sampled_perms
         }
-        for future in tqdm(as_completed(futures), total=len(futures), desc="🧩 Calculating optimal routes"):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="🧩 Searching best route (brute-force)"):
             try:
                 result = future.result()
                 if result[0] is not None and result[1] < best_length:
                     best_route, best_length = result
             except Exception as e:
-                print(f"Error processing permutation: {e}")
+                logger.error(f"❌ Error processing permutation: {e}")
                 continue
 
     if best_route is None:
-        print("❌ No valid route found")
+        logger.error("❌ No valid route found with brute-force.")
         return None, float("inf")
+
+    logger.info(
+        f"🏆 Best brute-force route from {start_hub} to {end_hub} "
+        f"with total cost {best_length:,.2f}"
+    )
     return best_route, best_length
 
 
@@ -131,9 +146,14 @@ def route_christofides(
     two_opt=True,
     max_2opt_iter=2000,
 ):
-    """Christofides-based open TSP between start and end hubs (with optional 2-opt)."""
+    """Christofides-based open TSP between start and end hubs."""
     import networkx as nx
     from networkx.algorithms import approximation
+
+    logger.info(
+        f"🧩 Running Christofides TSP from {start_hub} to {end_hub} "
+        f"(two_opt={two_opt}, max_2opt_iter={max_2opt_iter})"
+    )
 
     sites = sitelist["site_id"].tolist()
     all_sites = [start_hub] + sites + [end_hub]
@@ -162,7 +182,7 @@ def route_christofides(
     try:
         tsp_path = approximation.christofides(G, weight=weight)
     except nx.NetworkXError as e:
-        print(f"❌ Error in Christofides TSP: {e}")
+        logger.error(f"❌ Christofides TSP error: {e}")
         return None, None
 
     if len(tsp_path) > 1 and tsp_path[0] == tsp_path[-1]:
@@ -172,11 +192,11 @@ def route_christofides(
         i = tsp_path.index(DUMMY)
         tsp_path = tsp_path[i:] + tsp_path[:i]
     else:
-        print("❌ DUMMY node not found in TSP path. Cannot enforce endpoints.")
+        logger.error("❌ DUMMY node not found in Christofides path. Cannot enforce endpoints.")
         return None, None
 
     if len(tsp_path) < 3:
-        print("❌ TSP path is too short. Cannot enforce endpoints.")
+        logger.error("❌ Christofides TSP path too short. Cannot enforce endpoints.")
         return None, None
 
     a = tsp_path[0]
@@ -211,6 +231,7 @@ def route_christofides(
         return total
 
     if two_opt and len(path) > 4:
+        logger.info("🧩 Running 2-opt refinement on Christofides path...")
         best = path[:]
         best_len = _plen(best)
         improved = True
@@ -229,8 +250,14 @@ def route_christofides(
                 if improved:
                     break
         path, total_len = best, best_len
+        logger.info(
+            f"🏆 2-opt refinement completed in {it} iterations "
+            f"(cost {total_len:,.2f})"
+        )
     else:
         total_len = _plen(path)
+        logger.info(f"🏆 Christofides route cost (no 2-opt): {total_len:,.2f}")
+
     return path, total_len
 
 
@@ -251,10 +278,15 @@ def route_single(
     from modules.scoring import duplicate_scores
     from modules.graph import build_cluster_graph
 
+    logger.info(
+        f"ℹ️ Single-hub routing | Cluster={cluster} | Area={area} | "
+        f"Sites={len(cluster_site):,} | Hubs={len(fo_hub):,}"
+    )
+
     cluster_site = cluster_site.drop_duplicates(subset="nearest_node")
     cluster_graph = build_cluster_graph(cluster_site, G, node_col="nearest_node")
     if cluster_graph is None:
-        print(f"🔴 Skipping ring {cluster}. No route available.")
+        logger.warning(f"⚠️ No route available for cluster {cluster} (graph is None).")
         return None, None
 
     list_nodes = list(cluster_graph.nodes)
@@ -272,15 +304,18 @@ def route_single(
         "Simulated Annealing": lambda g: nx.approximation.simulated_annealing_tsp(
             g, init_cycle=init_cycle, weight="weight", max_iterations=10, seed=42, source=hub_node
         ),
-        "Christofides": lambda g: nx.approximation.christofides(g, weight="weight"),
+        # "Christofides": lambda g: nx.approximation.christofides(g, weight="weight"),
     }
 
     best_algo = None
     for algo_name, algo_func in algorithms.items():
+        logger.info(f"🧩 Trying algorithm '{algo_name}' for cluster {cluster}")
         try:
-            print(f"\n🔃 Running {algo_name} algorithm | Cluster {cluster}")
             sitepath = algo_func(cluster_graph)
             if not sitepath:
+                logger.warning(
+                    f"⚠️ Algorithm '{algo_name}' returned empty path for cluster {cluster}. Skipping."
+                )
                 continue
 
             paths_data, points_data = [], []
@@ -293,8 +328,10 @@ def route_single(
 
                     try:
                         path, path_geom, path_length = route_path(start_node, end_node, G, roads, merged=True)
-                        path_geom, path_length = dropwire_connection(path_geom, start_site, end_site, nodes, start_node, end_node)
-                        
+                        path_geom, path_length = dropwire_connection(
+                            path_geom, start_site, end_site, nodes, start_node, end_node
+                        )
+
                         if not path_geom.is_empty:
                             segment_name = f"{start_site['site_id']}-{end_site['site_id']}"
                             paths_data.append({
@@ -309,10 +346,15 @@ def route_single(
                                 "geometry": path_geom,
                             })
                     except nx.NetworkXNoPath:
-                        print(f"No path found for {algo_name} | Cluster {cluster} | Start: {start_site['site_id']} | End: {end_site['site_id']}")
+                        logger.warning(
+                            f"⚠️ No path found ({algo_name}) | Cluster={cluster} | "
+                            f"Start={start_site['site_id']} | End={end_site['site_id']}"
+                        )
                         continue
                     except Exception as e:
-                        print(f"❌ Error processing path for {algo_name} | Cluster {cluster}: {e}")
+                        logger.error(
+                            f"❌ Error processing path ({algo_name}) in cluster {cluster}: {e}"
+                        )
                         continue
 
                 for node in sitepath:
@@ -329,27 +371,30 @@ def route_single(
                             "geometry": site["geometry"],
                         })
             else:
-                print(f"⚠️ No valid path found for {algo_name} in cluster {cluster}. Skipping...")
+                logger.warning(
+                    f"⚠️ No valid path returned by '{algo_name}' in cluster {cluster}. Skipping."
+                )
                 continue
         except Exception as e:
-            print(f"❌ Error in {algo_name} for cluster {cluster}: {e}")
+            logger.error(f"❌ Error running '{algo_name}' for cluster {cluster}: {e}")
             continue
 
         if not paths_data or not points_data:
-            print(f"⚠️ Empty data for {algo_name} in cluster {cluster}. Skipping...")
+            logger.warning(
+                f"⚠️ Algorithm '{algo_name}' produced empty data in cluster {cluster}. Skipping."
+            )
             continue
 
         temp_paths_gdf = gpd.GeoDataFrame(paths_data, geometry="geometry", crs="EPSG:3857")
         temp_points_gdf = gpd.GeoDataFrame(points_data, geometry="geometry", crs="EPSG:3857")
         total_length = temp_paths_gdf["length"].sum()
-
         duplicate_points = duplicate_scores(temp_paths_gdf)
-        print(f"ℹ️ Summary {algo_name:20} | Cluster {cluster:2}")
-        print(f"Total Length        : {total_length:8.2f} meters")
-        print(f"Duplicate Points    : {duplicate_points}")
-
         total_cost = total_length + duplicate_points
-        print(f"💰 {algo_name} | Total Cost: {total_cost:,.2f}")
+
+        logger.info(
+            f"ℹ️ Algorithm '{algo_name}' | Cluster={cluster} | "
+            f"Cost={total_cost:,.2f} (Length={total_length:,.2f}, DuplicateScore={duplicate_points:,.2f})"
+        )
 
         if best_algo is None or total_cost < best_algo["cost"]:
             best_algo = {
@@ -362,12 +407,15 @@ def route_single(
             }
 
     if best_algo is None:
-        print(f"⚠️ No valid paths found for cluster {cluster}. Skipping...")
+        logger.warning(f"⚠️ No valid routing result for cluster {cluster}.")
         return None, None
 
     final_paths = best_algo["paths_gdf"].reset_index(drop=True)
     final_points = best_algo["points_gdf"].reset_index(drop=True)
-    print(f"🏆 Best Algorithm | {cluster:2} | {best_algo['name']} | Cost {best_algo['cost']:2f}")
+    logger.info(
+        f"🏆 Best algorithm for cluster {cluster}: {best_algo['name']} "
+        f"(Cost={best_algo['cost']:,.2f}, Length={best_algo['length']:,.2f})"
+    )
     return final_paths, final_points
 
 
@@ -382,31 +430,37 @@ def route_multi(
     area_col="region",
 ):
     """Route generation for clusters with multiple FO hubs."""
+    logger.info(
+        f"ℹ️ Multi-hub routing | Cluster={cluster} | Area={area} | "
+        f"Sites={len(cluster_site):,}"
+    )
     total_sites = len(cluster_site)
     cluster_site = cluster_site.drop_duplicates(subset="nearest_node").to_crs(epsg=3857).reset_index(drop=True)
 
     sitelist = cluster_site[~cluster_site["site_type"].str.lower().str.contains("hub")].copy()
     fo_hub = cluster_site[cluster_site["site_type"].str.lower().str.contains("hub")].copy()
     start_hub = fo_hub["site_id"].iloc[0] if not fo_hub.empty else None
-    end_hub   = fo_hub["site_id"].iloc[-1] if not fo_hub.empty else None
+    end_hub = fo_hub["site_id"].iloc[-1] if not fo_hub.empty else None
 
     mapping = map_distance(cluster_site, G, weight=weight)
-    print(f"ℹ️ Distance mapping complete | Total pairs: {len(mapping)}")
+    logger.info(
+        f"ℹ️ Distance map built for cluster {cluster} with {len(mapping):,} pairs."
+    )
 
     if total_sites <= 8:
-        print("🧩 Multi Hub | Brute Force")
+        logger.info(f"🧩 Cluster {cluster}: using brute-force multi-hub routing.")
         best_route, best_length = route_bruteforce(sitelist, mapping, start_hub, end_hub)
     else:
-        print("🧩 Multi Hub | Christofides")
+        logger.info(f"🧩 Cluster {cluster}: using Christofides multi-hub routing.")
         best_route, best_length = route_christofides(sitelist, mapping, start_hub, end_hub)
 
     if best_route is None:
-        print(f"❌ No valid route found for cluster {cluster}.")
+        logger.error(f"❌ No valid route found for cluster {cluster}.")
         return None, None
 
-    print(f"✅ Optimal route cluster {cluster:20}:")
-    print(f"    - Route {(' > '.join(str(x) for x in best_route))}")
-    print(f"    - Total Cost: {best_length / 1000:,.2f} km")
+    logger.info(f"🏆 Optimal route for cluster {cluster}:")
+    logger.info(f"ℹ️ Route sequence: {' > '.join(str(x) for x in best_route)}")
+    logger.info(f"ℹ️ Total path cost: {best_length / 1000:,.2f} km")
 
     paths_data, points_data = [], []
 
@@ -433,10 +487,12 @@ def route_multi(
                     "geometry": path_geom,
                 })
         except nx.NetworkXNoPath:
-            print(f"No path found for Cluster {cluster} | Start: {site} | End: {best_route[idx + 1]}")
+            logger.warning(
+                f"⚠️ No path found in cluster {cluster} | Start={site} | End={best_route[idx + 1]}"
+            )
             continue
         except Exception as e:
-            print(f"❌ Error processing path for Cluster {cluster}: {e}")
+            logger.error(f"❌ Error processing segment in cluster {cluster}: {e}")
             continue
 
     for site in best_route:
@@ -454,13 +510,15 @@ def route_multi(
             })
 
     if not paths_data or not points_data:
-        print(f"⚠️ Empty data for cluster {cluster}. Skipping...")
+        logger.warning(f"⚠️ Empty path/point data for cluster {cluster}.")
         return None, None
 
     final_paths = gpd.GeoDataFrame(paths_data, geometry="geometry", crs="EPSG:3857")
     final_points = gpd.GeoDataFrame(points_data, geometry="geometry", crs="EPSG:3857")
     total_length = final_paths["length"].sum()
-    print(f"ℹ️ Total Length for cluster {cluster}: {total_length:8,.2f} meters")
+    logger.info(
+        f"ℹ️ Total routed length for cluster {cluster}: {total_length:8,.2f} meters"
+    )
     return final_paths, final_points
 
 
@@ -480,11 +538,13 @@ def ring_cluster(cluster_args):
     final_paths = []
     final_points = []
 
-    print(f"🛟 Processing Cluster {cluster} | Area: {area} | Total Site: {len(cluster_site):,}")
+    logger.info(
+        f"ℹ️ Processing cluster {cluster} | Area={area} | Total sites={len(cluster_site):,}"
+    )
     cluster_site = cluster_site.copy().to_crs(epsg=3857).reset_index(drop=True)
 
     if cluster_site.empty:
-        print(f"⚠️ No data found for cluster {cluster}. Skipping...")
+        logger.warning(f"⚠️ Cluster {cluster} has no data. Skipping.")
         return None, None
 
     route_path_fp = os.path.join(export_dir, f"Paths_{area}_{cluster}.parquet")
@@ -493,7 +553,9 @@ def ring_cluster(cluster_args):
     if os.path.exists(point_path_fp):
         paths = gpd.read_parquet(route_path_fp)
         points = gpd.read_parquet(point_path_fp)
-        print(f"ℹ️ Paths for cluster {cluster} already exist. Skipping...")
+        logger.info(
+            f"ℹ️ Cluster {cluster} already processed. Loaded paths/points from disk."
+        )
         return paths, points
 
     hex_list = identify_hexagon(cluster_site, type="convex")
@@ -506,11 +568,11 @@ def ring_cluster(cluster_args):
         lambda geom: nodes.at[node_sindex.nearest(geom)[1][0], "node_id"]
     )
 
-    fo_hub          = cluster_site[cluster_site["site_type"].str.lower().str.contains("hub")].copy()
-    sitelist        = cluster_site[~cluster_site["site_type"].str.lower().str.contains("hub")].copy()
-    total_sites     = len(cluster_site)
-    num_hub         = len(fo_hub)
-    num_sitelist    = len(sitelist)
+    fo_hub = cluster_site[cluster_site["site_type"].str.lower().str.contains("hub")].copy()
+    sitelist = cluster_site[~cluster_site["site_type"].str.lower().str.contains("hub")].copy()
+    total_sites = len(cluster_site)
+    num_hub = len(fo_hub)
+    num_sitelist = len(sitelist)
 
     if "flag" in cluster_site.columns:
         start_hub = (
@@ -527,42 +589,50 @@ def ring_cluster(cluster_args):
         start_hub = fo_hub["site_id"].iloc[0] if not fo_hub.empty else None
         end_hub = fo_hub["site_id"].iloc[-1] if not fo_hub.empty else None
 
-    print(f"ℹ️ Cluster       :{cluster}")
-    print(f"ℹ️ Total Sites   :{total_sites}")
-    print(f"ℹ️ FO Hubs       :{num_hub:<2}| Start Hub: {start_hub} > End Hub: {end_hub}")
-    print(f"ℹ️ Sitelist      :{num_sitelist:<2}| Total Sites: {num_sitelist}\n")
+    logger.info(f"ℹ️ Cluster: {cluster}")
+    logger.info(f"ℹ️ Total sites: {total_sites}")
+    logger.info(
+        f"ℹ️ FO hubs: {num_hub:<2} | Start hub={start_hub} | End hub={end_hub}"
+    )
+    logger.info(
+        f"ℹ️ Sitelist (non-hub): {num_sitelist:<2} | Total sitelist={num_sitelist}"
+    )
 
     match num_hub:
         case 1:
-            final_paths, final_points = route_single(cluster_site, cluster, fo_hub, roads, nodes, G, area=area, area_col=area_col)
+            final_paths, final_points = route_single(
+                cluster_site, cluster, fo_hub, roads, nodes, G, area=area, area_col=area_col
+            )
             if final_paths is None or final_points is None:
-                print(f"❌ No valid paths found for cluster {cluster}.")
+                logger.error(f"❌ No valid path result for cluster {cluster}.")
                 return None, None
         case 2:
-            final_paths, final_points = route_multi(cluster_site, cluster, roads, nodes, G, area=area, area_col=area_col)
+            final_paths, final_points = route_multi(
+                cluster_site, cluster, roads, nodes, G, area=area, area_col=area_col
+            )
         case _:
-            print(f"⚠️ No FO Hub found in cluster {cluster}. Using all nodes for pathfinding.")
-            print(cluster_site['site_type'].value_counts())
+            logger.warning(
+                f"⚠️ Cluster {cluster} has unsupported hub count ({num_hub}). "
+                f"Using all nodes for pathfinding."
+            )
+            logger.info(cluster_site['site_type'].value_counts())
+
     if final_paths is None or final_points is None:
-        print(f"⚠️ No valid paths or points found for cluster {cluster}. Skipping SPOF detection.")
+        logger.warning(
+            f"⚠️ No route result for cluster {cluster}. Skipping SPOF detection."
+        )
         return None, None
 
-    print(f"ℹ️ Running SPOF Detection for cluster {cluster}...")
+    logger.info(f"🧩 Running SPOF detection for cluster {cluster}...")
     final_paths = spof_detection(final_paths, final_points, G, roads, nodes, threshold_spof=3000, threshold_alt=25)
 
-    print(f"\n📊 Summary for Cluster {cluster} | Area: {area}")
-    print(f"Total Paths         | {area:15} | {cluster:2}: {len(final_paths):,}")
-    print(f"Total Points        | {area:15} | {cluster:2}: {len(final_points):,}")
-    print(f"FO Hub Nodes        | {area:15} | {cluster:2}: {len(fo_hub):,}")
-    print()
-
-    print("📍 Running Connected Routes")
+    logger.info("🧩 Reconstructing connected ring routes...")
     connected_routes = []
     connection_list = []
     visited_sites = set()
 
     if len(fo_hub) == 1 and start_hub == end_hub:
-        print(f"ℹ️ Single FO Hub: {start_hub}.")
+        logger.info(f"ℹ️ Single FO hub {start_hub} (closed ring expected).")
         current_site = start_hub
         max_iterations = len(final_paths) + 1
         iteration_count = 0
@@ -570,7 +640,9 @@ def ring_cluster(cluster_args):
         while iteration_count < max_iterations:
             next_row = final_paths[final_paths["near_end"] == current_site]
             if next_row.empty:
-                print(f"⚠️ No outgoing path found from {current_site}. Breaking loop.")
+                logger.warning(
+                    f"⚠️ No outgoing path from {current_site}. Stopping traversal."
+                )
                 break
 
             for _, row in next_row.iterrows():
@@ -582,19 +654,26 @@ def ring_cluster(cluster_args):
             next_site = next_row["far_end"].values[0]
             if next_site == start_hub and len(connected_routes) > 1:
                 connection_list.append(next_site)
-                print(f"✅ Ring completed back to hub {start_hub}")
                 break
 
             if next_site in visited_sites and next_site != start_hub:
-                print(f"⚠️ Detected loop at site {next_site}. Breaking to prevent infinite loop.")
+                logger.warning(
+                    f"⚠️ Detected loop at site {next_site}. Stopping traversal."
+                )
                 break
 
             visited_sites.add(current_site)
             current_site = next_site
             iteration_count += 1
-        print(f"ℹ️ Connected {len(connected_routes)} routes in {iteration_count} iterations")
+
+        logger.info(
+            f"ℹ️ Connected {len(connected_routes)} segments "
+            f"in {iteration_count} iterations (single-hub ring)."
+        )
     else:
-        print(f"ℹ️ Multiple FO Hubs: {start_hub} and {end_hub}.")
+        logger.info(
+            f"ℹ️ Multiple FO hubs: start={start_hub}, end={end_hub} (open ring)."
+        )
         current_site = start_hub
         max_iterations = len(final_paths) + 1
         iteration_count = 0
@@ -602,6 +681,9 @@ def ring_cluster(cluster_args):
         while iteration_count < max_iterations:
             next_row = final_paths[final_paths["near_end"] == current_site]
             if next_row.empty:
+                logger.warning(
+                    f"⚠️ No outgoing path from {current_site}. Stopping traversal."
+                )
                 break
 
             for _, row in next_row.iterrows():
@@ -614,25 +696,39 @@ def ring_cluster(cluster_args):
 
             if next_site == end_hub:
                 connection_list.append(end_hub)
-                print(f"✅ Path completed from {start_hub} to {end_hub}")
+                logger.info(
+                    f"🏆 Completed path from {start_hub} to {end_hub} "
+                    f"in {iteration_count + 1} iterations."
+                )
                 break
 
             if next_site in visited_sites and next_site != end_hub:
-                print(f"⚠️ Detected loop at site {next_site}. Breaking to prevent infinite loop.")
+                logger.warning(
+                    f"⚠️ Detected loop at site {next_site}. Stopping traversal."
+                )
                 visited_sites.add(current_site)
                 break
 
             visited_sites.add(current_site)
             current_site = next_site
             iteration_count += 1
-        print(f"ℹ️ Connected {len(connected_routes)} routes in {iteration_count} iterations")
+
+        logger.info(
+            f"ℹ️ Connected {len(connected_routes)} segments "
+            f"in {iteration_count} iterations (multi-hub path)."
+        )
 
     if not connected_routes:
-        print(f"⚠️ No connected routes found for FO Hub in cluster {cluster}. Skipping...")
+        logger.warning(
+            f"⚠️ No connected routes for FO hub in cluster {cluster}. "
+            f"Returning original paths/points."
+        )
         return final_paths, final_points
 
     connected_routes_df = pd.DataFrame(connected_routes)
-    connected_routes_gdf = gpd.GeoDataFrame(connected_routes_df, geometry="geometry", crs="EPSG:3857").reset_index(drop=True)
+    connected_routes_gdf = gpd.GeoDataFrame(
+        connected_routes_df, geometry="geometry", crs="EPSG:3857"
+    ).reset_index(drop=True)
 
     connected_sites = []
     for site_id in connection_list:
@@ -640,27 +736,38 @@ def ring_cluster(cluster_args):
         if not site_row.empty:
             connected_sites.append(site_row.iloc[0])
 
-    connected_sites_gdf = gpd.GeoDataFrame(connected_sites, geometry="geometry", crs="EPSG:3857").reset_index(drop=True)
+    connected_sites_gdf = gpd.GeoDataFrame(
+        connected_sites, geometry="geometry", crs="EPSG:3857"
+    ).reset_index(drop=True)
     connected_sites_gdf = connected_sites_gdf.drop_duplicates(subset=["site_id", "geometry"])
 
     if connected_sites_gdf.empty:
+        logger.warning(
+            f"⚠️ Connected site list is empty for cluster {cluster}. "
+            f"Skipping parquet export."
+        )
         return None, None
 
     total_length = connected_routes_gdf["length"].sum()
-    print(f"Total Length | {area} | {cluster}: {total_length / 1000:,.2f} km")
+    logger.info(
+        f"ℹ️ Total final ring length | Area={area} | Cluster={cluster} "
+        f"| {total_length / 1000:,.2f} km"
+    )
 
     connected_routes_gdf = connected_routes_gdf.to_crs(epsg=4326)
     connected_sites_gdf = connected_sites_gdf.to_crs(epsg=4326)
 
     connected_routes_gdf.to_parquet(os.path.join(export_dir, f"Paths_{area}_{cluster}.parquet"))
     connected_sites_gdf.to_parquet(os.path.join(export_dir, f"Points_{area}_{cluster}.parquet"))
-    print(f"🌏 Cluster {cluster} parquet saved. \n")
+    logger.info(
+        f"🏆 Cluster {cluster} paths/points saved to {export_dir}."
+    )
     return connected_routes_gdf, connected_sites_gdf
 
 
 def ring_parallel(
     clustered_sites: gpd.GeoDataFrame,
-    area:str,
+    area: str,
     area_col="region",
     cluster_col="ring_name",
     export_dir=None,
@@ -671,8 +778,8 @@ def ring_parallel(
     """Process multiple clusters in parallel and merge results."""
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
-    print(f"🧩 Parallel Clustering {area}")
     if clustered_sites.empty:
+        logger.warning("⚠️ clustered_sites is empty. Nothing to process.")
         return None, None
 
     if export_dir is None:
@@ -680,7 +787,9 @@ def ring_parallel(
 
     os.makedirs(export_dir, exist_ok=True)
     clusters = sorted(clustered_sites[cluster_col].unique().tolist())
-    print(f"ℹ️ Area: {area} | Total Clusters: {len(clusters):,}")
+    logger.info(
+        f"ℹ️ Area={area} | Total clusters={len(clusters):,} to process in parallel."
+    )
 
     cluster_args = []
     for cluster in clusters:
@@ -700,7 +809,7 @@ def ring_parallel(
         })
 
     if not cluster_args:
-        print("⚠️ No valid clusters found for parallel processing. Skipping...")
+        logger.warning("⚠️ No valid clusters for parallel processing. Skipping.")
         return None, None
 
     with ProcessPoolExecutor(max_workers=4) as executor:
@@ -710,9 +819,12 @@ def ring_parallel(
         total_futures = len(futures)
 
         if task_celery and total_futures > 1:
-            task_celery.update_state(state="PROGRESS", meta={"status": f"Processing {total_futures} clusters in parallel"})
+            task_celery.update_state(
+                state="PROGRESS",
+                meta={"status": f"Processing {total_futures} clusters in parallel"},
+            )
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing Clusters"):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing clusters"):
             cluster_id = futures[future]
             try:
                 paths, points = future.result()
@@ -725,23 +837,37 @@ def ring_parallel(
                 if task_celery:
                     task_celery.update_state(
                         state="PROGRESS",
-                        meta={"status": f"Completed {len(final_paths)}/{total_futures} clusters"},
+                        meta={
+                            "status": (
+                                f"Completed {len(final_paths)}/{total_futures} clusters "
+                                f"in area {area}"
+                            )
+                        },
                     )
             except Exception as e:
-                print(f"❌ Error processing cluster {cluster_id}: {e}")
+                logger.error(f"❌ Error processing cluster {cluster_id}: {e}")
                 if task_celery:
                     task_celery.update_state(
                         state="PROGRESS",
-                        meta={"status": f"Error in cluster {cluster_id}: {e}. Completed {len(final_paths)}/{total_futures} clusters"},
+                        meta={
+                            "status": (
+                                f"Error in cluster {cluster_id}: {e}. "
+                                f"Completed {len(final_paths)}/{total_futures} clusters"
+                            )
+                        },
                     )
                 continue
 
         if final_paths:
             final_paths = pd.concat(final_paths, ignore_index=True).drop_duplicates(subset=["geometry"])
-            print(f"ℹ️ Total Paths after parallel processing: {len(final_paths):,}")
+            logger.info(
+                f"ℹ️ Total merged paths after parallel processing: {len(final_paths):,}"
+            )
         if final_points:
             final_points = pd.concat(final_points, ignore_index=True).drop_duplicates(subset=["geometry"])
-            print(f"ℹ️ Total Points after parallel processing: {len(final_points):,}")
+            logger.info(
+                f"ℹ️ Total merged points after parallel processing: {len(final_points):,}"
+            )
     return final_paths, final_points
 
 
@@ -749,24 +875,33 @@ def ring_parallel(
 # 4) MODE: SUPERVISED RING NETWORK
 # ------------------------------------------------------
 def supervised_validation(excel_file: str | pd.DataFrame | gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    print(f"ℹ️ Checking Supervised.")
+    logger.info("🧩 Validating supervised input data.")
     if isinstance(excel_file, pd.DataFrame):
         df = excel_file
+        logger.info("ℹ️ Input type: DataFrame.")
     elif isinstance(excel_file, str):
+        logger.info(f"ℹ️ Input type: Excel path. Reading file: {excel_file}")
         df = pd.read_excel(excel_file)
-        print(f"📥 Reading Excel file: {excel_file}")
     elif isinstance(excel_file, gpd.GeoDataFrame):
+        logger.info("ℹ️ Input type: GeoDataFrame.")
         if 'lat' not in excel_file.columns or 'long' not in excel_file.columns:
             excel_file['lat'] = excel_file.geometry.to_crs(epsg=4326).y
             excel_file['long'] = excel_file.geometry.to_crs(epsg=4326).x
         df = pd.DataFrame(excel_file.drop(columns='geometry'))
-        print(f"📥 Using provided GeoDataFrame.")
+    else:
+        raise TypeError(
+            "Unsupported supervised input type. "
+            "Use str (Excel path), DataFrame, or GeoDataFrame."
+        )
 
     # CHECKING USED COLUMNS
     required_columns = ["site_id", "site_name", "site_type", "lat", "long", "ring_name", "flag"]
     missing_cols = [col for col in required_columns if col not in df.columns]
     if missing_cols:
-        raise ValueError(f"Missing columns in sheets: {missing_cols}.\n Please ensure the input data contains {', '.join(required_columns)} columns.")
+        raise ValueError(
+            f"Missing columns in sheets: {missing_cols}.\n"
+            f"Required columns: {', '.join(required_columns)}."
+        )
 
     def safe_stringify(value):
         """Safely convert any value to string, handling geometric objects."""
@@ -794,11 +929,11 @@ def supervised_validation(excel_file: str | pd.DataFrame | gpd.GeoDataFrame) -> 
                 geoms = [remove_z(part) for part in geom.geoms]
                 return type(geom)(geoms)
         return geom
-    
+
     # SANITIZE SITE ID AND NAME
     df["site_id"] = df["site_id"].apply(safe_stringify)
     df["site_name"] = df["site_name"].apply(safe_stringify)
-    
+
     # GEOMETRY
     df_geom = gpd.points_from_xy(df["long"], df["lat"], crs="EPSG:4326")
     gdf = gpd.GeoDataFrame(df, geometry=df_geom)
@@ -806,22 +941,27 @@ def supervised_validation(excel_file: str | pd.DataFrame | gpd.GeoDataFrame) -> 
     if "region" in gdf.columns:
         gdf["region"] = gdf["region"].apply(safe_stringify)
     else:
+        logger.info("ℹ️ 'region' column not found. Auto-grouping regions by distance.")
         group = auto_group(gdf, distance=10000)
-        grouped_ring = gpd.sjoin(gdf[['geometry', 'ring_name']], group[['geometry', 'region']]).drop(columns='index_right')
+        grouped_ring = gpd.sjoin(
+            gdf[['geometry', 'ring_name']],
+            group[['geometry', 'region']]
+        ).drop(columns='index_right')
         grouped_ring = grouped_ring.groupby('ring_name')['region'].first().to_dict()
         gdf['region'] = gdf['ring_name'].map(grouped_ring)
-        
 
     # VALIDITY
     for idx, row in gdf.iterrows():
         if not row["geometry"].is_valid:
             raise ValueError(f"Invalid geometry at index {idx} with site_id '{row['site_id']}'.")
+
     gdf["geometry"] = gdf["geometry"].apply(remove_z)
 
     # SUMMARY
-    print(f"ℹ️ Total Records: {len(gdf):,}")
-    print(f"✅ Input Data Validity Check Passed.")
+    logger.info(f"ℹ️ Total supervised records: {len(gdf):,}")
+    logger.info("🏆 Supervised input validation passed.")
     return gdf
+
 
 def ring_supervised(
     sites_input,
@@ -833,13 +973,14 @@ def ring_supervised(
     **kwargs,
 ):
     """Run supervised routing for a single area, saving parquet results."""
-    print(f"🧩 Ring Network | {area}")
+    logger.info(f"🧩 Running supervised ring design for area '{area}'.")
     cable_cost = kwargs.get("cable_cost", 35000)
     task_celery = kwargs.get("task_celery", False)
 
     os.makedirs(export_dir, exist_ok=True)
     try:
         if isinstance(sites_input, str):
+            logger.info(f"ℹ️ Input is parquet path. Reading: {sites_input}")
             sites_input = gpd.read_parquet(sites_input)
             sites_input[area_col] = sites_input[area_col].str.strip().str.upper()
         else:
@@ -852,45 +993,58 @@ def ring_supervised(
         site_area = sites_input[sites_input[area_col] == area].copy()
         unique_clusters = site_area[area_col].dropna().unique().tolist()
         if not unique_clusters:
-            print(f"No clusters found for area {area}. Skipping...")
+            logger.warning(f"⚠️ No cluster found for area '{area}'. Skipping.")
             return None
 
-        print(f"✨ Processing {area_col}: {area}")
-        print(f"ℹ️ Total Sites       | {area_col} {area}: {len(sites_input):,} data")
+        logger.info(f"ℹ️ Area={area} | Total records (all areas)={len(sites_input):,}")
 
         ref_fo = None
         if fo_expand is not None:
-            print("ℹ️ Fiber Expand defined")
+            logger.info("🧩 Preparing FO reference nodes (expand mode enabled).")
             hex_list = identify_hexagon(sites_input, type="convex")
-            print(f"ℹ️ Total Hexagons    | {area_col} {area}: {len(hex_list):,} hexagons")
+            logger.info(
+                f"ℹ️ Hex count for FO reference | Area={area}: {len(hex_list):,}"
+            )
             roads = retrieve_roads(hex_list, type="roads")
             nodes = retrieve_roads(hex_list, type="nodes")
-            print(f"ℹ️ Total Roads       | {area_col} {area}: {len(roads):,} roads")
-            print(f"ℹ️ Total Nodes       | {area_col} {area}: {len(nodes):,} nodes")
+            logger.info(
+                f"ℹ️ Roads for FO reference | Area={area}: {len(roads):,}"
+            )
+            logger.info(
+                f"ℹ️ Nodes for FO reference | Area={area}: {len(nodes):,}"
+            )
 
             if roads.empty or nodes.empty:
-                print(f"⚠️ No roads or nodes found for area {area}. Skipping...")
+                logger.warning(
+                    f"⚠️ No roads or nodes for area '{area}'. Skipping."
+                )
                 return None
 
             roads = roads.to_crs(epsg=3857)
             nodes = nodes.to_crs(epsg=3857)
 
-            print("🧩 Preparing FO Ref Nodes...")
+            logger.info("🧩 Building FO reference node set...")
             ref_fo = set(nodes[nodes["ref_fo"] == 1]["node_id"])
             fo_expand = fo_expand.to_crs(3857)
             fo_expand["geometry"] = fo_expand.geometry.buffer(20)
             nodes_within = gpd.sjoin(nodes, fo_expand, how="inner", predicate="intersects")
             nodes_within = set(nodes_within["node_id"])
 
-            if isinstance(nodes_within, (list, tuple, set)):
+            if isinstance(nodes_within, (list, tuple, set, set.__class__)):
                 ref_fo.update(nodes_within)
-                print(f"ℹ️ Added {len(nodes_within)} expanded FO nodes")
+                logger.info(
+                    f"ℹ️ Added {len(nodes_within)} expanded FO nodes "
+                    f"(total reference nodes={len(ref_fo)})"
+                )
             else:
-                print("⚠️ expand_fo should be a list, tuple, or set")
-            print("ℹ️ Reference FO retrieved.")
+                logger.warning("⚠️ expand_fo should be a list, tuple, or set.")
+            logger.info("🏆 FO reference node set prepared.")
 
         if task_celery:
-            task_celery.update_state(state="PROGRESS", meta={"status": "Processing ring data"})
+            task_celery.update_state(
+                state="PROGRESS",
+                meta={"status": f"Processing ring data for area {area}"},
+            )
 
         paths, points = ring_parallel(
             clustered_sites=site_area,
@@ -904,7 +1058,7 @@ def ring_supervised(
         )
         return paths, points
     except Exception as e:
-        print(f"❌❌ Error processing area {area}: {e} \n")
+        logger.critical(f"❌ Error processing supervised ring for area '{area}': {e}")
         return None
 
 
@@ -915,8 +1069,14 @@ def export_kmz(main_kml, ring_data, point_data, folder):
     """Write topology, sites, hubs, and routes into KMZ structure."""
     ring_data = ring_data.copy()
     cluster_points = point_data.copy()
-    ring_data["start"] = ring_data["near_end"].apply(lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0])
-    ring_data["end"] = ring_data["far_end"].apply(lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0])
+    logger.info(f"🧩 Exporting KMZ content for folder '{folder}'.")
+
+    ring_data["start"] = ring_data["near_end"].apply(
+        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
+    )
+    ring_data["end"] = ring_data["far_end"].apply(
+        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
+    )
 
     ring_data = ring_data.reset_index(drop=True)
     filename = folder.replace("/", "-")
@@ -958,20 +1118,65 @@ def export_kmz(main_kml, ring_data, point_data, folder):
     ring_sites = ring_sites[available_col].rename(columns=used_columns)
     ring_hub = ring_hub[available_col].rename(columns=used_columns)
 
-    kml_updated = export_kml(ring_topology, main_kml, filename, subfolder=folder, name_col="connection", color="#FF00FF", size=2, popup=False)
-    kml_updated = export_kml(ring_hub, kml_updated, filename, subfolder=f"{folder}/FO Hub", name_col="Site ID", icon="http://maps.google.com/mapfiles/kml/paddle/A.png", size=0.8, popup=True)
-    kml_updated = export_kml(ring_sites, kml_updated, filename, subfolder=f"{folder}/Site List", name_col="Site ID", color="#FFFF00", size=0.8, popup=True)
-    kml_updated = export_kml(ring_route, kml_updated, filename, subfolder=f"{folder}/Route", name_col="route_name", color="#0000FF", size=3, popup=False)
+    kml_updated = export_kml(
+        ring_topology,
+        main_kml,
+        filename,
+        subfolder=folder,
+        name_col="connection",
+        color="#FF00FF",
+        size=2,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        ring_hub,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/FO Hub",
+        name_col="Site ID",
+        icon="http://maps.google.com/mapfiles/kml/paddle/A.png",
+        size=0.8,
+        popup=True,
+    )
+    kml_updated = export_kml(
+        ring_sites,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Site List",
+        name_col="Site ID",
+        color="#FFFF00",
+        size=0.8,
+        popup=True,
+    )
+    kml_updated = export_kml(
+        ring_route,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Route",
+        name_col="route_name",
+        color="#0000FF",
+        size=3,
+        popup=False,
+    )
+    logger.info(f"🏆 KMZ content for '{folder}' added to main KML object.")
     return kml_updated
 
 
 def export_gpkg(gpkg_path, ring_data, point_data, cluster):
     """Write cluster topology, routes, sites, and hubs to GeoPackage."""
+    logger.info(
+        f"🧩 Exporting cluster '{cluster}' to GeoPackage: {gpkg_path}"
+    )
+
     ring_data = ring_data.copy()
     cluster_points = point_data.copy()
 
-    ring_data["start"] = ring_data["near_end"].apply(lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0])
-    ring_data["end"] = ring_data["far_end"].apply(lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0])
+    ring_data["start"] = ring_data["near_end"].apply(
+        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
+    )
+    ring_data["end"] = ring_data["far_end"].apply(
+        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
+    )
     ring_data = ring_data.reset_index(drop=True)
 
     topology = create_topology(point_data)
@@ -984,66 +1189,76 @@ def export_gpkg(gpkg_path, ring_data, point_data, cluster):
     ring_sites = cluster_points[["site_id", "site_name", "site_type", "geometry"]].copy()
     ring_sites = ring_sites[~ring_sites["site_type"].str.lower().str.contains("hub")].copy()
     if ring_sites.empty:
-        print("⚠️ No sites found. Skipping site export.")
+        logger.warning("⚠️ No sites found. Skipping 'Site List' export.")
         return gpkg_path
     ring_sites.to_file(gpkg_path, layer=f"{cluster}_Site List", driver="GPKG")
 
     ring_hub = cluster_points[cluster_points["site_type"].str.lower().str.contains("hub")].copy()
     if ring_hub.empty:
-        print("⚠️ No FO Hub found. Skipping FO Hub export.")
+        logger.warning("⚠️ No FO hub found. Skipping FO hub export.")
         return gpkg_path
 
     ring_hub.to_file(gpkg_path, layer=f"{cluster}_FO Hub", driver="GPKG")
+    logger.info(f"🏆 GeoPackage export for cluster '{cluster}' completed.")
     return gpkg_path
 
 
 def compile_ring(parquet_dir):
     """Compile all per-cluster parquet files into combined paths/points."""
+    logger.info(f"🧩 Compiling per-cluster parquet files from {parquet_dir}")
     list_files = os.listdir(parquet_dir)
     point_files = [f for f in list_files if f.endswith(".parquet") and f.startswith("Points")]
-    path_files  = [f for f in list_files if f.endswith(".parquet") and f.startswith("Paths")]
+    path_files = [f for f in list_files if f.endswith(".parquet") and f.startswith("Paths")]
 
     points_data = []
-    for file in tqdm(point_files, desc="Loading Point Files"):
+    for file in tqdm(point_files, desc="Loading point files"):
         file_path = os.path.join(parquet_dir, file)
         gdf = gpd.read_parquet(file_path)
         if not gdf.empty:
             points_data.append(gdf)
 
     paths_data = []
-    for file in tqdm(path_files, desc="Loading Path Files"):
+    for file in tqdm(path_files, desc="Loading path files"):
         file_path = os.path.join(parquet_dir, file)
         gdf = gpd.read_parquet(file_path)
         if not gdf.empty:
             paths_data.append(gdf)
 
-    print(f"ℹ️ Total Point Files : {len(point_files):,}")
-    print(f"ℹ️ Total Path Files  : {len(path_files):,}")
+    logger.info(f"ℹ️ Point parquet files: {len(point_files):,}")
+    logger.info(f"ℹ️ Path parquet files : {len(path_files):,}")
 
     points_data = pd.concat(points_data, ignore_index=True) if points_data else pd.DataFrame()
-    paths_data  = pd.concat(paths_data,  ignore_index=True) if paths_data  else pd.DataFrame()
+    paths_data = pd.concat(paths_data, ignore_index=True) if paths_data else pd.DataFrame()
 
-    print(f"ℹ️ Total Points DataFrames : {len(points_data):,}")
-    print(f"ℹ️ Total Paths DataFrames  : {len(paths_data):,}")
+    logger.info(f"ℹ️ Total point rows: {len(points_data):,}")
+    logger.info(f"ℹ️ Total path rows : {len(paths_data):,}")
 
     result_cluster = points_data["ring_name"].unique().tolist() if not points_data.empty else []
-    print(f"ℹ️ Total Cluster Data: {len(result_cluster):,}")
+    logger.info(f"ℹ️ Total cluster IDs: {len(result_cluster):,}")
 
     if not points_data.empty:
-        points_data.to_crs(epsg=4326).to_parquet(os.path.join(parquet_dir, "All_Points.parquet"), index=False)
+        points_data.to_crs(epsg=4326).to_parquet(
+            os.path.join(parquet_dir, "All_Points.parquet"),
+            index=False,
+        )
     if not paths_data.empty:
-        paths_data.to_crs(epsg=4326).to_parquet(os.path.join(parquet_dir, "All_Paths.parquet"), index=False)
-    print(f"✅ Compiled Parquet files saved to {parquet_dir}")
+        paths_data.to_crs(epsg=4326).to_parquet(
+            os.path.join(parquet_dir, "All_Paths.parquet"),
+            index=False,
+        )
+    logger.info(f"🏆 Compiled parquet files saved to {parquet_dir}")
+
     for file in point_files + path_files:
         try:
             os.remove(os.path.join(parquet_dir, file))
         except Exception as e:
-            print(f"❌ Error removing file {file}: {e}")
+            logger.error(f"❌ Error removing file {file}: {e}")
     return points_data, paths_data
 
 
 def connect_nearfar(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame):
     """Attach near_end and far_end site ids to points based on per-ring routes."""
+    logger.info("🧩 Attaching near_end / far_end relationships to points.")
     miss_point = [c for c in ["site_id", "ring_name"] if c not in points_gdf.columns]
     miss_paths = [c for c in ["near_end", "far_end", "ring_name"] if c not in paths_gdf.columns]
 
@@ -1062,7 +1277,9 @@ def connect_nearfar(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame):
 
     points_gdf["far_end"] = points_gdf["far_end"].fillna("N/A")
     points_gdf["near_end"] = points_gdf["near_end"].fillna("N/A")
+    logger.info("🏆 Near/far relationships attached.")
     return points_gdf
+
 
 def save_kml(
     points: gpd.GeoDataFrame,
@@ -1072,18 +1289,19 @@ def save_kml(
     method='Supervised'
 ):
     import simplekml
-    
+
     date_today = datetime.now().strftime("%Y%m%d")
     kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
+    logger.info(f"🧩 Exporting KML/KMZ to {kmz_path}")
 
     points = points.to_crs(epsg=4326).reset_index(drop=True)
     paths = paths.to_crs(epsg=4326).reset_index(drop=True)
     topology = topology.to_crs(epsg=4326).reset_index(drop=True)
-    
+
     main_kml = simplekml.Kml()
     region_list = points['region'].dropna().unique().tolist()
     for region in region_list:
-        print(f"🔄 Exporting KML for Region: {region}")
+        logger.info(f"ℹ️ Exporting KML for region {region}")
         region_points = points[points['region'] == region].copy()
         region_paths = paths[paths['region'] == region].copy()
         topology_region = topology[topology['region'] == region].copy()
@@ -1097,25 +1315,27 @@ def save_kml(
             region_points['program'] = 'N/A'
 
         used_columns = {
-        "ring_name": "Ring ID",
-        "site_id": "Site ID",
-        "site_name": "Site Name" if "site_name" in region_points.columns else "N/A",
-        "long": "Long",
-        "lat": "Lat",
-        "region": "Region",
-        "vendor": "Vendor" if "vendor" in region_points.columns else "N/A",
-        "program": "Program" if "program" in region_points.columns else "N/A",
-        "geometry": "geometry",
+            "ring_name": "Ring ID",
+            "site_id": "Site ID",
+            "site_name": "Site Name" if "site_name" in region_points.columns else "N/A",
+            "long": "Long",
+            "lat": "Lat",
+            "region": "Region",
+            "vendor": "Vendor" if "vendor" in region_points.columns else "N/A",
+            "program": "Program" if "program" in region_points.columns else "N/A",
+            "geometry": "geometry",
         }
         available_col = [col for col in used_columns.keys() if col in region_points.columns]
         ring_list = region_points['ring_name'].dropna().unique().tolist()
-        for ring in tqdm(ring_list, desc=f"Processing Rings in {region}"):
+        for ring in tqdm(ring_list, desc=f"Processing rings in {region}"):
             ring_points = region_points[region_points['ring_name'] == ring].copy()
             ring_paths = region_paths[region_paths['ring_name'] == ring].copy()
             topology_ring = topology_region[topology_region['ring_name'] == ring].copy()
             topology_ring = topology_ring.dissolve(by='ring_name').reset_index()
-            topology_ring['geometry'] = topology_ring.geometry.apply(lambda geom: linemerge(geom) if type(geom) == MultiLineString else geom)
-            topology_ring = topology_ring[['name','ring_name', 'region', 'geometry']]
+            topology_ring['geometry'] = topology_ring.geometry.apply(
+                lambda geom: linemerge(geom) if type(geom) == MultiLineString else geom
+            )
+            topology_ring = topology_ring[['name', 'ring_name', 'region', 'geometry']]
 
             # FO HUB & SITELIST
             fo_hub = ring_points[ring_points['site_type'] == 'FO Hub'].copy().reset_index(drop=True)
@@ -1125,34 +1345,79 @@ def save_kml(
             fo_hub = fo_hub.rename(columns=used_columns)
             site_list = site_list.rename(columns=used_columns)
 
-            # print(f"ℹ️ Ring {ring}: {len(fo_hub)} FO Hubs, {len(site_list)} Site Lists, {len(topology_ring)} Topology segments, {len(ring_paths)} Route segments")
-            main_kml = export_kml(topology_ring, main_kml, folder_name=f"{region}_{ring}_Topology", subfolder=f"{region}/{ring}", name_col='name', color="#FF00FF", size=3, popup=False)
-            main_kml = export_kml(ring_paths, main_kml, folder_name=f"{region}_{ring}_Route", subfolder=f"{region}/{ring}/Route", name_col='name', color="#000FFF", size=3, popup=False)
-            main_kml = export_kml(site_list, main_kml, folder_name=f"{region}_{ring}_Site List", subfolder=f"{region}/{ring}/Site List", name_col='Site ID', color="#FFFF00", size=0.8)
-            main_kml = export_kml(fo_hub, main_kml, folder_name=f"{region}_{ring}_FO_Hub", subfolder=f"{region}/{ring}/FO Hub", name_col='Site ID', icon='http://maps.google.com/mapfiles/kml/paddle/A.png', size=0.8)
-    
+            main_kml = export_kml(
+                topology_ring,
+                main_kml,
+                folder_name=f"{region}_{ring}_Topology",
+                subfolder=f"{region}/{ring}",
+                name_col='name',
+                color="#FF00FF",
+                size=3,
+                popup=False,
+            )
+            main_kml = export_kml(
+                ring_paths,
+                main_kml,
+                folder_name=f"{region}_{ring}_Route",
+                subfolder=f"{region}/{ring}/Route",
+                name_col='name',
+                color="#000FFF",
+                size=3,
+                popup=False,
+            )
+            main_kml = export_kml(
+                site_list,
+                main_kml,
+                folder_name=f"{region}_{ring}_Site List",
+                subfolder=f"{region}/{ring}/Site List",
+                name_col='Site ID',
+                color="#FFFF00",
+                size=0.8,
+            )
+            main_kml = export_kml(
+                fo_hub,
+                main_kml,
+                folder_name=f"{region}_{ring}_FO_Hub",
+                subfolder=f"{region}/{ring}/FO Hub",
+                name_col='Site ID',
+                icon='http://maps.google.com/mapfiles/kml/paddle/A.png',
+                size=0.8,
+            )
+
     sanitize_kml(main_kml)
     main_kml.savekmz(kmz_path)
-    print(f"✅ Exported KML/KMZ file at {kmz_path}")
+    logger.info(f"🏆 KML/KMZ export completed at {kmz_path}")
+
 
 def save_supervised(
     points: gpd.GeoDataFrame,
     paths: gpd.GeoDataFrame,
     topology: gpd.GeoDataFrame,
     export_dir: str,
-    method:str = "Supervised"
+    method: str = "Supervised"
 ):
+    logger.info("🧩 Exporting supervised outputs (parquet, KML, Excel).")
+
     # EXPORT PARQUET
     if not points.empty:
-        points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Points.parquet"), index=False)
-        print(f"✅ Exported Fixed with {len(points):,} records.")
+        points.to_crs(epsg=4326).to_parquet(
+            os.path.join(export_dir, f"Points.parquet"),
+            index=False,
+        )
+        logger.info(f"🏆 Points parquet exported with {len(points):,} records.")
     if not paths.empty:
-        paths.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Route.parquet"), index=False)
-        print(f"✅ Exported Route Fixed with {len(paths):,} records.")
+        paths.to_crs(epsg=4326).to_parquet(
+            os.path.join(export_dir, f"Route.parquet"),
+            index=False,
+        )
+        logger.info(f"🏆 Route parquet exported with {len(paths):,} records.")
     if not topology.empty:
         topology = topology.sort_values(by=['ring_name']).reset_index(drop=True)
-        topology.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Topology.parquet"), index=False)
-        print(f"✅ Exported Topology Route with {len(topology):,} records.")
+        topology.to_crs(epsg=4326).to_parquet(
+            os.path.join(export_dir, f"Topology.parquet"),
+            index=False,
+        )
+        logger.info(f"🏆 Topology parquet exported with {len(topology):,} records.")
 
     # EXPORT KML
     if not points.empty and not paths.empty and not topology.empty:
@@ -1165,7 +1430,9 @@ def save_supervised(
             sheet_name = "Site Information"
             points_report = points.drop(columns="geometry")
             excel_styler(points_report).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(points_report):,} records written.")
+            logger.info(
+                f"ℹ️ Excel sheet '{sheet_name}' written with {len(points_report):,} records."
+            )
         if not paths.empty:
             sheet_name = "Route Information"
             paths_report = paths.drop(columns="geometry")
@@ -1185,7 +1452,9 @@ def save_supervised(
             paths_report = paths_report.sort_values(by=['ring_name', 'near_end']).reset_index(drop=True)
             paths_report.columns = paths_report.columns.str.replace(' ', '_').str.lower()
             excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(paths_report):,} records written.")
+            logger.info(
+                f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records."
+            )
 
 
 # ------------------------------------------------------
@@ -1195,7 +1464,7 @@ def main_supervised(
     site_data: gpd.GeoDataFrame,
     export_loc: str = "./exports",
     area_col: str = "region",
-    cluster_col = "ring_name",
+    cluster_col="ring_name",
     fo_expand: gpd.GeoDataFrame = None,
     boq: bool = False,
     **kwargs,
@@ -1208,6 +1477,10 @@ def main_supervised(
     task_celery = kwargs.get("task_celery", None)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
+    logger.info(
+        f"🧩 Starting supervised pipeline | Method={method} | Design={design_type}"
+    )
+
     if "site_id" in site_data.columns:
         site_data["site_id"] = site_data["site_id"].astype(str)
 
@@ -1216,7 +1489,7 @@ def main_supervised(
 
     date_today = datetime.now().strftime("%Y%m%d")
     week = detect_week(date_today)
-    export_dir = f"{export_loc}/Intersite Design/W{str(week)}_{date_today}/{method}"
+    export_dir = f"{export_loc}/Intersite Design/{method}"
     checkpoint_dir = os.path.join(export_dir, "Checkpoint")
 
     os.makedirs(export_dir, exist_ok=True)
@@ -1229,21 +1502,23 @@ def main_supervised(
     output_paths = os.path.join(checkpoint_dir, "All_Paths.parquet")
     output_point = os.path.join(checkpoint_dir, "All_Points.parquet")
     if os.path.exists(output_paths) and os.path.exists(output_point):
-        print("ℹ️ Output file already exists. Loading existing data...")
+        logger.info("ℹ️ Checkpoint outputs already exist. Loading from disk.")
         all_paths = gpd.read_parquet(output_paths)
         all_points = gpd.read_parquet(output_point)
-        print("✅ Loaded existing data successfully.")
+        logger.info("🏆 Checkpoint data loaded.")
     else:
-        print(f"🔥 Starting {method} Intersite")
-        print(f"ℹ️ Vendor Name       : {vendor}")
-        print(f"ℹ️ Program Name      : {program}")
-        print(f"ℹ️ Design Type       : {design_type}")
-        print(f"ℹ️ Total Sites       : {len(site_data):,}")
+        logger.info(f"🧩 Starting {method} intersite pipeline from scratch.")
+        logger.info(f"ℹ️ Vendor  : {vendor}")
+        logger.info(f"ℹ️ Program : {program}")
+        logger.info(f"ℹ️ Design  : {design_type}")
+        logger.info(f"ℹ️ Total sites: {len(site_data):,}")
 
         for area in tqdm(area_list, desc=f"Processing {area_col}"):
             site_area = site_data[site_data[area_col] == area].copy()
             if site_area.empty:
-                print(f"⚠️ No data found for {area_col} {area}. Skipping...")
+                logger.warning(
+                    f"⚠️ No data for {area_col}='{area}'. Skipping."
+                )
                 continue
 
             paths, points = ring_supervised(
@@ -1258,16 +1533,18 @@ def main_supervised(
             )
 
             if paths is None or points is None:
-                print(f"⚠️ No paths or points found for {area_col} {area}. Skipping...")
+                logger.warning(
+                    f"⚠️ No paths/points result for {area_col}='{area}'. Skipping."
+                )
                 continue
 
-        print("🔗 Merging Parquet files...")
+        logger.info("🧩 Merging per-area parquet files from checkpoint...")
         all_points, all_paths = compile_ring(checkpoint_dir)
         all_points = all_points.reset_index(drop=True)
         all_paths = all_paths.reset_index(drop=True)
 
     if all_points.empty or all_paths.empty:
-        print("❌ No data available for KMZ/GPKG export. Exiting...")
+        logger.critical("❌ No final paths/points found. Aborting export.")
         return
 
     if "vendor" not in all_points.columns:
@@ -1280,22 +1557,26 @@ def main_supervised(
     if "program" not in all_paths.columns:
         all_paths["program"] = program
 
-
     # EXPORT
     if boq:
+        logger.info("🧩 Running BOQ calculation...")
         main_boq(all_points, all_paths, export_dir=export_dir)
     else:
         # TOPOLOGY CHECK
+        logger.info("🧩 Creating topology for final export...")
         topology_paths = create_topology(all_points)
         save_supervised(all_points, all_paths, topology_paths, export_dir, method)
-    print(f"✅ Export completed.")
-    print(f"🔥 Fiberization process completed. All files saved to \n{export_dir}.")
+
+    logger.info("🏆 Supervised export completed.")
+    logger.info(
+        f"ℹ️ All files saved to: {export_dir}"
+    )
 
 
 if __name__ == "__main__":
-    # excel_file = r"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 3\BoQ Intersite\Trial BoQ Intersite.xlsx"
+    # excel_file = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 3\BoQ Intersite\Trial BoQ Intersite.xlsx"
     excel_file = r"D:\JACOBSPACE\TBIG Impact 2025\QCC Fiberisasi\Asessment\Q1AOP2025 All_Smart Routing Automatic Template.xlsx"
-    export_dir = r"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 3\BoQ Intersite\Export\TaskForce"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 3\BoQ Intersite\Export\TaskForce"
     area_col = 'region'
     cluster_col = 'ring_name'
     path_type = 'classified'
@@ -1303,6 +1584,7 @@ if __name__ == "__main__":
     vendor = "TBG"
     boq = True
 
+    logger.info("🧩 Running supervised ring network as standalone script.")
     site_data = pd.read_excel(excel_file)
     site_data = sanitize_header(site_data)
     site_data = supervised_validation(site_data)
@@ -1332,4 +1614,4 @@ if __name__ == "__main__":
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
                     zipf.write(file_path, arcname)
-    print("📦 Result files zipped.")
+    logger.info(f"🏆 Result files zipped at {zip_filepath}.")

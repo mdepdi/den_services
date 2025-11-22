@@ -122,7 +122,7 @@ def identify_connection(ring: str, target_fiber:gpd.GeoDataFrame, target_point:g
     if target_point.crs != 'EPSG:3857':
         target_point = target_point.to_crs(epsg=3857)
 
-    colopriming = gpd.read_parquet(f"D:/Data Analytical/DATA/10. TBG Sitelist/Colopriming_Aug 2025/Sitelist TBG_Aug 2025_v.1.0.parquet", columns=['SiteId TBG', 'Sitename TBG', 'geometry'])
+    colopriming = gpd.read_parquet(f"D:/JACOBS/DATA/10. TBG Sitelist/Colopriming_Aug 2025/Sitelist TBG_Aug 2025_v.1.0.parquet", columns=['SiteId TBG', 'Sitename TBG', 'geometry'])
     colopriming['SiteId TBG'] = colopriming['SiteId TBG'].astype(str)
     colopriming = colopriming.to_crs(epsg=3857)
     colopriming = colopriming.rename(columns={'SiteId TBG': 'site_id', 'Sitename TBG': 'site_name'})
@@ -506,7 +506,7 @@ def main_update_intersite(point_gdf:gpd.GeoDataFrame, route_gdf:gpd.GeoDataFrame
     return zip_path
 
 if __name__ == "__main__":
-    export_dir = r"D:\Data Analytical\PROJECT\TASK\OKTOBER\Week 1\UPDATE KMZ PAKNO\Export"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\OKTOBER\Week 1\UPDATE KMZ PAKNO\Export"
     os.makedirs(export_dir, exist_ok=True)
 
     point_gdf = gpd.read_parquet(r"D:\JACOBSPACE\TBIG Impact 2025\QCC Fiberisasi\Asessment\SMARTROUTE_Q1AOP2025_V2\Points_SmartRoute.parquet")

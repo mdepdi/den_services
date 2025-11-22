@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
-from routes import fiberization, fwa, utils
+from routes import intersite
+from routes import fwa, utils
 from core.config import settings
 from pathlib import Path
 
@@ -14,11 +15,11 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
     debug=True,
-    description="API for Fiberization services.",
+    description="Design and Engineering API services for planning and design tools.",
     openapi_tags=[
         {
-            "name": "Fiberization",
-            "description": "Endpoints related to fiberization services."
+            "name": "Intersite",
+            "description": "Endpoints related to intersite fiberization services."
         }
     ]
 )
@@ -54,12 +55,12 @@ async def download_template(fname: str):
     )
 
 # ROUTERS
-@app.get("/", tags=["Fiberization"])
+@app.get("/")
 async def root():
-    return {"message": "Welcome to the Fiberization API!"}
+    return {"message": "Welcome to the Design and Engineering API Services!"}
 
 # INCLUDE ROUTERS
-app.include_router(fiberization.router, prefix="/fiberization", tags=["Fiberization"])
+app.include_router(intersite.router, prefix="/intersite", tags=["Intersite"])
 app.include_router(fwa.router, prefix="/fwa", tags=["Fixed Wireless Access (FWA)"])
 app.include_router(utils.router, prefix="/utils", tags=["Utils"])
 

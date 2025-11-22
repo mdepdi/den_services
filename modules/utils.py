@@ -58,9 +58,7 @@ def spof_detection(
 
         if len(checked_route) > 0:
             total_checked = len(checked_route)
-            print(
-                f"ℹ️ Checking SPOF for {ne} to {fe}. Total Checked Routes: {total_checked}"
-            )
+            print(f"ℹ️ Checking SPOF for {ne} to {fe}. Total Checked Routes: {total_checked}")
 
             for key, node_exist in list(checked_route.items()):
                 # CHECKING SPOF

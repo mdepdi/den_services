@@ -182,7 +182,6 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
             
     # BASE WEIGHT
     if graph_type == "full_weighted":
-        print(f"ℹ️ Calculate Road Weight.")
         roads_gdf = roads_gdf.drop(columns='road_weight')
         roads_gdf['road_weight'] = roads_gdf['highway'].map(road_weight).fillna(1)
 

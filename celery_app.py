@@ -9,7 +9,7 @@ celery_app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
-        'tasks.fiberization_celery',
+        'tasks.intersite_celery',
         'tasks.fwa_celery'
         ],
 )

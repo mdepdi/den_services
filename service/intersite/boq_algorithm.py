@@ -13,35 +13,16 @@ from shapely.strtree import STRtree
 from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points
 from shapely.ops import linemerge
-from tbg_modules.kml import export_kml, sanitize_kml
-from tbg_modules.table import excel_styler
+from modules.kml import export_kml, sanitize_kml
+from modules.table import excel_styler
+from modules.utils import auto_group
 
-def snap_endpoints(line, points_union,tol=1):
-    start, end = Point(line.coords[0]), Point(line.coords[-1])
-    nearest_start = nearest_points(start, points_union)[1]
-    nearest_end   = nearest_points(end, points_union)[1]
-    new_start = nearest_start if start.distance(nearest_start) < tol else start
-    new_end   = nearest_end if end.distance(nearest_end) < tol else end
-    return LineString([new_start, new_end])    
 
-def snap_line(line_geom, old_pt, new_pt):
-    coords = list(line_geom.coords)
-    if Point(coords[0]).equals(old_pt):
-        coords[0] = (new_pt.x, new_pt.y)
-    elif Point(coords[-1]).equals(old_pt):
-        coords[-1] = (new_pt.x, new_pt.y)
-    return LineString(coords)
-
-def connect_line(line_geom, old_pt, new_pt):
-    coords = list(line_geom.coords)
-    if Point(coords[0]).equals(old_pt):
-        coords[0] = (new_pt.x, new_pt.y)
-        coords = [new_pt] + coords
-    elif Point(coords[-1]).equals(old_pt):
-        coords[-1] = (new_pt.x, new_pt.y)
-        coords.append(new_pt)
-
-    return LineString(coords)
+# ------------------------------------------------------
+# LOGGER
+# ------------------------------------------------------
+from core.logger import create_logger
+logger = create_logger(__file__)
 
 def detect_turn(nodes_gdf: gpd.GeoDataFrame,
                         edges_gdf: gpd.GeoDataFrame,
@@ -177,61 +158,6 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
     nodes_gdf["coord_key"] = list(zip(nodes_gdf["x"], nodes_gdf["y"]))
     node_counts = nodes_gdf.groupby("coord_key").size().rename("count")
     nodes_gdf = nodes_gdf.drop_duplicates("coord_key").merge(node_counts, left_on="coord_key", right_index=True, how="left").reset_index(drop=True)
-
-    # # --- SNAP NEARBY ENDPOINTS ---
-    # tree = STRtree(nodes_gdf.geometry)
-    # geom_to_idx = {g.wkb: i for i, g in enumerate(nodes_gdf.geometry)}
-
-    # snapped = {}
-    # snap_updates = []
-    # for geom in nodes_gdf.geometry:
-    #     near_geoms = tree.query(geom, predicate="dwithin", distance=tol)
-    #     if len(near_geoms) <= 1:
-    #         continue
-        
-    #     idx = geom_to_idx[geom.wkb]
-    #     source_id = nodes_gdf.at[idx, 'id_line']
-    #     for jdx in near_geoms:
-    #         near_geom = nodes_gdf.at[jdx, 'geometry']
-    #         near_id = nodes_gdf.at[jdx, 'id_line']
-    #         used_ids = set(i for ids in snapped.values() for i in ids)
-    #         if idx == jdx:
-    #             continue
-    #         if source_id in snapped.keys():
-    #             continue
-    #         if jdx in used_ids:
-    #             continue
-    #         if source_id == near_id:
-    #             continue
-    #         if geom.distance(near_geom) == 0:
-    #             continue
-
-    #         if nodes_gdf.at[idx, "count"] <= nodes_gdf.at[jdx, "count"]:
-    #             snapped.setdefault(source_id, []).append(idx)
-    #             snap_updates.append((idx, near_geom))
-
-    # for idx, geom_near in snap_updates:
-    #     old_geom = nodes_gdf.at[idx, "geometry"]
-    #     nodes_gdf.at[idx, "geometry"] = geom_near
-
-    #     mask = (
-    #         edges_gdf["u"].apply(lambda p: p.equals(old_geom)) |
-    #         edges_gdf["v"].apply(lambda p: p.equals(old_geom))
-    #     )
-    #     for jdx, line in edges_gdf[mask].iterrows():
-    #         edges_gdf.at[jdx, "geometry"] = snap_line(line.geometry, old_geom, geom_near)
-    #         edges_gdf.at[jdx, "u"] = Point(list(edges_gdf.at[jdx, "geometry"].coords[0]))
-    #         edges_gdf.at[jdx, "v"] = Point(list(edges_gdf.at[jdx, "geometry"].coords[-1]))
-
-    # # --- REBUILD NODE REGISTRY AFTER SNAPPING ---
-    # nodes_gdf["x"] = nodes_gdf.geometry.x.round(decimals)
-    # nodes_gdf["y"] = nodes_gdf.geometry.y.round(decimals)
-    # nodes_gdf["coord_key"] = list(zip(nodes_gdf["x"], nodes_gdf["y"]))
-    # nodes_gdf = nodes_gdf.drop_duplicates("coord_key").reset_index(drop=True)
-    # node_counts = nodes_gdf.groupby("coord_key").size().rename("count")
-    # if 'count' in nodes_gdf.columns:
-    #     nodes_gdf = nodes_gdf.drop(columns='count')
-    # nodes_gdf = nodes_gdf.merge(node_counts, left_on="coord_key", right_index=True, how="left")
 
     # --- MAP NODE IDs ---
     nodes_gdf["node_id"] = [f"N{i+1:07d}" for i in range(len(nodes_gdf))]
@@ -381,18 +307,16 @@ def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -
 
     result = gpd.GeoDataFrame(out_rows, crs=source_gdf.crs)
     result = result.explode(ignore_index=True)
-    print(f"🟢 Substring overlay success")
+    logger.info(f"🟢 Substring overlay success")
     return result
 
-def obstacle_detection(lines_gdf: gpd.GeoDataFrame):
-    from tbg_modules.utils import auto_group
-    
+def obstacle_detection(lines_gdf: gpd.GeoDataFrame):    
     lines_gdf = lines_gdf.copy()
     lines_gdf["line_id"] = lines_gdf.index
 
     ring_name = lines_gdf['ring_name'].mode()[0]
-    osm_railway = gpd.read_parquet(r"D:\Data Analytical\DATA\03. Road Network\railway_osm.parquet")
-    osm_toll = gpd.read_parquet(r"D:\Data Analytical\DATA\03. Road Network\toll.parquet")
+    osm_railway = gpd.read_parquet(r"D:\JACOBS\DATA\03. Road Network\railway_osm.parquet")
+    osm_toll = gpd.read_parquet(r"D:\JACOBS\DATA\03. Road Network\toll.parquet")
     osm_railway = osm_railway.rename(columns={'name':'rail_name'})
     osm_toll = osm_toll.rename(columns={'name':'toll_name'})
 
@@ -415,11 +339,11 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame):
         group = group.rename(columns={'region':'group'})
         isec_rail = gpd.sjoin(isec_rail, group[['group', 'geometry']]).drop(columns='index_right')
         isec_rail = isec_rail.drop_duplicates(subset='group')
-        print(f"🟠 Found {len(isec_rail)} intersect with railway")
+        logger.info(f"🟠 Found {len(isec_rail)} intersect with railway")
         lines_gdf = lines_gdf.merge(isec_rail[['line_id', 'rail_name', 'obstacle_railway']], how='left', on='line_id')
     else:
         lines_gdf['obstacle_railway'] = None
-        print(f"🟢 No railway obstacle in {ring_name}.")
+        logger.info(f"🟢 No railway obstacle in {ring_name}.")
 
     # TOLL
     if not osm_toll.empty:
@@ -432,11 +356,11 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame):
         group = group.rename(columns={'region':'group'})
         isec_toll = gpd.sjoin(isec_toll, group[['group', 'geometry']]).drop(columns='index_right')
         isec_toll = isec_toll.drop_duplicates(subset='group')
-        print(f"🟠 Found {len(isec_toll)} intersect with highway")
+        logger.info(f"🟠 Found {len(isec_toll)} intersect with highway")
         lines_gdf = lines_gdf.merge(isec_toll[['line_id','toll_name', 'obstacle_toll']], how='left', left_index=True, right_index=True)
     else:
         lines_gdf['obstacle_toll'] = None
-        print(f"🟢 No highway obstacle in {ring_name}.")
+        logger.info(f"🟢 No highway obstacle in {ring_name}.")
 
     # # JOIN ADMIN
     # admin_2024 = admin_2024.to_crs(epsg=3857)
@@ -467,7 +391,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # =============================
     # LOAD FO REFERENCE GEOMETRY
     # =============================
-    fo_route = r"D:\Data Analytical\DATA\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
+    fo_route = r"D:\JACOBS\DATA\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
     fo_route = gpd.read_parquet(fo_route)
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
@@ -479,7 +403,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     points = points.copy().to_crs(epsg=3857)
     lines = lines.copy().to_crs(epsg=3857)
     ring_name = points['ring_name'].mode()[0]
-    print(f"🌏 {ring_name} BOQ running ...")
+    logger.info(f"🌏 {ring_name} BOQ running ...")
 
     if points.empty:
         raise ValueError("Points data is empty.")
@@ -495,8 +419,8 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     nodes = nodes.to_crs(epsg=3857)
     edges = edges.to_crs(epsg=3857)
 
-    nodes.to_parquet(fr"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Nodes_{ring_name}.parquet")
-    edges.to_parquet(fr"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Edges_{ring_name}.parquet")
+    nodes.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Nodes_{ring_name}.parquet")
+    edges.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Edges_{ring_name}.parquet")
 
     # =============================
     # IDENTIFY TURN / BRANCH POINTS
@@ -592,7 +516,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     existing_route = gpd.overlay(lines, fo_route, how='intersection', keep_geom_type=True)
 
     if existing_route.empty:
-        print("⚠️ No existing FO intersections found.")
+        logger.info("⚠️ No existing FO intersections found.")
         return points, lines
 
     existing_route = existing_route[['id_line', 'fiber', 'geometry']].reset_index(drop=True)
@@ -613,9 +537,9 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     
     if len(dropped) > 0:
         existing_route = existing_route.drop(index=dropped)
-        print(f"ℹ️ Dropped {len(dropped)} overlapped lines.")
+        logger.info(f"ℹ️ Dropped {len(dropped)} overlapped lines.")
     existing_route = existing_route.drop_duplicates('geometry').reset_index(drop=True)
-    existing_route.to_parquet(fr"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 1\BoQ Intersite\Export\Trial BOQ\Existing Route_{ring_name}.parquet")
+    existing_route.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 1\BoQ Intersite\Export\Trial BOQ\Existing Route_{ring_name}.parquet")
 
     lines['fo_exist'] = [{} for _ in range(len(lines))]
     lines['pole_exist'] = [{} for _ in range(len(lines))]
@@ -639,16 +563,16 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
                 continue
 
             if fo_geom.length > 1000:
-                print(f"ℹ️ FO Existing: {fiber_name} | Length: {fo_geom.length}")
+                logger.info(f"ℹ️ FO Existing: {fiber_name} | Length: {fo_geom.length}")
                 backbone = shapely.difference(backbone, fo_geom)
                 closure = shapely.intersection(fo_geom, backbone)
                 fo_exist_dict[fiber_name] = fo_geom.wkt
 
                 if not closure.is_empty:
-                    print(closure)
+                    logger.info(closure)
                     closure_dict[fiber_name] = closure.wkt
             elif fo_geom.length > 100 and fo_geom.length < 1000:
-                print(f"ℹ️ Pole Existing: {fiber_name} | Length: {fo_geom.length}")
+                logger.info(f"ℹ️ Pole Existing: {fiber_name} | Length: {fo_geom.length}")
                 pole_exist_dict[fiber_name] = fo_geom.wkt
             else:
                 continue
@@ -663,7 +587,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # =============================
     lines = obstacle_detection(lines)
 
-    print(f"🟢 {ring_name} BOQ Processing complete.\n")
+    logger.info(f"🟢 {ring_name} BOQ Processing complete.\n")
     return points, lines
 
 
@@ -762,7 +686,7 @@ def identify_connection(
     if len(start_hub) == 0:
         start_hub = target_fiber[target_fiber[opposite_column].astype(str).isin(hub_ids)][opposite_column].values
     if len(start_hub) == 0:
-        print(f"❌ No FO Hub found in ring {ring}")
+        logger.info(f"❌ No FO Hub found in ring {ring}")
         return None, None
 
     start_hub = start_hub[0]
@@ -801,12 +725,12 @@ def identify_connection(
         elif site_id in site_list['site_id'].astype(str).values:
             row = site_list[site_list['site_id'].astype(str) == site_id].iloc[0].to_dict()
         else:
-            print(f"⚠️ Site {site_id} not found.")
+            logger.info(f"⚠️ Site {site_id} not found.")
             continue
         points_sequential.append(row)
 
     if not points_sequential:
-        print(f"⚠️ No valid points found for ring {ring}")
+        logger.info(f"⚠️ No valid points found for ring {ring}")
         return None, None
 
     points_sequential = gpd.GeoDataFrame(points_sequential, crs='EPSG:3857').reset_index(drop=True)
@@ -847,7 +771,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
 
             # skip bad geometries
             if start_point.geometry is None or end_point.geometry is None:
-                print(f"⚠️ Skipping segment in ring {ring}: invalid geometry.")
+                logger.info(f"⚠️ Skipping segment in ring {ring}: invalid geometry.")
                 continue
 
             # handle FO hub cases
@@ -865,7 +789,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
                 end_coords = list(end_point.geometry.coords)[0][:2]
                 line_geom = LineString([start_coords, end_coords])
             except Exception as e:
-                print(f"⚠️ Failed to create line in ring {ring}: {e}")
+                logger.info(f"⚠️ Failed to create line in ring {ring}: {e}")
                 continue
 
             record = {
@@ -883,7 +807,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
             topology_records.append(record)
 
     if not topology_records:
-        print("⚠️ No topology records created.")
+        logger.info("⚠️ No topology records created.")
         return gpd.GeoDataFrame(columns=['geometry'], geometry='geometry', crs='EPSG:3857')
 
     topology_gdf = gpd.GeoDataFrame(topology_records, geometry='geometry', crs='EPSG:3857')
@@ -1173,28 +1097,28 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
             sheet_name = "Summary"
             summary_compiled = summary_compiled.reset_index()
             excel_styler(summary_compiled).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(summary_compiled):,} records written.")
+            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(summary_compiled):,} records written.")
         if not sheet_sitelist.empty:
             sheet_name = "Sitelist Information"
             sheet_sitelist = sheet_sitelist.reset_index(drop=True)
             excel_styler(sheet_sitelist).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(sheet_sitelist):,} records written.")
+            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_sitelist):,} records written.")
         if not sheet_devices.empty:
             sheet_name = "Devices Information"
             sheet_devices = sheet_devices.reset_index(drop=True)
             excel_styler(sheet_devices).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(sheet_devices):,} records written.")
+            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_devices):,} records written.")
         if not sheet_routes.empty:
             sheet_name = "Routes Information"
             sheet_routes = sheet_routes.reset_index(drop=True)
             excel_styler(sheet_routes).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(sheet_routes):,} records written.")
+            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_routes):,} records written.")
         if not sheet_obstacle.empty:
             sheet_name = "Obstacle"
             sheet_obstacle = sheet_obstacle.reset_index(drop=True)
             excel_styler(sheet_obstacle).to_excel(writer, sheet_name=sheet_name, index=False)
-            print(f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written.")
-    print("✅ Save Excel file BOQ Done.")
+            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written.")
+    logger.info("✅ Save Excel file BOQ Done.")
 
 def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, folder:str, **kwargs):
     program = kwargs.get("program", "N/A")
@@ -1208,7 +1132,7 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
         if not match.empty:
             return match.iloc[0]
         else:
-            print(f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}.")
+            logger.info(f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}.")
             return None
 
     lines_boq["start"] = lines_boq["near_end"].astype(str).apply(safe_get_geometry)
@@ -1241,11 +1165,11 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
     # DESIGN
     # -- Topology --
     try:
-        print(f"ℹ️ Total Point {len(points_boq)}")
+        logger.info(f"ℹ️ Total Point {len(points_boq)}")
         point_conn, connection = identify_connection(ring=folder, target_fiber=lines_boq, target_point=points_boq)
         points_boq = point_conn.copy()
     except:
-        print(f"Failed debug.")
+        logger.info(f"Failed debug.")
 
     ring_topology = create_topology(points_boq)
     ring_topology = ring_topology.to_crs(epsg=4326)
@@ -1265,11 +1189,11 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
         else:
             far_end = ring_route[ring_route['far_end'].astype(str).str.strip() == str(ne).strip()].copy()
             if not far_end.empty:
-                print(f"🟢 {ne} not found as NE, but found as FE")
+                logger.info(f"🟢 {ne} not found as NE, but found as FE")
                 sorted_route.append(far_end)
             else:
-                print(f"🔴 {ne} not found in ring route.")
-                print(ring_route[['near_end', 'far_end']])
+                logger.info(f"🔴 {ne} not found in ring route.")
+                logger.info(ring_route[['near_end', 'far_end']])
     
     sorted_route = pd.concat(sorted_route)
     sorted_route = sorted_route.drop_duplicates('geometry').reset_index(drop=True)
@@ -1357,7 +1281,7 @@ def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir
         obstacle_railway.to_parquet(os.path.join(export_dir, "Obstacle_Railway_BOQ.parquet"))
     if not obstacle_toll.empty:
         obstacle_toll.to_parquet(os.path.join(export_dir, "Obstacle_Toll_BOQ.parquet"))
-    print(f"✅ Save BOQ Done.")
+    logger.info(f"✅ Save BOQ Done.")
 
 def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **kwargs):
     vendor = kwargs.get("vendor", "TBG")
@@ -1386,21 +1310,21 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **
         ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
         ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
         main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor=vendor, program=program)
-        print(f"🟢 {ring} BOQ KMZ inserted.")
+        logger.info(f"🟢 {ring} BOQ KMZ inserted.")
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)
     end_time = time.time()
     kmz_time = round((end_time-start_time)/60,2)
 
-    print(f"✅ All BOQ Process Done.")
-    print(f"ℹ️ Time Consumed:")
-    print(f"BOQ Parallel Time   : {boq_time:,} minutes")
-    print(f"Excel Result Time   : {excel_time:,} minutes")
-    print(f"KMZ Result Time     : {kmz_time:,} minutes")
+    logger.info(f"✅ All BOQ Process Done.")
+    logger.info(f"ℹ️ Time Consumed:")
+    logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
+    logger.info(f"Excel Result Time   : {excel_time:,} minutes")
+    logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")
 
 if __name__ == "__main__":
-    all_points = gpd.read_parquet(r"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Points.parquet")
-    all_lines = gpd.read_parquet(r"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Paths.parquet")
+    all_points = gpd.read_parquet(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Points.parquet")
+    all_lines = gpd.read_parquet(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Paths.parquet")
     
     # list_ring = [
     #     "TBG-MRS-H2B2NewSiteCoverage-DF066",
@@ -1412,7 +1336,7 @@ if __name__ == "__main__":
     # all_points = all_points[all_points['ring_name'].isin(list_ring)]
     # all_lines = all_lines[all_lines['ring_name'].isin(list_ring)]
     
-    export_dir = r"D:\Data Analytical\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\BOQ"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\BOQ"
     os.makedirs(export_dir, exist_ok=True)
     
     start_time = time.time()
@@ -1439,14 +1363,14 @@ if __name__ == "__main__":
         ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
         ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
         main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor='TBG', program="BOQ Method")
-        print(f"🟢 {ring} BOQ KMZ inserted.")
+        logger.info(f"🟢 {ring} BOQ KMZ inserted.")
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)
     end_time = time.time()
     kmz_time = round((end_time-start_time)/60,2)
 
-    print(f"✅ All BOQ Process Done.")
-    print(f"ℹ️ Time Consumed:")
-    print(f"BOQ Parallel Time   : {boq_time:,} minutes")
-    print(f"Excel Result Time   : {excel_time:,} minutes")
-    print(f"KMZ Result Time     : {kmz_time:,} minutes")
+    logger.info(f"✅ All BOQ Process Done.")
+    logger.info(f"ℹ️ Time Consumed:")
+    logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
+    logger.info(f"Excel Result Time   : {excel_time:,} minutes")
+    logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")

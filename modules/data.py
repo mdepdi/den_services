@@ -335,8 +335,6 @@ def fiber_utilization(data_gdf: gpd, overlap:bool=True):
 
         existing.append(fo_intersects)
         new.append(fo_not_intersects)
-        # if num == 2:
-        #     break
 
     existing = pd.concat(existing, ignore_index=True)
     existing_gdf = gpd.GeoDataFrame(existing, geometry='geometry')
