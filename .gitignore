@@ -135,3 +135,6 @@ uploads/
 export/
 upload/
 dump/
+
+# ZIP FILE
+*.zip
