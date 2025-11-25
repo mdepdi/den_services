@@ -17,9 +17,16 @@ import zipfile
 from core.config import settings
 from modules.data import read_gdf
 from modules.table import sanitize_header
-from modules.validation import input_insertring, input_newring, input_unsupervised, identify_fiberzone, prepare_prevdata, identify_insertdata, validate_fixroute
+
+from service.intersite.ring_algorithm import supervised_validation
+from service.intersite.clustering_algorithm import unsupervised_validation
+from service.intersite.fixroute_algorithm import validate_fixroute
+from service.intersite.topology_algorithm import validate_topology
+from service.intersite.poligonized_algorithm import validate_poligonize
+
+from modules.validation import input_insertring, identify_fiberzone, prepare_prevdata, identify_insertdata
 from service.update_intersite import main_update_intersite
-from tasks.intersite_celery import task_supervised, task_unsupervised, task_fixroute, task_insertring
+from tasks.intersite_celery import task_insertring, task_supervised, task_unsupervised, task_fixroute, task_polygon_intersite, task_topology_intersite
 
 # EXPORT DIR
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -27,10 +34,10 @@ EXPORT_DIR = settings.EXPORT_DIR
 DATA_DIR = settings.DATA_DIR
 
 class NewRingSchema(BaseModel):
-    excel_file: Optional[UploadFile] = File(
+    excel_file: UploadFile = File(
         None, description="Excel file containing ring data. Must be containing columns: 'site_id', 'site_name', 'site_type', 'lat', 'long', 'region', 'ring_name', 'flag'"
     )
-    fiber_route: Optional[UploadFile] = File(
+    fiber_route: UploadFile = File(
         None, description="GPKG, Parquet, or Shapefile containing fiber route data."
     )
     method: str = Form(..., description="Method to use: 'supervised' or 'unsupervised'")
@@ -101,11 +108,8 @@ async def identify_insert(
     excel_file: UploadFile = File(
         ..., description="Excel file containing ring data to insert."
     ),
-    previous_fiber: UploadFile = File(
-        ..., description="GPKG, Parquet, or Shapefile containing previous fiber data."
-    ),
-    previous_points: UploadFile = File(
-        ..., description="GPKG, Parquet, or Shapefile containing previous points data."
+    kmz_design: UploadFile = File(
+        ..., description="KMZ file containing existing design plan."
     ),
     max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
     search_radius: int = Form(2000, description="Maximum radius(m) for search insert ring.")
@@ -120,42 +124,24 @@ async def identify_insert(
     **Insert Data (.xlsx)** : Use this data to execute in **Insert Ring API**  
     **New Data (.xlsx)**    : Use this data to execute in **Unsupervised API**
     """
-    # Read previous fiber file
     try:
-        suffix = os.path.splitext(previous_fiber.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
-            tmp_fiber.write(previous_fiber.file.read())
-            tmp_fiber_path = tmp_fiber.name
+        suffix = os.path.splitext(kmz_design.filename)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_kmz:
+            tmp_kmz.write(kmz_design.file.read())
+            tmp_kmz_path = tmp_kmz.name
         
-        if suffix in ['.gpkg', '.parquet', '.shp']:
-            prev_fiber_gdf = read_gdf(tmp_fiber_path)
-            print(f"📥 Reading previous fiber file: {previous_fiber.filename}")
+        if suffix in ['.kmz', '.kml']:
+            prev_point_gdf = read_gdf(tmp_kmz_path, geom_type='point')
+            prev_fiber_gdf = read_gdf(tmp_kmz_path, geom_type='line')
+            prev_fiber_gdf = prev_fiber_gdf[~(prev_fiber_gdf['name'].str.lower().str.contains('connection'))].reset_index(drop=True)
+            print(f"📥 Reading previous design plan: {kmz_design.filename}")
         else:
-            return {"error": "Unsupported previous fiber file format. Supported formats are GPKG, Parquet, and Shapefile."}
+            return {"error": "Unsupported previous design format. Supported formats are GPKG, Parquet, and Shapefile."}
     except Exception as e:
-        return {"error": f"Failed to read previous fiber file: {str(e)}"}
+        return {"error": f"Failed to read previous design: {str(e)}"}
     finally:
-        if os.path.exists(tmp_fiber_path):
-            os.remove(tmp_fiber_path)
-
-    # Read previous points file
-    try:
-        suffix = os.path.splitext(previous_points.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_points:
-            tmp_points.write(previous_points.file.read())
-            tmp_points_path = tmp_points.name
-        
-        if suffix in ['.gpkg', '.parquet', '.shp']:
-            prev_points_gdf = read_gdf(tmp_points_path)
-            print(f"📥 Reading previous points file: {previous_points.filename}")
-        else:
-            return {"error": "Unsupported previous points file format. Supported formats are GPKG, Parquet, and Shapefile."}
-    except Exception as e:
-        return {"error": f"Failed to read previous points file: {str(e)}"}
-    
-    finally:
-        if os.path.exists(tmp_points_path):
-            os.remove(tmp_points_path)
+        if os.path.exists(tmp_kmz_path):
+            os.remove(tmp_kmz_path)
 
     # Process data
     try:
@@ -168,12 +154,11 @@ async def identify_insert(
             result_paths = os.path.join(EXPORT_DIR, 'Identify Insert', result_paths)
             os.makedirs(result_paths, exist_ok=True)
 
-            new_sites, existing_sites, hubs = input_insertring(tmp_excel_path)
-
             # PREPARE PREV DATA
-            prev_fiber_gdf, prev_points_gdf = prepare_prevdata(prev_fiber_gdf, prev_points_gdf)
+            new_sites, existing_sites, hubs = input_insertring(tmp_excel_path)
+            prev_fiber_gdf, prev_point_gdf = prepare_prevdata(prev_fiber_gdf, prev_point_gdf)
             newsites_within, newsites_outside = identify_fiberzone(new_sites, prev_fiber=prev_fiber_gdf, search_radius=search_radius)
-            mapped_insert, dropped_insert = identify_insertdata(newsites_within, prev_fiber=prev_fiber_gdf, prev_points=prev_points_gdf, search_radius=search_radius, max_member=max_member)
+            mapped_insert, dropped_insert = identify_insertdata(newsites_within, prev_fiber=prev_fiber_gdf, prev_points=prev_point_gdf, search_radius=search_radius, max_member=max_member)
             
             # INSERT DATA
             mapped_insert = mapped_insert.sort_values(by="distance_to_fiber").reset_index(drop=True)
@@ -246,56 +231,36 @@ async def insert_ring(
     mapped_insert: UploadFile = File(
         ..., description="Excel file containing ring data to insert."
     ),
-    previous_fiber: UploadFile = File(
-        ..., description="GPKG, Parquet, or Shapefile containing previous fiber data."
-    ),
-    previous_points: UploadFile = File(
-        ..., description="GPKG, Parquet, or Shapefile containing previous points data."
+    kmz_design: UploadFile = File(
+        ..., description="KMZ file containing existing design plan."
     ),
     max_member: int = Form(12, description="Maximum number of members to consider for insertion.")
 ):
     """
     Insert new rings into existing fiber network based on the provided Excel file and previous data.
     """
-    # Read previous fiber file
-    upload_insert_dir = os.path.join(UPLOAD_DIR, "Intersite", "Insert Ring")
+    date_today = datetime.now().strftime("%Y%m%d")
+    upload_insert_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
     os.makedirs(upload_insert_dir, exist_ok=True)
+
     try:
-
-        suffix = os.path.splitext(previous_fiber.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
-            tmp_fiber.write(previous_fiber.file.read())
-            tmp_fiber_path = tmp_fiber.name
+        suffix = os.path.splitext(kmz_design.filename)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_kmz:
+            tmp_kmz.write(kmz_design.file.read())
+            tmp_kmz_path = tmp_kmz.name
         
-        if suffix in ['.gpkg', '.parquet', '.shp']:
-            prev_fiber_gdf = read_gdf(tmp_fiber_path)
-            print(f"📥 Reading previous fiber file: {previous_fiber.filename}")
+        if suffix in ['.kmz', '.kml']:
+            prev_point_gdf = read_gdf(tmp_kmz_path, geom_type='point')
+            prev_fiber_gdf = read_gdf(tmp_kmz_path, geom_type='line')
+            prev_fiber_gdf = prev_fiber_gdf[~(prev_fiber_gdf['name'].str.lower().str.contains('connection'))].reset_index(drop=True)
+            print(f"📥 Reading previous design plan: {kmz_design.filename}")
         else:
-            return {"error": "Unsupported previous fiber file format. Supported formats are GPKG, Parquet, and Shapefile."}
+            return {"error": "Unsupported previous design format. Supported formats are GPKG, Parquet, and Shapefile."}
     except Exception as e:
-        return {"error": f"Failed to read previous fiber file: {str(e)}"}
+        return {"error": f"Failed to read previous design: {str(e)}"}
     finally:
-        if os.path.exists(tmp_fiber_path):
-            os.remove(tmp_fiber_path)
-
-    # Read previous points file
-    try:
-        suffix = os.path.splitext(previous_points.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_points:
-            tmp_points.write(previous_points.file.read())
-            tmp_points_path = tmp_points.name
-        
-        if suffix in ['.gpkg', '.parquet', '.shp']:
-            prev_points_gdf = read_gdf(tmp_points_path)
-            print(f"📥 Reading previous points file: {previous_points.filename}")
-        else:
-            return {"error": "Unsupported previous points file format. Supported formats are GPKG, Parquet, and Shapefile."}
-    except Exception as e:
-        return {"error": f"Failed to read previous points file: {str(e)}"}
-
-    finally:
-        if os.path.exists(tmp_points_path):
-            os.remove(tmp_points_path)
+        if os.path.exists(tmp_kmz_path):
+            os.remove(tmp_kmz_path)
 
     # Process data
     try:
@@ -323,7 +288,7 @@ async def insert_ring(
     print(f"📥 Temporary fiber data saved to: {temp_fiber_path}")
 
     temp_points_path = os.path.join(upload_insert_dir, f"{uuid4().hex}_prev_points_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet")
-    prev_points_gdf.to_parquet(temp_points_path, index=False)
+    prev_point_gdf.to_parquet(temp_points_path, index=False)
     print(f"📥 Temporary fiber data saved to: {temp_points_path}")
 
     # CELERY TASK
@@ -349,7 +314,6 @@ async def insert_ring(
 # =============================
 # NEW RING
 # =============================
-
 # SUPERVISED
 @router.post("/supervised", tags=["Intersite"])
 async def supervised_ring(
@@ -383,12 +347,14 @@ async def supervised_ring(
     if excel_file is None:
         return {"error": "Excel file is required."}
     
-    upload_newring_dir = os.path.join(UPLOAD_DIR, "Intersite", "Supervised")
-    os.makedirs(upload_newring_dir, exist_ok=True)
-    method = "supervised"
+    date_today = datetime.now().strftime("%Y%m%d")
+    supervised_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Supervised")
+    os.makedirs(supervised_upload, exist_ok=True)
     
     try:
         site_data = pd.read_excel(excel_file.file)
+        site_data = sanitize_header(site_data)
+        site_data = supervised_validation(site_data)
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
 
@@ -397,12 +363,8 @@ async def supervised_ring(
     if 'index_right' in site_data.columns:
         site_data = site_data.drop(columns=['index_right'])
 
-    # VALIDATION
-    site_data = sanitize_header(site_data)
-    site_data = input_newring(site_data, method=method)
-
     # SAVE AS PARQUET
-    temp_parquet_path = os.path.join(upload_newring_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
+    temp_parquet_path = os.path.join(supervised_upload, f"{datetime.now().strftime('%H%M%S')}_site_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     print(f"📥 Temporary site data saved to: {temp_parquet_path}")
 
@@ -425,7 +387,7 @@ async def supervised_ring(
     except Exception as e:
         return {"error": f"Failed to process data: {str(e)}"}
     
-# SUPERVISED
+# UNSUPERVISED
 @router.post("/unsupervised", tags=["Intersite"])
 async def unsupervised_ring(
     excel_file: UploadFile = File(None, description="Excel file containing sitelist and hubs sheet."),
@@ -451,9 +413,10 @@ async def unsupervised_ring(
     # Read Excel file
     if excel_file is None:
         return {"error": "Excel file is required."}
-    
-    upload_newring_dir = os.path.join(UPLOAD_DIR, "Intersite", "Unsupervised")
-    os.makedirs(upload_newring_dir, exist_ok=True)
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    unsupervised_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Unsupervised")
+    os.makedirs(unsupervised_upload, exist_ok=True)
     
     try:
     # LOAD DATA
@@ -466,13 +429,7 @@ async def unsupervised_ring(
                 
             nr_sites = pd.read_excel(xls, 'sitelist')
             nr_hubs = pd.read_excel(xls, 'hubs')
-            nr_sites, nr_hubs = input_unsupervised(nr_sites, nr_hubs)
-            sites_geom = gpd.points_from_xy(nr_sites['long'], nr_sites['lat'], crs="EPSG:4326")
-            hubs_geom = gpd.points_from_xy(nr_hubs['long'], nr_hubs['lat'], crs="EPSG:4326")
-            
-            nr_sites = gpd.GeoDataFrame(nr_sites, geometry=sites_geom)
-            nr_hubs = gpd.GeoDataFrame(nr_hubs, geometry=hubs_geom)
-
+            nr_sites, nr_hubs = unsupervised_validation(nr_sites, nr_hubs)
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
     
@@ -484,13 +441,9 @@ async def unsupervised_ring(
     if 'index_right' in site_data.columns:
         site_data = site_data.drop(columns=['index_right'])
 
-    # VALIDATION
-    site_data = sanitize_header(site_data)
-    site_data = input_newring(site_data, method="unsupervised")
-
     # SAVE AS PARQUET
-    temp_parquet_path = os.path.join(upload_newring_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
-    temp_hub_path = os.path.join(upload_newring_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_hub_data_{uuid4().hex}.parquet")
+    temp_parquet_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%H%M%S')}_site_data_{uuid4().hex}.parquet")
+    temp_hub_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%H%M%S')}_hub_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     hubs_data.to_parquet(temp_hub_path, index=False)
     print(f"📥 Temporary site data saved to : {temp_parquet_path}")
@@ -521,9 +474,10 @@ async def unsupervised_ring(
     
 # FIX ROUTE
 @router.post("/fixroute", tags=["Intersite"])
-async def create_fixroute(
+async def fixroute_ring(
     excel_file: UploadFile = File(None, description="Excel file containing fix route template."),
-    program: str = Form(None, description="Program name if not defined")
+    program: Optional[str] = Form(None, description="Program name if not defined"),
+    boq: Optional[bool] = Form(False, description="Output file to choose"),
 ):
     """
     Create Intersite design based on **Fix Route Alghorithm**.  
@@ -542,9 +496,10 @@ async def create_fixroute(
     # Read Excel file
     if excel_file is None:
         return {"error": "Excel file is required."}
-    
-    upload_newring_dir = os.path.join(UPLOAD_DIR, "Fix Route")
-    os.makedirs(upload_newring_dir, exist_ok=True)
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    fixroute_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Fix Route")
+    os.makedirs(fixroute_upload, exist_ok=True)
     
     try:
     # LOAD DATA
@@ -553,26 +508,18 @@ async def create_fixroute(
             gdf_ne, gdf_fe = validate_fixroute(fixroute_input)            
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
-
-    if 'index_right' in gdf_ne.columns:
-        gdf_ne = gdf_ne.drop(columns=['index_right'])
-    if 'index_right' in gdf_fe.columns:
-        gdf_fe = gdf_fe.drop(columns=['index_right'])
-
-    # SAVE AS PARQUET
-    temp_ne = os.path.join(upload_newring_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_ne_data_{uuid4().hex}.parquet")
-    temp_fe = os.path.join(upload_newring_dir, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_fe_data_{uuid4().hex}.parquet")
-    gdf_ne.to_parquet(temp_ne, index=False)
-    gdf_fe.to_parquet(temp_fe, index=False)
-    print(f"📥 Temporary ne data saved to: {temp_ne}")
-    print(f"📥 Temporary fe data saved to: {temp_fe}")
+    
+    # SAVE DATA
+    excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
+    fixroute_input.to_excel(excel_path, index=False)
+    print(f"📥 Temporary Excel data saved to: {excel_path}")
 
     # Process data
     try:
         data = {
-            "ne_path": temp_ne,
-            "fe_path": temp_fe,
+            "template_path": excel_path,
             "program": program,
+            "boq": boq,
         }
         data = dumps(data, default=str)
         celery_task = task_fixroute.apply_async(args=[data])
@@ -585,11 +532,165 @@ async def create_fixroute(
     except Exception as e:
         return {"error": f"Failed to process data: {str(e)}"}
 
+# POLYGON BASED INTERSITE
+@router.post("/polygon-intersite", tags=["Intersite"])
+async def polygon_intersite(
+    excel_file: UploadFile = File(None, description="Excel file containing sitelist and hubs sheet."),
+    polygon_file: UploadFile = File(None, description="Polygon file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
+    program: Optional[str] = Form("Fiberization", description="Program name if needed."),
+    boq: Optional[bool] = Form(False, description="Output file to choose")
+):
+    """
+    Create Intersite design **Polygon Based**.  
+    Excel file must be containing **'sitelist'** and **'hubs'** sheet.
+
+    **Template Polygon Fiberization**  
+    [🟢 Download Here](http://localhost:8000/download-template/Template_Unsupervised_Fiberization.xlsx)
+
+    **Note:**
+    - Hubs should containing 'FO Hub' for interconnection source.
+    - Each ring name must be on the same region.
+    - Make sure the latitude and longitude is not reversed.
+    """
+
+    # Read Excel file
+    if excel_file is None:
+        return {"error": "Excel file is required."}
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    polygon_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Polygon Based")
+    os.makedirs(polygon_upload, exist_ok=True)
+    
+    try:
+        sitelist, hubs = validate_poligonize(excel_file.file)
+    except Exception as e:
+        return {"error": f"Failed to read Excel file: {str(e)}"}
+    
+    try:
+        suffix = os.path.splitext(polygon_file.filename)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
+            tmp_fiber.write(polygon_file.file.read())
+            tmp_fiber_path = tmp_fiber.name
+        
+        if suffix in ['.kml', '.kmz','.gpkg', '.parquet', '.shp']:
+            polygon_file = read_gdf(tmp_fiber_path, geom_type='polygon')
+            print(f"📥 Reading polygon file: {polygon_file.filename}")
+        else:
+            return {"error": f"Unsupported polygon file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
+    except Exception as e:
+        return {"error": f"Failed to read polygon file: {str(e)}"}
+
+    # SAVE DATA
+    excel_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_template_{uuid4().hex}.xlsx")
+    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_polygon_{uuid4().hex}.xlsx")
+    
+    with pd.ExcelWriter(excel_path) as xls:
+        hubs.to_excel(xls, sheet_name='hubs')
+        sitelist.to_excel(xls, sheet_name='sitelist')
+
+    polygon_file.to_parquet(polygon_path, index=False)
+    print(f"📥 Temporary Excel data saved to: {excel_path}")
+    print(f"📥 Temporary Polygon data saved to: {polygon_path}")
+
+    # Process data
+    try:
+        data = {
+            "excel_path": excel_path,
+            "polygon_path": polygon_path,
+            "program": program,
+            "boq": boq,
+        }
+        data = dumps(data, default=str)
+        celery_task = task_polygon_intersite.apply_async(args=[data])
+
+        return {
+            "message": "Polygon based intersite task has been initiated.",
+            "task_id": celery_task.id,
+            "task_status_url": f"/tasks/status/{celery_task.id}"
+        }
+    except Exception as e:
+        return {"error": f"Failed to process data: {str(e)}"}
+
+# TOPOLOGY BASED INTERSITE
+@router.post("/topology-intersite", tags=["Intersite"])
+async def topology_intersite(
+    excel_file: UploadFile = File(None, description="Excel file containing sitelist."),
+    topology_file: UploadFile = File(None, description="Topology file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
+    program: Optional[str] = Form("Fiberization", description="Program name if needed."),
+    boq:Optional[bool] = Form(False, description="Output file to choose")
+):
+    """
+    Create Intersite design **Topology Based**.  
+    Excel file must be containing ['site_id', 'long', 'lat', 'site_type'].
+
+    **Template Topology Fiberization**  
+    [🟢 Download Here](http://localhost:8000/download-template/Template_Supervised_Fiberization.xlsx)
+
+    **Note:**
+    - Each ring name must be on the same region.
+    - Make sure the latitude and longitude is not reversed.
+    """
+
+    # Read Excel file
+    if excel_file is None:
+        return {"error": "Excel file is required."}
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    topology_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Topology Based")
+    os.makedirs(topology_upload, exist_ok=True)
+    
+    try:
+        sitelist = validate_topology(excel_file.file)
+    except Exception as e:
+        return {"error": f"Failed to read Excel file: {str(e)}"}
+    
+    try:
+        suffix = os.path.splitext(topology_file.filename)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
+            tmp_fiber.write(topology_file.file.read())
+            tmp_fiber_path = tmp_fiber.name
+        
+        if suffix in ['.kml', '.kmz','.gpkg', '.parquet', '.shp']:
+            topology_file = read_gdf(tmp_fiber_path, geom_type='line')
+            print(f"📥 Reading topology file: {topology_file.filename}")
+        else:
+            return {"error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
+    except Exception as e:
+        return {"error": f"Failed to read topology file: {str(e)}"}
+
+    # SAVE DATA
+    excel_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_template_{uuid4().hex}.xlsx")
+    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_topology_{uuid4().hex}.xlsx")
+    
+    with pd.ExcelWriter(excel_path) as xls:
+        sitelist.to_excel(xls, sheet_name='sitelist')
+
+    topology_file.to_parquet(topology_path, index=False)
+    print(f"📥 Temporary Excel data saved to: {excel_path}")
+    print(f"📥 Temporary Topology data saved to: {topology_path}")
+
+    # Process data
+    try:
+        data = {
+            "excel_path": excel_path,
+            "topology_path": topology_path,
+            "program": program,
+            "boq": boq,
+        }
+        data = dumps(data, default=str)
+        celery_task = task_topology_intersite.apply_async(args=[data])
+
+        return {
+            "message": "Topology based intersite task has been initiated.",
+            "task_id": celery_task.id,
+            "task_status_url": f"/tasks/status/{celery_task.id}"
+        }
+    except Exception as e:
+        return {"error": f"Failed to process data: {str(e)}"}
 
 # ================
 # UPDATE INTERSITE
 # ================
-
 @router.post("/update_intersite", tags=["Intersite"])
 async def update_intersite(
     point_gdf: UploadFile = File(

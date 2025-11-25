@@ -8,6 +8,6 @@ __pycache__/
 .idea/
 .git/
 .gitignore
-./exporst/
+./exports/
 ./data/
 ./uploads/

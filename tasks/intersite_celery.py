@@ -9,7 +9,9 @@ from celery_app import celery_app
 from service.modularized_insert_ring import main_insertring
 from service.intersite.ring_algorithm import main_supervised
 from service.intersite.clustering_algorithm import main_unsupervised
-from service.modularized_fix_route import main_fixroute
+from service.intersite.topology_algorithm import main_topology
+from service.intersite.poligonized_algorithm import main_poligonized
+from service.intersite.fixroute_algorithm import main_fixroute
 from core.config import settings
 
 EXPORT_DIR = settings.EXPORT_DIR
@@ -127,10 +129,10 @@ def task_supervised(self, data: dict):
         parsed_data = loads(data)
         site_path = parsed_data.get("site_path")
         program = parsed_data.get("program", 'Fiberization')
-        method = parsed_data.get("method", "supervised")
+        boq = parsed_data.get("boq", False)
+        method = parsed_data.get("method", "Supervised")
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
-        boq = parsed_data.get("boq", False)
 
 
         if DOCKER:
@@ -224,10 +226,10 @@ def task_unsupervised(self, data: dict):
             site_data=site_data,
             hubs_data=hubs_data,
             member_expectation=member_expectation,
-            max_distance=max_distance,
             export_loc=export_loc,
             area_col=area_col,
             cluster_col=cluster_col,
+            max_distance=max_distance,
             drop_existings=drop_existings,
             boq=boq,
             program=program,
@@ -271,31 +273,26 @@ def task_fixroute(self, data: dict):
     try:
         print(f"🌏 Celery Fiberization | Fix Route Task Started | Task ID: {self.request.id}")
         parsed_data = loads(data)
-        ne_path = parsed_data.get("ne_path")
-        fe_path = parsed_data.get("fe_path")
-        program_name = parsed_data.get("program_name", 'N/A')
+        template_path = parsed_data.get("template_path")
+        boq = parsed_data.get("boq", False)
+        program = parsed_data.get("program", 'Fix Route Fiberization')
         
         if DOCKER:
-            if "/mnt/" not in ne_path:
-                ne_path = ne_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
-            if "/mnt/" not in fe_path:
-                fe_path = fe_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+            if "/mnt/" not in template_path:
+                template_path = template_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
 
         # LOAD DATA
-        ne_data = gpd.read_parquet(ne_path)
-        fe_data = gpd.read_parquet(fe_path)
-        
+        template_df = pd.read_excel(template_path)
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Intersite/Fix Route/{date_today}/{self.request.id}"
         os.makedirs(export_loc, exist_ok=True)
 
         self.update_state(state="PROGRESS", meta={"status": "Processing fix route data"})
         result = main_fixroute(
-            ne_data=ne_data,
-            fe_data=fe_data,
+            template_df=template_df,
             export_dir=export_loc,
-            max_workers=8,
-            program_name=program_name,
+            program=program,
+            boq=boq,
             task_celery=self
         )
 
@@ -318,10 +315,8 @@ def task_fixroute(self, data: dict):
 
         # CLEAN UP TEMP FILES
         try:
-            if os.path.exists(ne_path):
-                os.remove(ne_path)
-            if os.path.exists(fe_path):
-                os.remove(fe_path)
+            if os.path.exists(template_path):
+                os.remove(template_path)
         except Exception as cleanup_error:
             print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
@@ -331,4 +326,136 @@ def task_fixroute(self, data: dict):
         self.retry(exc=e, countdown=60, max_retries=3)
         self.update_state(state="FAILURE", meta={"status": str(e)})
         print(f"Exception occurred during fix route fiberization processing: {str(e)}")
+        raise e
+    
+# TASK POLYGON BASED INTERSITE
+@celery_app.task(name="tasks.heavy.polygon_intersite", bind=True, max_retries=1, default_retry_delay=60)
+def task_polygon_intersite(self, data: dict):
+    try:
+        print(f"🌏 Celery Fiberization | Polygon Based Task Started | Task ID: {self.request.id}")
+        parsed_data = loads(data)
+        excel_path = parsed_data.get("excel_path")
+        polygon_path = parsed_data.get("polygon_path")
+        boq = parsed_data.get("boq", False)
+        program = parsed_data.get("program", 'Polygon Based Fiberization')
+        
+        if DOCKER:
+            if "/mnt/" not in excel_path:
+                excel_path = excel_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+            if "/mnt/" not in polygon_path:
+                polygon_path = polygon_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+
+        # LOAD DATA
+        date_today = datetime.now().strftime("%Y%m%d")
+        export_loc = f"{EXPORT_DIR}/Intersite/Polygon Based/{date_today}/{self.request.id}"
+        os.makedirs(export_loc, exist_ok=True)
+
+        self.update_state(state="PROGRESS", meta={"status": "Processing Polygon Based data"})
+        result = main_poligonized(
+            excel_path=excel_path,
+            polygon_file=polygon_path,
+            export_dir=export_loc,
+            program=program,
+            boq=boq,
+            task_celery=self
+        )
+
+        # ZIPFILE
+        zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Polygon_Task.zip"
+        zip_filepath = os.path.join(export_loc, zip_filename)
+        with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(export_loc):
+                for file in files:
+                    if file != zip_filename and not file.endswith(".zip"):
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, export_loc)
+                        zipf.write(file_path, arcname)
+        print(f"📦 Result files zipped.")
+        
+        self.update_state(
+            state="SUCCESS",
+            meta={"status": "Polygon based fiberization data processed successfully", "result": result, "zip_file": zip_filepath},
+        )
+
+        # CLEAN UP TEMP FILES
+        try:
+            if os.path.exists(polygon_path):
+                os.remove(polygon_path)
+            if os.path.exists(excel_path):
+                os.remove(excel_path)
+        except Exception as cleanup_error:
+            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+            
+        return result
+
+    except Exception as e:
+        self.retry(exc=e, countdown=60, max_retries=3)
+        self.update_state(state="FAILURE", meta={"status": str(e)})
+        print(f"Exception occurred during polygon based fiberization processing: {str(e)}")
+        raise e
+
+# TASK TOPOLOGY BASED INTERSITE
+@celery_app.task(name="tasks.heavy.topology_intersite", bind=True, max_retries=1, default_retry_delay=60)
+def task_topology_intersite(self, data: dict):
+    try:
+        print(f"🌏 Celery Fiberization | Topology Based Task Started | Task ID: {self.request.id}")
+        parsed_data = loads(data)
+        excel_path = parsed_data.get("excel_path")
+        line_path = parsed_data.get("line_path")
+        boq = parsed_data.get("boq", False)
+        program = parsed_data.get("program", 'Topology Based Fiberization')
+        
+        if DOCKER:
+            if "/mnt/" not in excel_path:
+                excel_path = excel_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+            if "/mnt/" not in line_path:
+                line_path = line_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+
+        # LOAD DATA
+        date_today = datetime.now().strftime("%Y%m%d")
+        export_loc = f"{EXPORT_DIR}/Intersite/Topology Based/{date_today}/{self.request.id}"
+        os.makedirs(export_loc, exist_ok=True)
+
+        self.update_state(state="PROGRESS", meta={"status": "Processing Topology Based data"})
+        result = main_topology(
+            excel_path=excel_path,
+            line_file=line_path,
+            export_dir=export_loc,
+            program=program,
+            boq=boq,
+            task_celery=self
+        )
+
+        # ZIPFILE
+        zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Topology_Task.zip"
+        zip_filepath = os.path.join(export_loc, zip_filename)
+        with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(export_loc):
+                for file in files:
+                    if file != zip_filename and not file.endswith(".zip"):
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, export_loc)
+                        zipf.write(file_path, arcname)
+        print(f"📦 Result files zipped.")
+        
+        self.update_state(
+            state="SUCCESS",
+            meta={"status": "Topology Based fiberization data processed successfully", "result": result, "zip_file": zip_filepath},
+        )
+
+        # CLEAN UP TEMP FILES
+        try:
+            if os.path.exists(excel_path):
+                os.remove(excel_path)
+            if os.path.exists(line_path):
+                os.remove(line_path)
+        except Exception as cleanup_error:
+            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+            
+        return result
+
+    except Exception as e:
+        self.retry(exc=e, countdown=60, max_retries=3)
+        self.update_state(state="FAILURE", meta={"status": str(e)})
+        print(f"Exception occurred during Topology Based fiberization processing: {str(e)}")
         raise e

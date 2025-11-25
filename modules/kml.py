@@ -1,5 +1,11 @@
 import simplekml
 import html
+import os
+import zipfile
+import pandas as pd
+import geopandas as gpd
+from bs4 import BeautifulSoup
+from shapely.geometry import Point, LineString, Polygon
 
 def export_kml(
     gdf,
@@ -174,3 +180,150 @@ def hex_to_kml_color(hex_color, alpha=255, opacity=1.0):
     a = max(0, min(int(alpha * opacity), 255))
     # format as AABBGGRR
     return f"{a:02x}{b:02x}{g:02x}{r:02x}"
+
+
+def parse_extdata(placemark):
+    attributes = {}
+    ext = placemark.find("ExtendedData")
+    if not ext:
+        return attributes
+
+    # <Data> format
+    for d in ext.find_all("Data"):
+        key = d.get("name")
+        val = d.find("value").text.strip() if d.find("value") else None
+        attributes[key] = val
+
+    # <SimpleData> format
+    for d in ext.find_all("SimpleData"):
+        key = d.get("name")
+        val = d.text.strip()
+        attributes[key] = val
+
+    return attributes
+
+
+def parse_geom(coords, geom_type):
+    if not coords:
+        return None
+
+    coords = [tuple(map(float, c.split(","))) for c in coords.split() if c.strip()]
+    if not coords:
+        return None
+
+    if geom_type == "Point":
+        return Point(coords[0][0], coords[0][1])
+
+    elif geom_type in ["LineString", "MultiLineString"]:
+        if len(coords) < 2:
+            print(f"Invalid Linestring: {coords}")
+            return None
+
+        return LineString([(x, y) for x, y, *_ in coords])
+
+    elif geom_type in ["Polygon", "MultiPolygon"]:
+        if len(coords) < 3:
+            return None
+        return Polygon([(x, y) for x, y, *_ in coords])
+
+    return None
+
+
+def parse_folder(folder, parent_name=None):
+    results = []
+    folder_name = folder.find("name").text if folder.find("name") else "Unnamed Folder"
+    full_path = f"{parent_name};{folder_name}" if parent_name else folder_name
+
+    for pm in folder.find_all("Placemark", recursive=False):
+        name = pm.find("name").text if pm.find("name") else "Unnamed"
+        desc = pm.find("description").text if pm.find("description") else ""
+        data = parse_extdata(pm)
+
+        for geom in ["Point", "LineString", "Polygon"]:
+            geom_tag = pm.find(geom)
+            if geom_tag and geom_tag.find("coordinates"):
+                coords = geom_tag.find("coordinates").text.strip()
+                geometry = parse_geom(coords, geom_type=geom)
+                if geometry:
+                    row_data = {
+                        "name": name,
+                        "folders": full_path,
+                        "folder_name": folder_name,
+                        "description": desc,
+                        **data,
+                        "geometry": geometry
+                    }
+                    results.append(row_data)
+
+    # Recursive folders
+    for sub in folder.find_all("Folder", recursive=False):
+        results.extend(parse_folder(sub, parent_name=full_path))
+    return results
+
+
+def parse_doc(doc, parent=None):
+    result = []
+    doc_name = doc.find("name").text if doc.find("name") else None
+    full_doc = f"{parent};{doc_name}" if parent else doc_name
+    print(f"ℹ️ Parsing {full_doc}")
+
+    all_folders = doc.find_all("Folder", recursive=False)
+    for f in all_folders:
+        result.extend(parse_folder(f))
+
+    for sub_doc in doc.find_all("Document", recursive=False):
+        result.extend(parse_doc(sub_doc, parent=full_doc))
+    return result
+
+
+def parse_kml(kml_file):
+    soup = BeautifulSoup(kml_file.read(), "xml")
+    doc = soup.find("Document")
+    parsed = parse_doc(doc)
+    return pd.DataFrame(parsed) if parsed else pd.DataFrame()
+
+
+def read_kml(file):
+    ext = os.path.splitext(file)[1].lower()
+    basename = os.path.basename(file)
+    print(f"🌏 Extracting KMZ File: {basename}")
+    
+    result = []
+    if ext == ".kmz":
+        with zipfile.ZipFile(file, "r") as z:
+            kml_files = [f for f in z.namelist() if f.endswith(".kml")]
+            print(f"List of KML Files: {kml_files}")
+            if not kml_files:
+                raise FileNotFoundError("No .kml file found inside the .kmz archive.")
+
+            for kml in kml_files:
+                with z.open(kml) as kml_file:
+                    print(f"KML File: {kml_file}")
+                    parsed_kml = parse_kml(kml_file)
+                    result.append(parsed_kml)
+
+    elif ext == ".kml":
+        with open(file, "rb") as f:
+            parsed_kml = parse_kml(f)
+            result.append(parsed_kml)
+
+    else:
+        raise ValueError(f"Invalid file format: {ext}")
+
+    # CONVERT TO GDF
+    try:
+        data_df = pd.concat(result)
+        print(data_df.head())
+        data_gdf = gpd.GeoDataFrame(data_df, geometry='geometry', crs="EPSG:4326")
+        points = data_gdf[data_gdf.geometry.type == "Point"]
+        lines = data_gdf[data_gdf.geometry.type.isin(["LineString", "MultiLineString"])]
+        polygons = data_gdf[data_gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+
+        print(f"ℹ️ Total Points data extracted {len(points)}")
+        print(f"ℹ️ Total Lines data extracted {len(lines)}")
+        print(f"ℹ️ Total Polygon data extracted {len(polygons)}")
+        print(f"✅ Extraction done.")
+    except Exception as e:
+        raise ValueError(f"Error in GeoDataFrame conversion: {e}")
+    
+    return points, lines, polygons

@@ -40,7 +40,7 @@ logger = create_logger(__file__)
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import auto_group
 from modules.table import sanitize_header, detect_week
-from ring_algorithm import main_supervised
+from service.intersite.ring_algorithm import main_supervised
 
 # ------------------------------------------------------
 # 1) CLUSTERING CORE
@@ -931,7 +931,7 @@ def main_unsupervised(
     program = kwargs.get("program", "Fiberization")
     method = "Unsupervised"
 
-    logger.info("🔥 Starting UNSUPERVISED routing pipeline")
+    logger.info("🌏 Starting Unsupervised Intersite")
 
     site_data = sanitize_header(site_data)
     hubs_data = sanitize_header(hubs_data)
@@ -1054,7 +1054,7 @@ if __name__ == "__main__":
         boq=boq
     )
 
-    zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Supervised_Task.zip"
+    zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Unsupervised_Task.zip"
     zip_filepath = os.path.join(export_loc, zip_filename)
 
     with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:

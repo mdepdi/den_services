@@ -34,7 +34,7 @@ from modules.utils import auto_group, spof_detection, create_topology, route_pat
 from modules.table import sanitize_header, detect_week, excel_styler
 from modules.validation import input_newring
 from modules.kml import export_kml, sanitize_kml
-from boq_algorithm import main_boq
+from service.intersite.boq_algorithm import main_boq
 
 
 # ------------------------------------------------------
@@ -848,7 +848,7 @@ def ring_parallel(
                 logger.error(f"❌ Error processing cluster {cluster_id}: {e}")
                 if task_celery:
                     task_celery.update_state(
-                        state="PROGRESS",
+                        state="FAILURE",
                         meta={
                             "status": (
                                 f"Error in cluster {cluster_id}: {e}. "
@@ -884,9 +884,12 @@ def supervised_validation(excel_file: str | pd.DataFrame | gpd.GeoDataFrame) -> 
         df = pd.read_excel(excel_file)
     elif isinstance(excel_file, gpd.GeoDataFrame):
         logger.info("ℹ️ Input type: GeoDataFrame.")
-        if 'lat' not in excel_file.columns or 'long' not in excel_file.columns:
+        if 'lat' in excel_file.columns or 'long' in excel_file.columns:
             excel_file['lat'] = excel_file.geometry.to_crs(epsg=4326).y
             excel_file['long'] = excel_file.geometry.to_crs(epsg=4326).x
+        elif 'latitude' in excel_file.columns or 'longitude' in excel_file.columns:
+            excel_file['latitude'] = excel_file.geometry.to_crs(epsg=4326).y
+            excel_file['longitude'] = excel_file.geometry.to_crs(epsg=4326).x
         df = pd.DataFrame(excel_file.drop(columns='geometry'))
     else:
         raise TypeError(
@@ -1389,14 +1392,14 @@ def save_kml(
     logger.info(f"🏆 KML/KMZ export completed at {kmz_path}")
 
 
-def save_supervised(
+def save_intersite(
     points: gpd.GeoDataFrame,
     paths: gpd.GeoDataFrame,
-    topology: gpd.GeoDataFrame,
     export_dir: str,
     method: str = "Supervised"
 ):
     logger.info("🧩 Exporting supervised outputs (parquet, KML, Excel).")
+    topology = create_topology(points)
 
     # EXPORT PARQUET
     if not points.empty:
@@ -1477,10 +1480,6 @@ def main_supervised(
     task_celery = kwargs.get("task_celery", None)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
-    logger.info(
-        f"🧩 Starting supervised pipeline | Method={method} | Design={design_type}"
-    )
-
     if "site_id" in site_data.columns:
         site_data["site_id"] = site_data["site_id"].astype(str)
 
@@ -1488,7 +1487,6 @@ def main_supervised(
     site_data = supervised_validation(site_data)
 
     date_today = datetime.now().strftime("%Y%m%d")
-    week = detect_week(date_today)
     export_dir = f"{export_loc}/Intersite Design/{method}"
     checkpoint_dir = os.path.join(export_dir, "Checkpoint")
 
@@ -1507,7 +1505,8 @@ def main_supervised(
         all_points = gpd.read_parquet(output_point)
         logger.info("🏆 Checkpoint data loaded.")
     else:
-        logger.info(f"🧩 Starting {method} intersite pipeline from scratch.")
+        logger.info(f"🌏 Starting Intersite")
+        logger.info(f"ℹ️ Method  : {method}")
         logger.info(f"ℹ️ Vendor  : {vendor}")
         logger.info(f"ℹ️ Program : {program}")
         logger.info(f"ℹ️ Design  : {design_type}")
@@ -1563,9 +1562,8 @@ def main_supervised(
         main_boq(all_points, all_paths, export_dir=export_dir)
     else:
         # TOPOLOGY CHECK
-        logger.info("🧩 Creating topology for final export...")
-        topology_paths = create_topology(all_points)
-        save_supervised(all_points, all_paths, topology_paths, export_dir, method)
+        logger.info("🧩 Save Design Information")
+        save_intersite(all_points, all_paths, export_dir, method)
 
     logger.info("🏆 Supervised export completed.")
     logger.info(

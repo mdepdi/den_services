@@ -3,12 +3,11 @@ import pandas as pd
 from shapely.geometry import Point, LineString, MultiLineString
 from fastapi import HTTPException
 from starlette.datastructures import UploadFile
-from shapely.ops import nearest_points
 from tqdm import tqdm
 import sys
 import os
 from modules.geometry import explode_lines, identify_centerline
-from modules.h3_route import identify_hexagon, retrieve_roads
+from modules.kml import read_kml
 from modules.table import find_best_match
 from core.config import settings
 
@@ -169,6 +168,21 @@ def read_gdf(file: str = None, **kwargs):
                     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                 else:
                     raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
+            elif extension in ["kmz", "kml"]:
+                geom_type = kwargs.get("geom_type", None)
+                if geom_type is None:
+                    raise ValueError(f"Geometry type must be selected between ['point', 'line', 'polygon']")
+                
+                point, line, polygon = read_kml(filename)
+                geom_type = str(geom_type).lower()
+                match geom_type:
+                    case 'point':
+                        return point
+                    case 'line':
+                        return line
+                    case 'polygon':
+                        return polygon
+            
             else:
                 raise ValueError("Unsupported file format. Supported formats are: Parquet, GeoJSON, Shapefile, GPKG, and TAB.")
         except Exception as e:

@@ -260,7 +260,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool=True) -> gpd.GeoDa
     for ring in ring_list:
         ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
         region = ring_points['region'].mode()[0] if 'region' in ring_points.columns else 'Unknown Region'
-        project = ring_points['project'].mode()[0] if 'project' in ring_points.columns else 'Unknown Project'
+        program = ring_points['program'].mode()[0] if 'program' in ring_points.columns else 'Unknown Program'
         fo_hub_count = len(ring_points[ring_points['site_type'].str.lower().str.contains('hub')])
 
         # if len(ring_points) < 3:
@@ -287,7 +287,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool=True) -> gpd.GeoDa
                 'far_end': end_point['site_id'],
                 'ring_name': ring,
                 'region': region,
-                'project': project,
+                'program': program,
                 'length': line_geom.length,
                 'route_type': 'Topology',
                 'fo_note': 'topology',
@@ -297,7 +297,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool=True) -> gpd.GeoDa
     topology_gdf = gpd.GeoDataFrame(topology_records, columns=topology_records[0].keys(), geometry='geometry', crs='EPSG:3857')
     if merge:
         topology_gdf = topology_gdf.dissolve(by='ring_name')
-        topology_gdf = topology_gdf[['geometry', 'region', 'project']].reset_index()
+        topology_gdf = topology_gdf[['geometry', 'region', 'program']].reset_index()
         topology_gdf['name'] = 'Connection'
         topology_gdf['geometry'] = topology_gdf['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == 'MultiLineString' else geom)
     return topology_gdf
