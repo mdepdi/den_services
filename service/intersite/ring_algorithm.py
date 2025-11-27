@@ -1005,17 +1005,12 @@ def ring_supervised(
         if fo_expand is not None:
             logger.info("🧩 Preparing FO reference nodes (expand mode enabled).")
             hex_list = identify_hexagon(sites_input, type="convex")
-            logger.info(
-                f"ℹ️ Hex count for FO reference | Area={area}: {len(hex_list):,}"
-            )
+            logger.info(f"ℹ️ Hex count for FO reference | Area={area}: {len(hex_list):,}")
+
             roads = retrieve_roads(hex_list, type="roads")
             nodes = retrieve_roads(hex_list, type="nodes")
-            logger.info(
-                f"ℹ️ Roads for FO reference | Area={area}: {len(roads):,}"
-            )
-            logger.info(
-                f"ℹ️ Nodes for FO reference | Area={area}: {len(nodes):,}"
-            )
+            logger.info(f"ℹ️ Roads for FO reference | Area={area}: {len(roads):,}")
+            logger.info(f"ℹ️ Nodes for FO reference | Area={area}: {len(nodes):,}")
 
             if roads.empty or nodes.empty:
                 logger.warning(
@@ -1068,143 +1063,6 @@ def ring_supervised(
 # ------------------------------------------------------
 # 5) EXPORT & COMPILATION
 # ------------------------------------------------------
-def export_kmz(main_kml, ring_data, point_data, folder):
-    """Write topology, sites, hubs, and routes into KMZ structure."""
-    ring_data = ring_data.copy()
-    cluster_points = point_data.copy()
-    logger.info(f"🧩 Exporting KMZ content for folder '{folder}'.")
-
-    ring_data["start"] = ring_data["near_end"].apply(
-        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
-    )
-    ring_data["end"] = ring_data["far_end"].apply(
-        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
-    )
-
-    ring_data = ring_data.reset_index(drop=True)
-    filename = folder.replace("/", "-")
-    if 'long' not in cluster_points.columns or 'lat' not in cluster_points.columns:
-        cluster_points['long'] = cluster_points.geometry.to_crs(epsg=4326).x
-        cluster_points['lat'] = cluster_points.geometry.to_crs(epsg=4326).y
-    if 'vendor' not in cluster_points.columns:
-        cluster_points['vendor'] = 'TBG'
-    if 'program' not in cluster_points.columns:
-        cluster_points['program'] = 'N/A'
-
-    used_columns = {
-        "ring_name": "Ring ID",
-        "site_id": "Site ID",
-        "site_name": "Site Name" if "site_name" in cluster_points.columns else "N/A",
-        "long": "Long",
-        "lat": "Lat",
-        "region": "Region",
-        "vendor": "Vendor" if "vendor" in cluster_points.columns else "N/A",
-        "program": "Program" if "program" in cluster_points.columns else "N/A",
-        "geometry": "geometry",
-    }
-    available_col = [col for col in used_columns.keys() if col in cluster_points.columns]
-
-    ring_topology = create_topology(point_data).to_crs(epsg=4326)
-    ring_topology["connection"] = "Connection"
-
-    route_columns = ["near_end", "far_end", "geometry", "ring_name", "route_type", "length"]
-    if "existing_cable_length" in ring_data.columns:
-        route_columns.append("existing_cable_length")
-    if "new_cable_length" in ring_data.columns:
-        route_columns.append("new_cable_length")
-    ring_route = ring_data[route_columns].copy()
-    ring_route["route_name"] = ring_route["near_end"] + "-" + ring_route["far_end"]
-
-    ring_sites = cluster_points[~cluster_points["site_type"].str.lower().str.contains("hub")].copy()
-    ring_hub = cluster_points[cluster_points["site_type"].str.lower().str.contains("hub")].copy()
-
-    ring_sites = ring_sites[available_col].rename(columns=used_columns)
-    ring_hub = ring_hub[available_col].rename(columns=used_columns)
-
-    kml_updated = export_kml(
-        ring_topology,
-        main_kml,
-        filename,
-        subfolder=folder,
-        name_col="connection",
-        color="#FF00FF",
-        size=2,
-        popup=False,
-    )
-    kml_updated = export_kml(
-        ring_hub,
-        kml_updated,
-        filename,
-        subfolder=f"{folder}/FO Hub",
-        name_col="Site ID",
-        icon="http://maps.google.com/mapfiles/kml/paddle/A.png",
-        size=0.8,
-        popup=True,
-    )
-    kml_updated = export_kml(
-        ring_sites,
-        kml_updated,
-        filename,
-        subfolder=f"{folder}/Site List",
-        name_col="Site ID",
-        color="#FFFF00",
-        size=0.8,
-        popup=True,
-    )
-    kml_updated = export_kml(
-        ring_route,
-        kml_updated,
-        filename,
-        subfolder=f"{folder}/Route",
-        name_col="route_name",
-        color="#0000FF",
-        size=3,
-        popup=False,
-    )
-    logger.info(f"🏆 KMZ content for '{folder}' added to main KML object.")
-    return kml_updated
-
-
-def export_gpkg(gpkg_path, ring_data, point_data, cluster):
-    """Write cluster topology, routes, sites, and hubs to GeoPackage."""
-    logger.info(
-        f"🧩 Exporting cluster '{cluster}' to GeoPackage: {gpkg_path}"
-    )
-
-    ring_data = ring_data.copy()
-    cluster_points = point_data.copy()
-
-    ring_data["start"] = ring_data["near_end"].apply(
-        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
-    )
-    ring_data["end"] = ring_data["far_end"].apply(
-        lambda x: cluster_points[cluster_points["site_id"] == x]["geometry"].values[0]
-    )
-    ring_data = ring_data.reset_index(drop=True)
-
-    topology = create_topology(point_data)
-    topology.to_file(gpkg_path, layer=f"{cluster}_Topology", driver="GPKG")
-
-    ring_route = ring_data[["near_end", "far_end", "ring_name", "route_type", "length", "geometry"]].copy()
-    ring_route["route_name"] = ring_route["near_end"] + "-" + ring_route["far_end"]
-    ring_route.to_file(gpkg_path, layer=f"{cluster}_Route", driver="GPKG")
-
-    ring_sites = cluster_points[["site_id", "site_name", "site_type", "geometry"]].copy()
-    ring_sites = ring_sites[~ring_sites["site_type"].str.lower().str.contains("hub")].copy()
-    if ring_sites.empty:
-        logger.warning("⚠️ No sites found. Skipping 'Site List' export.")
-        return gpkg_path
-    ring_sites.to_file(gpkg_path, layer=f"{cluster}_Site List", driver="GPKG")
-
-    ring_hub = cluster_points[cluster_points["site_type"].str.lower().str.contains("hub")].copy()
-    if ring_hub.empty:
-        logger.warning("⚠️ No FO hub found. Skipping FO hub export.")
-        return gpkg_path
-
-    ring_hub.to_file(gpkg_path, layer=f"{cluster}_FO Hub", driver="GPKG")
-    logger.info(f"🏆 GeoPackage export for cluster '{cluster}' completed.")
-    return gpkg_path
-
 
 def compile_ring(parquet_dir):
     """Compile all per-cluster parquet files into combined paths/points."""
@@ -1257,32 +1115,6 @@ def compile_ring(parquet_dir):
         except Exception as e:
             logger.error(f"❌ Error removing file {file}: {e}")
     return points_data, paths_data
-
-
-def connect_nearfar(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame):
-    """Attach near_end and far_end site ids to points based on per-ring routes."""
-    logger.info("🧩 Attaching near_end / far_end relationships to points.")
-    miss_point = [c for c in ["site_id", "ring_name"] if c not in points_gdf.columns]
-    miss_paths = [c for c in ["near_end", "far_end", "ring_name"] if c not in paths_gdf.columns]
-
-    if miss_point:
-        raise ValueError(f"Missing column in points: {miss_point}")
-    if miss_paths:
-        raise ValueError(f"Missing column in paths: {miss_paths}")
-
-    for ring, g in points_gdf.groupby("ring_name"):
-        p = paths_gdf[paths_gdf["ring_name"] == ring]
-        g_ids = g["site_id"].astype(str)
-        ne_to_fe = p.drop_duplicates(subset="near_end").set_index("near_end")["far_end"]
-        fe_to_ne = p.drop_duplicates(subset="far_end").set_index("far_end")["near_end"]
-        points_gdf.loc[g.index, "far_end"] = g_ids.map(ne_to_fe)
-        points_gdf.loc[g.index, "near_end"] = g_ids.map(fe_to_ne)
-
-    points_gdf["far_end"] = points_gdf["far_end"].fillna("N/A")
-    points_gdf["near_end"] = points_gdf["near_end"].fillna("N/A")
-    logger.info("🏆 Near/far relationships attached.")
-    return points_gdf
-
 
 def save_kml(
     points: gpd.GeoDataFrame,
@@ -1403,23 +1235,15 @@ def save_intersite(
 
     # EXPORT PARQUET
     if not points.empty:
-        points.to_crs(epsg=4326).to_parquet(
-            os.path.join(export_dir, f"Points.parquet"),
-            index=False,
-        )
+        points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Points.parquet"), index=False,
+)
         logger.info(f"🏆 Points parquet exported with {len(points):,} records.")
     if not paths.empty:
-        paths.to_crs(epsg=4326).to_parquet(
-            os.path.join(export_dir, f"Route.parquet"),
-            index=False,
-        )
+        paths.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Route.parquet"), index=False,)
         logger.info(f"🏆 Route parquet exported with {len(paths):,} records.")
     if not topology.empty:
         topology = topology.sort_values(by=['ring_name']).reset_index(drop=True)
-        topology.to_crs(epsg=4326).to_parquet(
-            os.path.join(export_dir, f"Topology.parquet"),
-            index=False,
-        )
+        topology.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Topology.parquet"), index=False)
         logger.info(f"🏆 Topology parquet exported with {len(topology):,} records.")
 
     # EXPORT KML
@@ -1455,9 +1279,7 @@ def save_intersite(
             paths_report = paths_report.sort_values(by=['ring_name', 'near_end']).reset_index(drop=True)
             paths_report.columns = paths_report.columns.str.replace(' ', '_').str.lower()
             excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(
-                f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records."
-            )
+            logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records.")
 
 
 # ------------------------------------------------------
@@ -1515,9 +1337,7 @@ def main_supervised(
         for area in tqdm(area_list, desc=f"Processing {area_col}"):
             site_area = site_data[site_data[area_col] == area].copy()
             if site_area.empty:
-                logger.warning(
-                    f"⚠️ No data for {area_col}='{area}'. Skipping."
-                )
+                logger.warning(f"⚠️ No data for {area_col} ='{area}'. Skipping.")
                 continue
 
             paths, points = ring_supervised(
@@ -1561,14 +1381,11 @@ def main_supervised(
         logger.info("🧩 Running BOQ calculation...")
         main_boq(all_points, all_paths, export_dir=export_dir)
     else:
-        # TOPOLOGY CHECK
         logger.info("🧩 Save Design Information")
         save_intersite(all_points, all_paths, export_dir, method)
 
     logger.info("🏆 Supervised export completed.")
-    logger.info(
-        f"ℹ️ All files saved to: {export_dir}"
-    )
+    logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 
 if __name__ == "__main__":

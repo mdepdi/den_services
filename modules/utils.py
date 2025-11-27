@@ -1,7 +1,7 @@
 import pandas as pd
 import geopandas as gpd
 import networkx as nx
-from shapely.geometry import MultiLineString
+from shapely.geometry import MultiLineString, LineString
 from shapely.ops import linemerge
 
 def spof_detection(
@@ -247,29 +247,137 @@ def spof_detection(
 
     return paths_gdf
 
-def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool=True) -> gpd.GeoDataFrame:
-    from tqdm import tqdm
-    from shapely.geometry import LineString
-    from shapely.ops import linemerge
+def identify_connection(
+    ring: str,
+    target_fiber: gpd.GeoDataFrame,
+    target_point: gpd.GeoDataFrame,
+    start_column: str = 'near_end'
+) -> tuple:
+    
+    import numpy as np
+    import geopandas as gpd
 
+    # --- CRS normalize ---
+    if target_fiber.crs != 'EPSG:3857':
+        target_fiber = target_fiber.to_crs(epsg=3857)
+    if target_point.crs != 'EPSG:3857':
+        target_point = target_point.to_crs(epsg=3857)
+
+    # --- Flatten any list/array values ---
+    for col in ['near_end', 'far_end']:
+        if col in target_fiber.columns:
+            target_fiber[col] = target_fiber[col].apply(
+                lambda x: x[0] if isinstance(x, (list, tuple, np.ndarray)) else x
+            )
+
+    # --- Validate start column ---
+    if start_column == 'near_end':
+        opposite_column = 'far_end'
+    elif start_column == 'far_end':
+        opposite_column = 'near_end'
+    else:
+        raise ValueError("start_column must be either 'near_end' or 'far_end'.")
+
+    # --- Separate hub and site list ---
+    fo_hub = target_point[target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
+    site_list = target_point[~target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
+
+    # --- Identify starting hub ---
+    hub_ids = fo_hub['site_id'].astype(str).tolist()
+    start_hub = target_fiber[target_fiber[start_column].astype(str).isin(hub_ids)][start_column].values
+    if len(start_hub) == 0:
+        start_hub = target_fiber[target_fiber[opposite_column].astype(str).isin(hub_ids)][opposite_column].values
+    if len(start_hub) == 0:
+        print(f"❌ No FO Hub found in ring {ring}")
+        return None, None
+
+    start_hub = start_hub[0]
+
+    # --- Sequential connection search ---
+    connection = [start_hub]
+    visited = set([start_hub])
+    frontier = [start_hub]  # support branching
+
+    while frontier:
+        current = frontier.pop(0)
+
+        # find all fiber segments connected to this site
+        matches = target_fiber[
+            (target_fiber[start_column] == current) | (target_fiber[opposite_column] == current)
+        ]
+
+        for _, seg in matches.iterrows():
+            if seg[start_column] == current:
+                next_sites = [seg[opposite_column]]
+            else:
+                next_sites = [seg[start_column]]
+
+            for next_site in next_sites:
+                if next_site not in visited:
+                    visited.add(next_site)
+                    connection.append(next_site)
+                    frontier.append(next_site)
+
+    # --- Build ordered GeoDataFrame of connection points ---
+    points_sequential = []
+    for site_id in connection:
+        site_id = str(site_id)
+        if site_id in fo_hub['site_id'].astype(str).values:
+            row = fo_hub[fo_hub['site_id'].astype(str) == site_id].iloc[0].to_dict()
+        elif site_id in site_list['site_id'].astype(str).values:
+            row = site_list[site_list['site_id'].astype(str) == site_id].iloc[0].to_dict()
+        else:
+            print(f"⚠️ Site {site_id} not found.")
+            continue
+        points_sequential.append(row)
+
+    if not points_sequential:
+        print(f"⚠️ No valid points found for ring {ring}")
+        return None, None
+
+    points_sequential = gpd.GeoDataFrame(points_sequential, crs='EPSG:3857').reset_index(drop=True)
+    return points_sequential, connection
+
+def auto_sorter(df: pd.DataFrame|gpd.GeoDataFrame, column: str, sort_list: list):
+    from itertools import groupby
+    
+    sort_list = [key for key, _ in groupby(sort_list)]
+    order_map = {str(v): i for i, v in enumerate(sort_list)}
+    if not df.empty:
+        df['order'] = df[column].astype(str).map(order_map)
+        df = df.sort_values('order', na_position='last').drop(columns='order')
+    return df
+
+def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.GeoDataFrame:
     if points_gdf.crs != 'EPSG:3857':
         points_gdf = points_gdf.to_crs(epsg=3857)
 
+    points_gdf = points_gdf[points_gdf.geometry.notnull() & ~points_gdf.geometry.is_empty].copy()
+    points_gdf["geometry"] = points_gdf.geometry.force_2d()
+
     ring_list = points_gdf['ring_name'].unique().tolist()
     topology_records = []
+
     for ring in ring_list:
         ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
-        region = ring_points['region'].mode()[0] if 'region' in ring_points.columns else 'Unknown Region'
-        program = ring_points['program'].mode()[0] if 'program' in ring_points.columns else 'Unknown Program'
-        fo_hub_count = len(ring_points[ring_points['site_type'].str.lower().str.contains('hub')])
+        if ring_points.empty:
+            continue
 
-        # if len(ring_points) < 3:
-        #     print(f"⚠️ Ring {ring} has less than 3 points, skipping.")
-        #     continue
-        
+        region = next((x for x in ring_points.get('region', []) if pd.notna(x)), 'Unknown Region')
+        program = next((x for x in ring_points.get('project', []) if pd.notna(x)), 'Unknown Program')
+        fo_hub = ring_points[ring_points['site_type'] == 'FO Hub'].drop_duplicates('geometry')
+        fo_hub_count = len(fo_hub)
+
         for i in range(len(ring_points)):
             start_point = ring_points.iloc[i]
             end_point = ring_points.iloc[(i + 1) % len(ring_points)]
+
+            # skip bad geometries
+            if start_point.geometry is None or end_point.geometry is None:
+                print(f"⚠️ Skipping segment in ring {ring}: invalid geometry.")
+                continue
+
+            # handle FO hub cases
             match fo_hub_count:
                 case 1:
                     pass
@@ -277,12 +385,19 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool=True) -> gpd.GeoDa
                     if (i + 1) % len(ring_points) == 0:
                         continue
                 case _:
+                    print(fo_hub)
                     raise ValueError(f"Ring {ring} has {fo_hub_count} FO Hubs, which is not supported.")
 
-            line_geom = LineString([start_point.geometry, end_point.geometry])
-            segment_name = f"{start_point['site_id']}-{end_point['site_id']}"
+            try:
+                start_coords = list(start_point.geometry.coords)[0][:2]
+                end_coords = list(end_point.geometry.coords)[0][:2]
+                line_geom = LineString([start_coords, end_coords])
+            except Exception as e:
+                print(f"⚠️ Failed to create line in ring {ring}: {e}")
+                continue
+
             record = {
-                'name': segment_name,
+                'name': f"{start_point['site_id']}-{end_point['site_id']}",
                 'near_end': start_point['site_id'],
                 'far_end': end_point['site_id'],
                 'ring_name': ring,
@@ -294,12 +409,20 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool=True) -> gpd.GeoDa
                 'geometry': line_geom
             }
             topology_records.append(record)
-    topology_gdf = gpd.GeoDataFrame(topology_records, columns=topology_records[0].keys(), geometry='geometry', crs='EPSG:3857')
-    if merge:
+
+    if not topology_records:
+        print("⚠️ No topology records created.")
+        return gpd.GeoDataFrame(columns=['geometry'], geometry='geometry', crs='EPSG:3857')
+
+    topology_gdf = gpd.GeoDataFrame(topology_records, geometry='geometry', crs='EPSG:3857')
+
+    if merge and not topology_gdf.empty:
         topology_gdf = topology_gdf.dissolve(by='ring_name')
         topology_gdf = topology_gdf[['geometry', 'region', 'program']].reset_index()
         topology_gdf['name'] = 'Connection'
-        topology_gdf['geometry'] = topology_gdf['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == 'MultiLineString' else geom)
+        topology_gdf['geometry'] = topology_gdf['geometry'].apply(
+            lambda geom: linemerge(geom) if geom.geom_type == 'MultiLineString' else geom
+        )
     return topology_gdf
 
 def route_path(start_node, end_node, G, roads, merged=False):

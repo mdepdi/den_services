@@ -678,7 +678,6 @@ def identify_connection(
     # --- Separate hub and site list ---
     fo_hub = target_point[target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
     site_list = target_point[~target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
-    total_point = len(fo_hub) + len(site_list)
 
     # --- Identify starting hub ---
     hub_ids = fo_hub['site_id'].astype(str).tolist()

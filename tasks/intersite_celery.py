@@ -6,7 +6,7 @@ from time import time
 from json import loads, dumps
 from datetime import datetime
 from celery_app import celery_app
-from service.modularized_insert_ring import main_insertring
+from service.intersite.insert_algorithm import main_insertring
 from service.intersite.ring_algorithm import main_supervised
 from service.intersite.clustering_algorithm import main_unsupervised
 from service.intersite.topology_algorithm import main_topology
@@ -26,15 +26,12 @@ def task_insertring(self, data: dict):
         print(f"🌏 Celery Fiberization| Insert Ring Task Started | Task ID: {self.request.id}")
         data = loads(data)
 
-        self.update_state(
-            state="PROGRESS", meta={"status": "Loading insert ring data"}
-        )
-        mapped_insert_path = data.get("mapped_insert_path")
-        prev_fiber_path = data.get("prev_fiber_path")
-        prev_points_path = data.get("prev_points_path")
+        self.update_state(state="PROGRESS", meta={"status": "Loading insert ring data"})
+        insert_list_path = data.get("insert_list_path")
+        kmz_path = data.get("kmz_path")
         max_member = data.get("max_member", 12)
-        route_type = data.get("route_type", "merged")
-        program = data.get("program", 'N/A')
+        max_distance = data.get("max_distance", 3000)
+        program = data.get("program", 'Insert Ring')
 
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Insert_Ring/{date_today}/{self.request.id}"
@@ -42,43 +39,28 @@ def task_insertring(self, data: dict):
 
         # LOAD DATA
         if DOCKER:
-            if "/mnt/" not in mapped_insert_path:
-                mapped_insert_path = mapped_insert_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
-            if "/mnt/" not in prev_fiber_path:
-                prev_fiber_path = prev_fiber_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
-            if "/mnt/" not in prev_points_path:
-                prev_points_path = prev_points_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+            if "/mnt/" not in insert_list_path:
+                insert_list_path = insert_list_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+            if "/mnt/" not in kmz_path:
+                kmz_path = kmz_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
 
-        mapped_insert_gdf = gpd.read_parquet(mapped_insert_path)
-        prev_fiber_gdf = gpd.read_parquet(prev_fiber_path)
-        prev_points_gdf = gpd.read_parquet(prev_points_path)
+        insert_list_path = gpd.read_parquet(insert_list_path)
+        kmz_path = gpd.read_parquet(kmz_path)
 
         # IDENTIFY FIBERZONE & INSERT DATA
-        self.update_state(
-            state="PROGRESS", meta={"status": "Identifying fiber zone and insert data"}
-        )
-
-        # DETAIL INPUT
-        print(f"==============================")
-        print(f"📂 Mapped Insert Data   : {len(mapped_insert_gdf):,} features")
-        print(f"📂 Previous Fiber Data  : {len(prev_fiber_gdf):,} features")
-        print(f"📂 Previous Point Data  : {len(prev_points_gdf):,} features")
-        print(f"==============================")
+        self.update_state(state="PROGRESS", meta={"status": "Identifying fiber zone and insert data"})
 
 
         # RUN INSERT RING PROCESSING
-        self.update_state(
-            state="PROGRESS", meta={"status": "Processing insert ring data"}
-        )
+        self.update_state(state="PROGRESS", meta={"status": "Processing insert ring data"})
         start_time = time()
         result = main_insertring(
-            mapped_insert=mapped_insert_gdf,
-            prev_fiber=prev_fiber_gdf,
-            prev_point=prev_points_gdf,
-            export_dir=export_loc,
-            MAX_WORKERS=settings.MAX_WORKERS,
-            MAX_MEMBER=max_member,
-            ROUTE_TYPE=route_type
+            insert_data = insert_list_path,
+            kmz_data = kmz_path,
+            export_dir = export_loc,
+            max_member = max_member,
+            max_distance = max_distance,
+            task_celery = self
         )
         end_time = time()
         elapsed_time = end_time - start_time
@@ -101,17 +83,6 @@ def task_insertring(self, data: dict):
             meta={"status": "Insert ring fiberization data processed successfully", "result": result, "zip_file": zip_filepath},
         )
         print(f"Celery | Insert Ring Task Completed | Task ID: {self.request.id}")
-
-        # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(mapped_insert_path):
-                os.remove(mapped_insert_path)
-            if os.path.exists(prev_fiber_path):
-                os.remove(prev_fiber_path)
-            if os.path.exists(prev_points_path):
-                os.remove(prev_points_path)
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
 
         return result
     except Exception as e:

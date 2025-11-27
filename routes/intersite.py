@@ -23,7 +23,7 @@ from service.intersite.clustering_algorithm import unsupervised_validation
 from service.intersite.fixroute_algorithm import validate_fixroute
 from service.intersite.topology_algorithm import validate_topology
 from service.intersite.poligonized_algorithm import validate_poligonize
-
+from service.intersite.insert_algorithm import validate_insert
 from modules.validation import input_insertring, identify_fiberzone, prepare_prevdata, identify_insertdata
 from service.update_intersite import main_update_intersite
 from tasks.intersite_celery import task_insertring, task_supervised, task_unsupervised, task_fixroute, task_polygon_intersite, task_topology_intersite
@@ -228,88 +228,58 @@ async def identify_insert(
 # =============================
 @router.post("/insert_ring", tags=["Intersite"])
 async def insert_ring(
-    mapped_insert: UploadFile = File(
-        ..., description="Excel file containing ring data to insert."
-    ),
-    kmz_design: UploadFile = File(
-        ..., description="KMZ file containing existing design plan."
-    ),
-    max_member: int = Form(12, description="Maximum number of members to consider for insertion.")
+    insert_list: UploadFile = File(..., description="Excel file containing potential sitelist to insert."),
+    kmz_design: UploadFile = File(..., description="KMZ file containing existing design plan."),
+    max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
+    max_distance: int = Form(3000, description="Maximum distance consider for insertion.")
 ):
-    """
-    Insert new rings into existing fiber network based on the provided Excel file and previous data.
-    """
     date_today = datetime.now().strftime("%Y%m%d")
-    upload_insert_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
-    os.makedirs(upload_insert_dir, exist_ok=True)
+    upload_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
+    os.makedirs(upload_dir, exist_ok=True)
 
-    try:
-        suffix = os.path.splitext(kmz_design.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_kmz:
-            tmp_kmz.write(kmz_design.file.read())
-            tmp_kmz_path = tmp_kmz.name
-        
-        if suffix in ['.kmz', '.kml']:
-            prev_point_gdf = read_gdf(tmp_kmz_path, geom_type='point')
-            prev_fiber_gdf = read_gdf(tmp_kmz_path, geom_type='line')
-            prev_fiber_gdf = prev_fiber_gdf[~(prev_fiber_gdf['name'].str.lower().str.contains('connection'))].reset_index(drop=True)
-            print(f"📥 Reading previous design plan: {kmz_design.filename}")
-        else:
-            return {"error": "Unsupported previous design format. Supported formats are GPKG, Parquet, and Shapefile."}
-    except Exception as e:
-        return {"error": f"Failed to read previous design: {str(e)}"}
-    finally:
-        if os.path.exists(tmp_kmz_path):
-            os.remove(tmp_kmz_path)
+    kmz_suffix = os.path.splitext(kmz_design.filename)[1].lower()
+    if kmz_suffix not in [".kmz", ".kml"]:
+        return {"error": "KMZ/KML only is supported for design plan."}
 
-    # Process data
-    try:
-        suffix = os.path.splitext(mapped_insert.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_excel:
-            tmp_excel.write(mapped_insert.file.read())
-            tmp_excel_path = tmp_excel.name
-        if suffix in ['.xlsx', 'csv']:
-            mapped_insert_gdf = read_gdf(tmp_excel_path)
-            print(f"📥 Reading mapped insert file: {mapped_insert.filename}")
+    kmz_path = os.path.join(
+        upload_dir,
+        f"{uuid4().hex}_design_{datetime.now().strftime('%H%M%S')}{kmz_suffix}"
+    )
 
-    except Exception as e:
-        return {"error": f"Failed to process data: {str(e)}"}
-    finally:
-        if os.path.exists(tmp_excel_path):
-            os.remove(tmp_excel_path)
-    
-    # SAVE AS PARQUET
-    temp_mapped_insert = os.path.join(upload_insert_dir, f"{uuid4().hex}_mapped_insert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet")
-    mapped_insert_gdf.to_parquet(temp_mapped_insert, index=False)
-    print(f"📥 Temporary site data saved to: {temp_mapped_insert}")
+    with open(kmz_path, "wb") as f:
+        f.write(await kmz_design.read())
+    print(f"📥 Saved KMZ file → {kmz_path}")
 
-    temp_fiber_path = os.path.join(upload_insert_dir, f"{uuid4().hex}_prev_fiber_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet")
-    prev_fiber_gdf.to_parquet(temp_fiber_path, index=False)
-    print(f"📥 Temporary fiber data saved to: {temp_fiber_path}")
+    excel_suffix = os.path.splitext(insert_list.filename)[1].lower()
+    if excel_suffix not in [".xlsx", ".xls", ".csv"]:
+        return {"error": "Insert list must be Excel or CSV."}
 
-    temp_points_path = os.path.join(upload_insert_dir, f"{uuid4().hex}_prev_points_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet")
-    prev_point_gdf.to_parquet(temp_points_path, index=False)
-    print(f"📥 Temporary fiber data saved to: {temp_points_path}")
+    insert_path = os.path.join(
+        upload_dir,
+        f"{uuid4().hex}_insert_{datetime.now().strftime('%H%M%S')}{excel_suffix}"
+    )
 
-    # CELERY TASK
-    try:
-        insertring_params = {
-            "mapped_insert_path": temp_mapped_insert,
-            "prev_fiber_path": temp_fiber_path,
-            "prev_points_path": temp_points_path,
-            "max_member": max_member
-        }
-        insertring_params = dumps(insertring_params, default=str)
-        print("🚀 Initiating insert ring task...")
+    with open(insert_path, "wb") as f:
+        f.write(await insert_list.read())
+    print(f"📥 Saved Insert List → {insert_path}")
 
-        celery_task = task_insertring.apply_async(args=[insertring_params])
-        return {
-            "message": "Insert ring task has been initiated.",
-            "task_id": celery_task.id,
-            "task_status_url": f"/tasks/status/{celery_task.id}"
-        }
-    except Exception as e:
-        return {"error": f"Failed to initiate insert ring task: {str(e)}"}
+    _, _, _ = validate_insert(insert_path, kmz_path)
+
+    params = dumps({
+        "insert_list_path": insert_path,
+        "kmz_path": kmz_path,
+        "max_member": max_member,
+        "max_distance": max_distance,
+    })
+
+    print("🚀 Sending Insert job to Celery...")
+    celery_task = task_insertring.apply_async(args=[params])
+
+    return {
+        "message": "Insert ring task started!",
+        "task_id": celery_task.id,
+        "task_status_url": f"/tasks/status/{celery_task.id}"
+    }
 
 # =============================
 # NEW RING

@@ -1017,12 +1017,12 @@ def main_unsupervised(
 # 10) DIRECT EXECUTION
 # ------------------------------------------------------
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 3\Unsupervised Ring\Template Unsupervised Kota Makassar.xlsx"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 3\Unsupervised Ring"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Surge Sitelist\Surge_Sitelist & Hub 343_27112025.xlsx"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Surge Sitelist"
     area_col = 'region'
     cluster_col = 'ring_name'
-    member_expectation = 18
-    max_distance = 15000
+    member_expectation = 8
+    max_distance = 3000
     use_centroid = False
     drop_existings = False
     boq = False
