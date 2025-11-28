@@ -100,128 +100,128 @@ async def fiberization_task(task_id: str):
     else:
         return {"task_id": task_id, "status": task_result.state, "info": str(task_result.info)}
 
-# =============================
-# IDENTIFY INSERT DATA
-# =============================
-@router.post("/identify_insert", tags=["Intersite"])
-async def identify_insert(
-    excel_file: UploadFile = File(
-        ..., description="Excel file containing ring data to insert."
-    ),
-    kmz_design: UploadFile = File(
-        ..., description="KMZ file containing existing design plan."
-    ),
-    max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
-    search_radius: int = Form(2000, description="Maximum radius(m) for search insert ring.")
-):
-    """
-    Identified the insert ring data based on **Excel template, Existing Points, and Existing Fiber Route**.
+# # =============================
+# # IDENTIFY INSERT DATA
+# # =============================
+# @router.post("/identify_insert", tags=["Intersite"])
+# async def identify_insert(
+#     excel_file: UploadFile = File(
+#         ..., description="Excel file containing ring data to insert."
+#     ),
+#     kmz_design: UploadFile = File(
+#         ..., description="KMZ file containing existing design plan."
+#     ),
+#     max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
+#     search_radius: int = Form(2000, description="Maximum radius(m) for search insert ring.")
+# ):
+#     """
+#     Identified the insert ring data based on **Excel template, Existing Points, and Existing Fiber Route**.
 
-    **Template Identify Insert**  
-    [🟢 Download Here](http://localhost:8000/download-template/Template_Identify_Ring.xlsx)
+#     **Template Identify Insert**  
+#     [🟢 Download Here](http://localhost:8000/download-template/Template_Identify_Ring.xlsx)
 
-    **Output:**  
-    **Insert Data (.xlsx)** : Use this data to execute in **Insert Ring API**  
-    **New Data (.xlsx)**    : Use this data to execute in **Unsupervised API**
-    """
-    try:
-        suffix = os.path.splitext(kmz_design.filename)[1].lower()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_kmz:
-            tmp_kmz.write(kmz_design.file.read())
-            tmp_kmz_path = tmp_kmz.name
+#     **Output:**  
+#     **Insert Data (.xlsx)** : Use this data to execute in **Insert Ring API**  
+#     **New Data (.xlsx)**    : Use this data to execute in **Unsupervised API**
+#     """
+#     try:
+#         suffix = os.path.splitext(kmz_design.filename)[1].lower()
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_kmz:
+#             tmp_kmz.write(kmz_design.file.read())
+#             tmp_kmz_path = tmp_kmz.name
         
-        if suffix in ['.kmz', '.kml']:
-            prev_point_gdf = read_gdf(tmp_kmz_path, geom_type='point')
-            prev_fiber_gdf = read_gdf(tmp_kmz_path, geom_type='line')
-            prev_fiber_gdf = prev_fiber_gdf[~(prev_fiber_gdf['name'].str.lower().str.contains('connection'))].reset_index(drop=True)
-            print(f"📥 Reading previous design plan: {kmz_design.filename}")
-        else:
-            return {"error": "Unsupported previous design format. Supported formats are GPKG, Parquet, and Shapefile."}
-    except Exception as e:
-        return {"error": f"Failed to read previous design: {str(e)}"}
-    finally:
-        if os.path.exists(tmp_kmz_path):
-            os.remove(tmp_kmz_path)
+#         if suffix in ['.kmz', '.kml']:
+#             prev_point_gdf = read_gdf(tmp_kmz_path, geom_type='point')
+#             prev_fiber_gdf = read_gdf(tmp_kmz_path, geom_type='line')
+#             prev_fiber_gdf = prev_fiber_gdf[~(prev_fiber_gdf['name'].str.lower().str.contains('connection'))].reset_index(drop=True)
+#             print(f"📥 Reading previous design plan: {kmz_design.filename}")
+#         else:
+#             return {"error": "Unsupported previous design format. Supported formats are GPKG, Parquet, and Shapefile."}
+#     except Exception as e:
+#         return {"error": f"Failed to read previous design: {str(e)}"}
+#     finally:
+#         if os.path.exists(tmp_kmz_path):
+#             os.remove(tmp_kmz_path)
 
-    # Process data
-    try:
-        suffix = os.path.splitext(excel_file.filename)[1].lower()
-        filename = os.path.splitext(excel_file.filename)[0]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_excel:
-            tmp_excel.write(excel_file.file.read())
-            tmp_excel_path = tmp_excel.name
-            result_paths = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
-            result_paths = os.path.join(EXPORT_DIR, 'Identify Insert', result_paths)
-            os.makedirs(result_paths, exist_ok=True)
+#     # Process data
+#     try:
+#         suffix = os.path.splitext(excel_file.filename)[1].lower()
+#         filename = os.path.splitext(excel_file.filename)[0]
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_excel:
+#             tmp_excel.write(excel_file.file.read())
+#             tmp_excel_path = tmp_excel.name
+#             result_paths = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
+#             result_paths = os.path.join(EXPORT_DIR, 'Identify Insert', result_paths)
+#             os.makedirs(result_paths, exist_ok=True)
 
-            # PREPARE PREV DATA
-            new_sites, existing_sites, hubs = input_insertring(tmp_excel_path)
-            prev_fiber_gdf, prev_point_gdf = prepare_prevdata(prev_fiber_gdf, prev_point_gdf)
-            newsites_within, newsites_outside = identify_fiberzone(new_sites, prev_fiber=prev_fiber_gdf, search_radius=search_radius)
-            mapped_insert, dropped_insert = identify_insertdata(newsites_within, prev_fiber=prev_fiber_gdf, prev_points=prev_point_gdf, search_radius=search_radius, max_member=max_member)
+#             # PREPARE PREV DATA
+#             new_sites, existing_sites, hubs = input_insertring(tmp_excel_path)
+#             prev_fiber_gdf, prev_point_gdf = prepare_prevdata(prev_fiber_gdf, prev_point_gdf)
+#             newsites_within, newsites_outside = identify_fiberzone(new_sites, prev_fiber=prev_fiber_gdf, search_radius=search_radius)
+#             mapped_insert, dropped_insert = identify_insertdata(newsites_within, prev_fiber=prev_fiber_gdf, prev_points=prev_point_gdf, search_radius=search_radius, max_member=max_member)
             
-            # INSERT DATA
-            mapped_insert = mapped_insert.sort_values(by="distance_to_fiber").reset_index(drop=True)
-            if 'index_right' in mapped_insert.columns:
-                mapped_insert = mapped_insert.drop(columns=['index_right'])
+#             # INSERT DATA
+#             mapped_insert = mapped_insert.sort_values(by="distance_to_fiber").reset_index(drop=True)
+#             if 'index_right' in mapped_insert.columns:
+#                 mapped_insert = mapped_insert.drop(columns=['index_right'])
             
-            with pd.ExcelWriter(os.path.join(result_paths, f"Insert Data.xlsx")) as writer:
-                if 'geometry' in mapped_insert.columns:
-                    mapped_insert = mapped_insert.drop(columns=['geometry'])
-                mapped_insert.to_excel(writer, sheet_name='mapped_insert', index=False)
-            print(f"✅ Insert data identification completed.")
+#             with pd.ExcelWriter(os.path.join(result_paths, f"Insert Data.xlsx")) as writer:
+#                 if 'geometry' in mapped_insert.columns:
+#                     mapped_insert = mapped_insert.drop(columns=['geometry'])
+#                 mapped_insert.to_excel(writer, sheet_name='mapped_insert', index=False)
+#             print(f"✅ Insert data identification completed.")
 
-            # NEW RING DATA
-            if 'index_right' in newsites_outside.columns:
-                newsites_outside = newsites_outside.drop(columns=['index_right'])
-            if 'index_right' in existing_sites.columns:
-                existing_sites = existing_sites.drop(columns=['index_right'])
-            if 'index_right' in dropped_insert.columns:
-                dropped_insert = dropped_insert.drop(columns=['index_right'])
+#             # NEW RING DATA
+#             if 'index_right' in newsites_outside.columns:
+#                 newsites_outside = newsites_outside.drop(columns=['index_right'])
+#             if 'index_right' in existing_sites.columns:
+#                 existing_sites = existing_sites.drop(columns=['index_right'])
+#             if 'index_right' in dropped_insert.columns:
+#                 dropped_insert = dropped_insert.drop(columns=['index_right'])
 
-            newsites_outside = newsites_outside.reset_index(drop=True)
-            existing_sites = existing_sites.reset_index(drop=True)
-            dropped_insert = dropped_insert.reset_index(drop=True)
+#             newsites_outside = newsites_outside.reset_index(drop=True)
+#             existing_sites = existing_sites.reset_index(drop=True)
+#             dropped_insert = dropped_insert.reset_index(drop=True)
 
-            compiled_newring = []
-            if not existing_sites.empty:
-                existing_sites = existing_sites.to_crs(epsg=4326)
-                compiled_newring.append(existing_sites)
-            if not newsites_outside.empty:
-                newsites_outside = newsites_outside.to_crs(epsg=4326)
-                compiled_newring.append(newsites_outside)
-            if not dropped_insert.empty:
-                dropped_insert = dropped_insert.to_crs(epsg=4326)
-                compiled_newring.append(dropped_insert)
+#             compiled_newring = []
+#             if not existing_sites.empty:
+#                 existing_sites = existing_sites.to_crs(epsg=4326)
+#                 compiled_newring.append(existing_sites)
+#             if not newsites_outside.empty:
+#                 newsites_outside = newsites_outside.to_crs(epsg=4326)
+#                 compiled_newring.append(newsites_outside)
+#             if not dropped_insert.empty:
+#                 dropped_insert = dropped_insert.to_crs(epsg=4326)
+#                 compiled_newring.append(dropped_insert)
             
-            compiled_newring = pd.concat(compiled_newring, ignore_index=True) if compiled_newring else pd.DataFrame()
-            print(f"✅ Compiled new ring data. Total sites: {len(compiled_newring):,}")
+#             compiled_newring = pd.concat(compiled_newring, ignore_index=True) if compiled_newring else pd.DataFrame()
+#             print(f"✅ Compiled new ring data. Total sites: {len(compiled_newring):,}")
 
-            with pd.ExcelWriter(os.path.join(result_paths, f"New Ring Data.xlsx")) as writer:
-                if 'geometry' in compiled_newring.columns:
-                    compiled_newring = compiled_newring.drop(columns=['geometry'])
-                if 'geometry' in hubs.columns:
-                    hubs = hubs.drop(columns=['geometry'])
-                compiled_newring.to_excel(writer, sheet_name='new_ring', index=False)
-                hubs.to_excel(writer, sheet_name='hubs', index=False)
+#             with pd.ExcelWriter(os.path.join(result_paths, f"New Ring Data.xlsx")) as writer:
+#                 if 'geometry' in compiled_newring.columns:
+#                     compiled_newring = compiled_newring.drop(columns=['geometry'])
+#                 if 'geometry' in hubs.columns:
+#                     hubs = hubs.drop(columns=['geometry'])
+#                 compiled_newring.to_excel(writer, sheet_name='new_ring', index=False)
+#                 hubs.to_excel(writer, sheet_name='hubs', index=False)
 
-            # ZIPFILE
-            zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Identified_Insert_Data.zip"
-            zip_filepath = os.path.join(result_paths, zip_filename)
-            with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                for root, dirs, files in os.walk(result_paths):
-                    for file in files:
-                        if file != zip_filename:
-                            file_path = os.path.join(root, file)
-                            arcname = os.path.relpath(file_path, result_paths)
-                            zipf.write(file_path, arcname)
-            print(f"📦 Result files zipped.")
-        return FileResponse(zip_filepath, filename=zip_filename, media_type='application/zip')
-    except Exception as e:
-        return {"error": f"Failed to process data: {str(e)}"}
-    finally:
-        if os.path.exists(tmp_excel_path):
-            os.remove(tmp_excel_path)
+#             # ZIPFILE
+#             zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Identified_Insert_Data.zip"
+#             zip_filepath = os.path.join(result_paths, zip_filename)
+#             with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
+#                 for root, dirs, files in os.walk(result_paths):
+#                     for file in files:
+#                         if file != zip_filename:
+#                             file_path = os.path.join(root, file)
+#                             arcname = os.path.relpath(file_path, result_paths)
+#                             zipf.write(file_path, arcname)
+#             print(f"📦 Result files zipped.")
+#         return FileResponse(zip_filepath, filename=zip_filename, media_type='application/zip')
+#     except Exception as e:
+#         return {"error": f"Failed to process data: {str(e)}"}
+#     finally:
+#         if os.path.exists(tmp_excel_path):
+#             os.remove(tmp_excel_path)
 
 # =============================
 # INSERT RING
@@ -258,12 +258,11 @@ async def insert_ring(
         upload_dir,
         f"{uuid4().hex}_insert_{datetime.now().strftime('%H%M%S')}{excel_suffix}"
     )
-
     with open(insert_path, "wb") as f:
         f.write(await insert_list.read())
     print(f"📥 Saved Insert List → {insert_path}")
-
-    _, _, _ = validate_insert(insert_path, kmz_path)
+    excel_df = read_gdf(insert_path)
+    _, _, _ = validate_insert(excel_df, kmz_path)
 
     params = dumps({
         "insert_list_path": insert_path,
