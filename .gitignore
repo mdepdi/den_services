@@ -138,3 +138,6 @@ dump/
 
 # ZIP FILE
 *.zip
+
+__pycache__/
+*.pyc
