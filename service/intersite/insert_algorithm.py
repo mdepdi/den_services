@@ -1297,7 +1297,7 @@ def main_insertring(
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":
-    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.xlsx")
+    insert_sites = pd.read_excel(r"D:\JACOBS\SERVICE\API\data\template\Template_Insert_Ring.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\20251119-Week47-TBG-v1.kmz"
     export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2"
 
