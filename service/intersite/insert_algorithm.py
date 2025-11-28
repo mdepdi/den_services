@@ -475,12 +475,14 @@ def routing_insert(
             
             # existing_line = path_geom.intersection(prev_geom)
             # new_line = path_geom.difference(existing_line)
-            if not existing_line.is_empty:
-                data = {"geometry": existing_line}
-                existing_cable.append(data)
-            if not new_line.is_empty:
-                data = {"geometry": new_line}
-                new_cable.append(data)
+            if not existing_line is None:
+                if not existing_line.is_empty:
+                    data = {"geometry": existing_line}
+                    existing_cable.append(data)
+            if not new_line is None:
+                if not new_line.is_empty:
+                    data = {"geometry": new_line}
+                    new_cable.append(data)
 
             # new_length = new_line.length if new_line else 50
             # existing_length = existing_line.length if existing_line else 50
@@ -552,13 +554,13 @@ def routing_insert(
             })
             print(f"🟢 EXIST {segment_name:<20} | {seg_length:10.2f} m")
 
-    if len(existing_cable) > 0:
-        existing_cable = gpd.GeoDataFrame(existing_cable, geometry='geometry', crs=3857)
-        existing_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\20251128\Identify Route\Existing Cable {ring}.parquet")
+    # if len(existing_cable) > 0:
+    #     existing_cable = gpd.GeoDataFrame(existing_cable, geometry='geometry', crs=3857)
+    #     existing_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\20251128\Identify Route\Existing Cable {ring}.parquet")
 
-    if len(new_cable) > 0:
-        new_cable = gpd.GeoDataFrame(new_cable, geometry='geometry', crs=3857)
-        new_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\2025112\Identify Route\New Cable {ring}.parquet")
+    # if len(new_cable) > 0:
+    #     new_cable = gpd.GeoDataFrame(new_cable, geometry='geometry', crs=3857)
+    #     new_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\2025112\Identify Route\New Cable {ring}.parquet")
 
     # -----------------------------
     # RETURN GDF
@@ -1294,7 +1296,7 @@ def main_insertring(
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":
-    insert_sites = pd.read_csv(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.csv")
+    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\20251119-Week47-TBG-v1.kmz"
     export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2"
 
