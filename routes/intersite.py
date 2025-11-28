@@ -233,6 +233,16 @@ async def insert_ring(
     max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
     max_distance: int = Form(3000, description="Maximum distance consider for insertion.")
 ):
+    """
+    Create Intersite design based on **Insert Alghorithm**.  
+
+    **Template Insert Ring**  
+    [🟢 Download Here](http://localhost:8000/download-template/Template_Insert_Ring.xlsx)
+
+    **Note:**
+    - KMZ Data should be formatted as DEN intersite design rules.
+    - Make sure the latitude and longitude is not reversed.
+    """
     date_today = datetime.now().strftime("%Y%m%d")
     upload_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
     os.makedirs(upload_dir, exist_ok=True)
