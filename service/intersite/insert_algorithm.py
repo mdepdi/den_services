@@ -1234,7 +1234,7 @@ def main_insertring(
         updated_paths = gpd.read_parquet(paths_path)
         print(f"✅ Loaded existing processed data from {export_dir}.")
     else:
-        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member)
+        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, task_celery=task_celery)
 
     if not updated_points.empty:
         updated_points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Points.parquet"), index=False)
