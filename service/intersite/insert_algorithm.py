@@ -475,12 +475,14 @@ def routing_insert(
             
             # existing_line = path_geom.intersection(prev_geom)
             # new_line = path_geom.difference(existing_line)
-            if not existing_line.is_empty:
-                data = {"geometry": existing_line}
-                existing_cable.append(data)
-            if not new_line.is_empty:
-                data = {"geometry": new_line}
-                new_cable.append(data)
+            if not existing_line is None:
+                if not existing_line.is_empty:
+                    data = {"geometry": existing_line}
+                    existing_cable.append(data)
+            if not new_line is None:
+                if not new_line.is_empty:
+                    data = {"geometry": new_line}
+                    new_cable.append(data)
 
             # new_length = new_line.length if new_line else 50
             # existing_length = existing_line.length if existing_line else 50
@@ -1294,7 +1296,7 @@ def main_insertring(
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":
-    insert_sites = pd.read_csv(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.csv")
+    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\20251119-Week47-TBG-v1.kmz"
     export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2"
 
