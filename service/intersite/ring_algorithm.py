@@ -839,7 +839,7 @@ def ring_parallel(
                         state="PROGRESS",
                         meta={
                             "status": (
-                                f"Completed {len(final_paths)}/{total_futures} clusters "
+                                f"Completed {len(final_paths)}/{total_futures} rings"
                                 f"in area {area}"
                             )
                         },

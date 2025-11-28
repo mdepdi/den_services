@@ -1010,6 +1010,7 @@ def main_unsupervised(
         vendor=vendor,
         program=program,
         method=method,
+        **kwargs
     )
 
 
