@@ -1249,6 +1249,9 @@ def main_insertring(
     vendor = kwargs.get("vendor", "TBG")
 
     # VALIDATE INPUT
+    if isinstance(insert_data, str):
+        insert_data = read_gdf(insert_data)
+
     insert_sites, points_existing, lines_existing = validate_insert(insert_sites=insert_data, kmz_data=kmz_data, sep=sep_segment)
     insert_reached, insert_not_reached = identify_insert(insert_sites, lines_existing, max_distance=max_distance)
 
