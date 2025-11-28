@@ -135,6 +135,7 @@ uploads/
 export/
 upload/
 dump/
+test/
 
 # ZIP FILE
 *.zip

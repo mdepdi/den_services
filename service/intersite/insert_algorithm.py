@@ -596,9 +596,10 @@ def parallel_insert(
     **kwargs
     ) -> tuple:
 
-    task_celery = kwargs.get("task_celery", None)
+    task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
+    # ring_list = ["TBG-KIS-Phase4a-DF163", "TBG-SPRO-FALCON-DF010"]
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
     mapped_insert["note"] = "Insert Site"
@@ -660,7 +661,7 @@ def parallel_insert(
                     all_new_segments.append(new_segments)
                     logger.info(f"✅ Completed processing for ring {ring} with {len(new_segments):,} new segments.")
 
-                if task_celery is not None:
+                if task_celery:
                     task_celery.update_state(
                         state="PROGRESS",
                         meta={ "status": f"Completed {len(all_new_points)}/{len(ring_list)} rings."},
@@ -1227,14 +1228,14 @@ def main_insertring(
         insert_reached['vendor'] = vendor
     
     # PROCESS INSERT RING
-    points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
-    paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
-    if os.path.exists(points_path) and os.path.exists(paths_path):
-        updated_points = gpd.read_parquet(points_path)
-        updated_paths = gpd.read_parquet(paths_path)
-        print(f"✅ Loaded existing processed data from {export_dir}.")
-    else:
-        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, task_celery=task_celery)
+    # points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
+    # paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
+    # if os.path.exists(points_path) and os.path.exists(paths_path):
+    #     updated_points = gpd.read_parquet(points_path)
+    #     updated_paths = gpd.read_parquet(paths_path)
+    #     print(f"✅ Loaded existing processed data from {export_dir}.")
+    # else:
+    updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, task_celery=task_celery)
 
     if not updated_points.empty:
         updated_points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Points.parquet"), index=False)
