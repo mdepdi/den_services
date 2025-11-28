@@ -439,8 +439,6 @@ def routing_insert(
 
             try:
                 path, path_geom, path_length = route_path(start_node, end_node, G, roads, merged=True)
-                if path_length == 0:
-                    path_geom = None
             except Exception:
                 print(f"⚠️ No path between {start_id} → {end_id}")
                 continue
