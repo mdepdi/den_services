@@ -554,13 +554,13 @@ def routing_insert(
             })
             print(f"🟢 EXIST {segment_name:<20} | {seg_length:10.2f} m")
 
-    if len(existing_cable) > 0:
-        existing_cable = gpd.GeoDataFrame(existing_cable, geometry='geometry', crs=3857)
-        existing_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\20251128\Identify Route\Existing Cable {ring}.parquet")
+    # if len(existing_cable) > 0:
+    #     existing_cable = gpd.GeoDataFrame(existing_cable, geometry='geometry', crs=3857)
+    #     existing_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\20251128\Identify Route\Existing Cable {ring}.parquet")
 
-    if len(new_cable) > 0:
-        new_cable = gpd.GeoDataFrame(new_cable, geometry='geometry', crs=3857)
-        new_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\2025112\Identify Route\New Cable {ring}.parquet")
+    # if len(new_cable) > 0:
+    #     new_cable = gpd.GeoDataFrame(new_cable, geometry='geometry', crs=3857)
+    #     new_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\2025112\Identify Route\New Cable {ring}.parquet")
 
     # -----------------------------
     # RETURN GDF
