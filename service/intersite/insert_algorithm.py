@@ -432,7 +432,7 @@ def routing_insert(
             if sp['note'] == 'insert' and ep['note'] == 'insert':
                 prev_route = segments[-1]['geometry']
                 exist_geom = target_fiber.geometry.union_all()
-                prev_route = unary_union(exist_geom, prev_route)
+                prev_route = unary_union([exist_geom, prev_route])
             
             if prev_geom.geom_type == "MultiLineString":
                 prev_geom = linemerge(prev_geom)
