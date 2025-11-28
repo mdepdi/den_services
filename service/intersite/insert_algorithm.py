@@ -71,7 +71,7 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
     
     # POINT EXISTING
     points_existing['site_id'] = points_existing['name']
-    points_existing['site_name'] = points_existing['name']
+    points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
     points_existing['long'] = points_existing.geometry.to_crs(epsg=4326).x
@@ -80,7 +80,6 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
     points_existing['program'] = points_existing['folders'].str.split(";").str[-3]
     points_existing['geometry'] = points_existing.geometry.force_2d()
     points_existing['region'] = points_existing['folders'].str.extract(r'([A-Z]{3,6});')
-
 
     # LINES EXISTING
     lines_existing['segment'] = lines_existing['name']
@@ -116,6 +115,7 @@ def identify_insert(insert_gdf:gpd.GeoDataFrame, lines_existing:gpd.GeoDataFrame
     lines_existing = lines_existing.to_crs(epsg=3857)
 
     insert_reached = gpd.sjoin_nearest(insert_gdf, lines_existing[['geometry', 'near_end', 'far_end', 'ring_name']], how='inner', max_distance=max_distance, distance_col="dist_fiber").drop(columns='index_right')
+    insert_reached = insert_reached.drop_duplicates('site_id')
 
     insert_not_reached = insert_gdf[~insert_gdf.index.isin(insert_reached.index)]
     insert_reached = insert_reached.reset_index(drop=True)
@@ -236,7 +236,7 @@ def build_connection(ring: str, to_insert:gpd.GeoDataFrame, target_fiber:gpd.Geo
         if near_id in new_connection:
             near_index = new_connection.index(near_id)
             for insert_id in insert_ids:
-                if max_member is not None and len(new_connection) >= max_member:
+                if max_member is not None and len(member_ids) >= max_member:
                     print(f"⚠️ Maximum member limit of {max_member} reached during insertion for ring {ring}.")
                     break
                 if insert_id not in new_connection:
@@ -291,7 +291,7 @@ def relative_intersection(line_a: LineString | MultiLineString, line_b: LineStri
             for geom in geoms:
                 if geom.length > longest.length:
                     longest = geom
-        line_a = longest
+            line_a = longest
 
     if line_b.geom_type == "MultiLineString":
         line_b = linemerge(line_b)
@@ -301,7 +301,7 @@ def relative_intersection(line_a: LineString | MultiLineString, line_b: LineStri
             for geom in geoms:
                 if geom.length > longest.length:
                     longest = geom
-        line_b = longest
+            line_b = longest
 
 
     if tolerance > 0:
@@ -314,9 +314,9 @@ def relative_intersection(line_a: LineString | MultiLineString, line_b: LineStri
     # ---- 1. Compute intersection ----
     inter = line_a.intersection(lineB)
     if inter is None:
-        return None, line_a
+        return LineString(), line_a
     if inter.is_empty:
-        return None, line_a
+        return LineString(), line_a
 
     # ---- 2. Extract all intersection endpoints ----
     pts = []
@@ -367,33 +367,35 @@ def routing_insert(
 
     print(f"⚙️ Routing ring {ring} ...")
 
-    # CRS normalizing
+    # CRS normalization
     if target_fiber.crs != "EPSG:3857":
         target_fiber = target_fiber.to_crs(3857)
     if new_points.crs != "EPSG:3857":
         new_points = new_points.to_crs(3857)
 
-    # Opposing column
     opposite_column = "far_end" if start_column == "near_end" else "near_end"
 
-    # -----------------------------
-    # BUILD ROAD NETWORK
-    # -----------------------------
+    # ===============================
+    # BUILD GRAPH NETWORK
+    # ===============================
     hex_list = identify_hexagon(new_points, type="convex")
     roads = retrieve_roads(hex_list, type="roads").to_crs(3857)
     nodes = retrieve_roads(hex_list, type="nodes").to_crs(3857)
     G = build_graph(roads, graph_type="fiber")
 
-    # Nearest node assignment
     if "nearest_node" not in new_points.columns:
-        new_points = gpd.sjoin_nearest( new_points, nodes[["node_id", "geometry"]], how="left", distance_col="dist_to_node").rename(columns={"node_id": "nearest_node"})
+        new_points = gpd.sjoin_nearest(
+            new_points, 
+            nodes[["node_id", "geometry"]], 
+            how="left", 
+            distance_col="dist_to_node"
+        ).rename(columns={"node_id": "nearest_node"})
 
-    # -----------------------------
-    # START ROUTING
-    # -----------------------------
     segments = []
-    existing_cable = []
-    new_cable = []
+
+    # ===============================
+    # MAIN LOOP
+    # ===============================
     for i in range(len(new_connection) - 1):
         start_id = new_connection[i]
         end_id = new_connection[i + 1]
@@ -402,91 +404,68 @@ def routing_insert(
         ep = new_points[new_points["site_id"] == end_id]
 
         if sp.empty or ep.empty:
-            print(f"🔴 Missing point data at {start_id} or {end_id}, skipping.")
+            print(f"🔴 Missing point: {start_id} or {end_id}")
+            continue
+
+        if len(sp) == 0 or len(ep) == 0:
+            print(f"⚠ Missing point data for {start_id} or {end_id}, skipping")
             continue
 
         sp = sp.iloc[0]
         ep = ep.iloc[0]
-
         is_new = (sp["note"] == "insert") or (ep["note"] == "insert")
 
-        # ----------------------------------------
-        # NEW ROUTE — RUN DIJKSTRA
-        # ----------------------------------------
+        # ===========================
+        # NEW ROUTE
+        # ===========================
         if is_new:
             start_node = sp["nearest_node"]
             end_node = ep["nearest_node"]
-            if ep['note'] == "insert":
+
+            # ----- Previous geometry -----
+            if ep["note"] == "insert":
                 startprev_id = start_id
-                endprev_id = new_connection[i+2]
+                endprev_id = new_connection[i+2] if i+2 < len(new_connection) else end_id
             else:
-                startprev_id = new_connection[i-1]
+                startprev_id = new_connection[i-1] if i-1 >= 0 else start_id
                 endprev_id = end_id
-            
-            sprev_id = new_points.loc[new_points["site_id"] == startprev_id, "site_id"].iloc[0]
-            eprev_id = new_points.loc[new_points["site_id"] == endprev_id, "site_id"].iloc[0]
 
-            prev_route = target_fiber[(target_fiber["near_end"] == sprev_id) & (target_fiber["far_end"] == eprev_id)].copy()
-            prev_geom =  prev_route.geometry.union_all()
+            prev_route = target_fiber[
+                (target_fiber[start_column] == startprev_id) &
+                (target_fiber[opposite_column] == endprev_id)
+            ]
 
-            if sp['note'] == 'insert' and ep['note'] == 'insert':
-                prev_route = segments[-1]['geometry']
-                exist_geom = target_fiber.geometry.union_all()
-                prev_route = unary_union([exist_geom, prev_route])
-            
-            if prev_geom.geom_type == "MultiLineString":
-                prev_geom = linemerge(prev_geom)
+            if prev_route.empty:
+                prev_geom = LineString()
+            else:
+                prev_geom = prev_route.geometry.union_all()
 
+            # if both are insert → use previous new segment
+            if sp["note"] == "insert" and ep["note"] == "insert" and len(segments) > 0:
+                seg_prev = segments[-1]["geometry"] if len(segments) > 0 else LineString()
+                prev_geom = [target_fiber.geometry.union_all(), seg_prev]
+                prev_geom = unary_union(prev_geom)
+
+            prev_geom = prev_geom
+
+            # ----- Routing -----
             try:
-                path, path_geom, path_length = route_path(start_node, end_node, G, roads, merged=True)
+                path, path_geom, _ = route_path(start_node, end_node, G, roads, merged=True)
             except Exception:
                 print(f"⚠️ No path between {start_id} → {end_id}")
                 continue
 
-            if path_geom is None:
-                print(f"⚠️ Invalid geometry for segment {start_id} → {end_id}")
-                continue
-
-            # Dropwire adjustment
+            path_geom = path_geom
             path_geom, _ = dropwire_connection(path_geom, sp, ep, nodes, start_node, end_node)
-            existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=50)
-            if new_line.geom_type == 'MultiLineString':
-                insert_site = sp if sp['note'] =='insert' else ep
-                insert_geom = insert_site.geometry
-                insert_buff = insert_geom.buffer(5)
-                new_line = linemerge(new_line)
-                if new_line.geom_type == 'MultiLineString':
-                    geoms = list(new_line.geoms)
-                    intersect_insert = []
-                    for geom in geoms:
-                        if geom.intersects(insert_buff):
-                            intersect_insert.append(geom)
-                    if len(intersect_insert)  > 0:
-                        intersect_insert = unary_union(intersect_insert)
-                        new_line = intersect_insert
-                    else:
-                        new_line = LineString()
-            if isinstance(existing_line, list):
-                existing_line = LineString()
-            if isinstance(new_line, list):
-                new_line = LineString()
-            
-            # existing_line = path_geom.intersection(prev_geom)
-            # new_line = path_geom.difference(existing_line)
-            if not existing_line is None:
-                if not existing_line.is_empty:
-                    data = {"geometry": existing_line}
-                    existing_cable.append(data)
-            if not new_line is None:
-                if not new_line.is_empty:
-                    data = {"geometry": new_line}
-                    new_cable.append(data)
 
-            # new_length = new_line.length if new_line else 50
-            # existing_length = existing_line.length if existing_line else 50
-            new_length = new_line.length * 1.1 if new_line else 50
-            existing_length = (existing_line.length * 1.1) + 500 if existing_line else 50
-            total_length = new_length + existing_length
+            # ----- Intersection -----
+            existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=50)
+
+            # compute lengths
+            existing_length = existing_line.length
+            new_length = new_line.length
+            total_length = existing_length + new_length
+
             segment_name = f"{start_id}-{end_id}"
 
             segments.append({
@@ -498,79 +477,46 @@ def routing_insert(
                 "length": round(total_length, 2),
                 "route_type": "New Route",
                 "fo_note": "merged",
-                "geometry": path_geom
+                "geometry": path_geom,
             })
+
             print(f"🟢 NEW   {segment_name:<20} | {total_length:10.2f} m")
 
-            # if not existing_line.is_empty:
-            #     new_exist = existing_line.buffer(20)
-            #     existing_buff = existing_buff.union(new_exist)
-
-            # Reduce weight on used edges
-            for j in range(len(path) - 1):
-                u, v = path[j], path[j + 1]
-                if G.has_edge(u, v):
-                    G[u][v]["weight"] *= 0.10
-                if G.has_edge(v, u):
-                    G[v][u]["weight"] *= 0.10
-
-        # ----------------------------------------
+        # ===========================
         # EXISTING ROUTE
-        # ----------------------------------------
+        # ===========================
         else:
             seg = target_fiber[
-                (target_fiber["near_end"] == start_id) &
-                (target_fiber["far_end"] == end_id)
+                ((target_fiber["near_end"] == start_id) & (target_fiber["far_end"] == end_id)) |
+                ((target_fiber["near_end"] == end_id) & (target_fiber["far_end"] == start_id))
             ]
 
             if seg.empty:
-                seg = target_fiber[
-                    (target_fiber["near_end"] == end_id) &
-                    (target_fiber["far_end"] == start_id)
-                ]
-
-            if seg.empty:
-                print(f"🟠 No existing segment for {start_id} ↔ {end_id}")
+                print(f"🟠 No existing route for {start_id} ↔ {end_id}")
                 continue
-            
-            union_line = seg.geometry.union_all()
-            merged = linemerge(union_line) if union_line.geom_type == "MultiLineString" else union_line
-            # seg_length = merged.length if merged else 0.0
-            seg_length = merged.length * 1.1 if merged else 0.0
 
+            merged = seg.geometry.union_all()
+            seg_length = merged.length
             segment_name = f"{start_id}-{end_id}"
+
             segments.append({
                 "name": segment_name,
                 start_column: start_id,
                 opposite_column: end_id,
-                "existing_length": 0.0,
+                "existing_length": round(seg_length, 2),
                 "new_length": 0.0,
-                "length": seg_length,
+                "length": round(seg_length, 2),
                 "route_type": "Existing Route",
-                "fo_note": "merged",
+                "fo_note": "existing",
                 "geometry": merged
             })
+
             print(f"🟢 EXIST {segment_name:<20} | {seg_length:10.2f} m")
 
-    # if len(existing_cable) > 0:
-    #     existing_cable = gpd.GeoDataFrame(existing_cable, geometry='geometry', crs=3857)
-    #     existing_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\20251128\Identify Route\Existing Cable {ring}.parquet")
-
-    # if len(new_cable) > 0:
-    #     new_cable = gpd.GeoDataFrame(new_cable, geometry='geometry', crs=3857)
-    #     new_cable.to_parquet(fr"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2\2025112\Identify Route\New Cable {ring}.parquet")
-
-    # -----------------------------
-    # RETURN GDF
-    # -----------------------------
     if len(segments) == 0:
         return gpd.GeoDataFrame(columns=target_fiber.columns, geometry="geometry", crs=3857)
 
-    df = gpd.GeoDataFrame(segments, geometry="geometry", crs=3857)
-    df["length"] = df["length"].round(2)
-
-    return df
-
+    return gpd.GeoDataFrame(segments, geometry="geometry", crs=3857)
 
 def insert_algo(inserts:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, points:gpd.GeoDataFrame, max_member:int=12):
     # FO HUB AND SITELIST
@@ -647,7 +593,10 @@ def parallel_insert(
     prev_fiber: gpd.GeoDataFrame,
     prev_point: gpd.GeoDataFrame,
     max_member: int = 20,
+    **kwargs
     ) -> tuple:
+
+    task_celery = kwargs.get("task_celery", None)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
@@ -710,6 +659,12 @@ def parallel_insert(
                 if new_segments is not None and not new_segments.empty:
                     all_new_segments.append(new_segments)
                     logger.info(f"✅ Completed processing for ring {ring} with {len(new_segments):,} new segments.")
+
+                if task_celery is not None:
+                    task_celery.update_state(
+                        state="PROGRESS",
+                        meta={ "status": f"Completed {len(all_new_points)}/{len(ring_list)} rings."},
+                    )
             except Exception as e:
                 logger.error(f"❌ Error processing ring {ring}: {e}")
                 all_new_points.append(ring_point)
@@ -1017,6 +972,8 @@ def ioh_report(
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Insert Site")
     admin = gpd.read_parquet(rf"{MAINDATA_DIR}/01. Admin/H3_Admin_2024_Kabkot.parquet")
+    updated_points = updated_points.to_crs(epsg=3857)
+    updated_paths = updated_paths.to_crs(epsg=3857)
     admin = admin.to_crs(epsg=3857)
 
     # ----------------------------
@@ -1272,12 +1229,12 @@ def main_insertring(
     # PROCESS INSERT RING
     points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
     paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
-    # if os.path.exists(points_path) and os.path.exists(paths_path):
-    #     updated_points = gpd.read_parquet(points_path)
-    #     updated_paths = gpd.read_parquet(paths_path)
-    #     print(f"✅ Loaded existing processed data from {export_dir}.")
-    # else:
-    updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member)
+    if os.path.exists(points_path) and os.path.exists(paths_path):
+        updated_points = gpd.read_parquet(points_path)
+        updated_paths = gpd.read_parquet(paths_path)
+        print(f"✅ Loaded existing processed data from {export_dir}.")
+    else:
+        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member)
 
     if not updated_points.empty:
         updated_points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Points.parquet"), index=False)
@@ -1297,7 +1254,7 @@ def main_insertring(
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":
-    insert_sites = pd.read_excel(r"D:\JACOBS\SERVICE\API\data\template\Template_Insert_Ring.xlsx")
+    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\20251119-Week47-TBG-v1.kmz"
     export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2"
 
