@@ -44,13 +44,6 @@ def task_insertring(self, data: dict):
             if "/mnt/" not in kmz_path:
                 kmz_path = kmz_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
 
-        insert_list_path = gpd.read_parquet(insert_list_path)
-        kmz_path = gpd.read_parquet(kmz_path)
-
-        # IDENTIFY FIBERZONE & INSERT DATA
-        self.update_state(state="PROGRESS", meta={"status": "Identifying fiber zone and insert data"})
-
-
         # RUN INSERT RING PROCESSING
         self.update_state(state="PROGRESS", meta={"status": "Processing insert ring data"})
         start_time = time()
