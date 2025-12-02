@@ -215,7 +215,7 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
     # --- EXTRACT EDGES ---
     edges = []
-    for _, row in gdf.iterrows():
+    for _, row in tqdm(gdf.iterrows(), desc="Extract Edges"):
         geom = row.geometry
         if geom.is_empty:
             continue
@@ -236,9 +236,9 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
     # --- BUILD NODES ---
     nodes = []
-    for _, e in edges_gdf.iterrows():
-        nodes.append({"id_line": e["id_line"], "geometry": e["u"]})
-        nodes.append({"id_line": e["id_line"], "geometry": e["v"]})
+    for _, e in tqdm(edges_gdf.iterrows(), desc="Extract Nodes"):
+        nodes.append({"id_line": e["id_line"], "geometry": e["u"], **{k: v for k, v in edges_gdf.items()}})
+        nodes.append({"id_line": e["id_line"], "geometry": e["v"], **{k: v for k, v in edges_gdf.items()}})
     nodes_gdf = gpd.GeoDataFrame(nodes, geometry="geometry", crs=gdf.crs)
 
     nodes_gdf["x"] = nodes_gdf.geometry.x.round(decimals)
@@ -263,7 +263,7 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
     # --- CLEAN OUTPUT ---
     edges_gdf = edges_gdf.drop(columns=["u", "v"])
-    nodes_gdf = nodes_gdf[["node_id", "x", "y", "count", "turn_isec","turn_ratio", "turn_note", "geometry"]]
+    # nodes_gdf = nodes_gdf[["node_id", "x", "y", "count", "turn_isec","turn_ratio", "turn_note", "geometry"]]
 
     # CRS
     nodes_gdf = nodes_gdf.to_crs(crs_input)
