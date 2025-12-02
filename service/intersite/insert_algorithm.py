@@ -738,10 +738,10 @@ def save_kml(
     if 'program' in points.columns:
         program_mode = points['program'].dropna().mode()
         program = program_mode.iloc[0] if not program_mode.empty else 'Unknown Program'
-        kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
+        kmz_path = os.path.join(export_dir, f"Intersite Design_{program}_{method}_{date_today}.kmz")
     else:
         program = None
-        kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}_{program}.kmz")
+        kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
 
     logger.info(f"🧩 Exporting KML/KMZ to {kmz_path}")
     main_kml = simplekml.Kml()
@@ -1276,14 +1276,14 @@ def main_insertring(
         insert_reached['vendor'] = vendor
     
     # PROCESS INSERT RING
-    # points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
-    # paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
-    # if os.path.exists(points_path) and os.path.exists(paths_path):
-    #     updated_points = gpd.read_parquet(points_path)
-    #     updated_paths = gpd.read_parquet(paths_path)
-    #     print(f"✅ Loaded existing processed data from {export_dir}.")
-    # else:
-    updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, task_celery=task_celery)
+    points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
+    paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
+    if os.path.exists(points_path) and os.path.exists(paths_path):
+        updated_points = gpd.read_parquet(points_path)
+        updated_paths = gpd.read_parquet(paths_path)
+        print(f"✅ Loaded existing processed data from {export_dir}.")
+    else:
+        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, task_celery=task_celery)
 
     if not updated_points.empty:
         updated_points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Points.parquet"), index=False)
