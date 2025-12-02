@@ -41,9 +41,6 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
     # INSERT SITES
     if isinstance(insert_sites, str):
         insert_sites = read_gdf(insert_sites)
-        insert_sites = sanitize_header(insert_sites, lowercase=True)
-        insert_sites['long'] = insert_sites.geometry.to_crs(epsg=4326).x
-        insert_sites['lat'] = insert_sites.geometry.to_crs(epsg=4326).y
     elif isinstance(insert_sites, gpd.GeoDataFrame):
         insert_sites = sanitize_header(insert_sites, lowercase=True)
         insert_sites['long'] = insert_sites.geometry.to_crs(epsg=4326).x
@@ -457,9 +454,8 @@ def routing_insert(
             else:
                 prev_geom = prev_route.geometry.union_all()
 
-            # if both are insert → use previous new segment
+            # BOTH INSERT
             if sp["note"] == "insert" and ep["note"] == "insert" and len(segments) > 0:
-                # seg_prev = segments[-1]["geometry"] if len(segments) > 0 else LineString()
                 prev_geom = target_fiber.geometry.union_all()
                 prev_geom = linemerge(prev_geom) if prev_geom.geom_type == "MultiLineString" else prev_geom
 
@@ -473,10 +469,17 @@ def routing_insert(
             existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=50)
 
             # compute lengths
-            overlap_prev = path_geom.intersection(prev_geom.buffer(50))
-            overlap_length = prev_geom.length
-            percentage = overlap_prev.length / prev_geom.length
-            remark_overlap = 'Valid' if percentage > 0.2 or overlap_length > 5000 else 'Invalid'
+            if prev_geom.is_empty or prev_geom.length == 0:
+                overlap_prev = LineString()
+                overlap_length = 0.0
+                percentage = 0.0
+                remark_overlap = 'Invalid'
+            else:
+                overlap_prev = existing_line.intersection(prev_geom.buffer(50))
+                overlap_length = overlap_prev.length
+                percentage = overlap_prev.length / prev_geom.length if prev_geom.length > 0 else 0.0
+                remark_overlap = 'Valid' if percentage > 0.2 or overlap_length > 5000 else 'Invalid'
+
             existing_length = existing_line.length * 1.1 if existing_line.length > 0 else 50
             new_length = new_line.length * 1.1 + 500 if new_line.length > 0 else 50
             total_length = existing_length + new_length
@@ -584,8 +587,11 @@ def insert_algo(inserts:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, points:gpd.Geo
             return None, None
     
     # PROJECT DETAILS
-    region = fo_hub['region'].dropna().mode()[0]
-    program = site_list['program'].dropna().mode()[0]
+    region_mode = fo_hub['region'].dropna().mode()
+    region = region_mode.iloc[0] if not region_mode.empty else 'Unknown Region'
+
+    program_mode = site_list['program'].dropna().mode()
+    program = program_mode.iloc[0] if not program_mode.empty else 'Unknown Program'
 
     # IDENTIFY CONNECTION
     new_points, new_connection = build_connection(ring_name, inserts, lines, points, max_member, start_column)
@@ -731,7 +737,8 @@ def save_kml(
     topology = topology.to_crs(epsg=4326).reset_index(drop=True)
 
     if 'program' in points.columns:
-        program = points['program'].mode()[0]
+        program_mode = points['program'].dropna().mode()
+        program = program_mode.iloc[0] if not program_mode.empty else 'Unknown Program'
         kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
     else:
         program = None
@@ -1297,9 +1304,9 @@ def main_insertring(
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":
-    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.xlsx")
-    kmz_data = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\20251119-Week47-TBG-v1.kmz"
-    export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V3_Overlap Check"
+    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Insert Site.xlsx")
+    kmz_data = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\20251119-Week47-TBG-v1.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V3_Overlap Check"
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
