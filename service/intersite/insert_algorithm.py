@@ -697,8 +697,6 @@ def parallel_insert(
 
             except Exception as e:
                 logger.error(f"❌ Error processing ring {ring}: {e}")
-                all_new_points.append(meta["ring_point"])
-                all_new_segments.append(meta["ring_fiber"])
 
     if all_new_points:
         all_new_points = pd.concat(all_new_points, ignore_index=True)
