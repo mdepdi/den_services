@@ -47,8 +47,6 @@ logs/
 *.geotiff
 *.jp2
 *.img
-*.kmz
-*.kml
 *.gdb
 *.mdb
 *.sqlite
