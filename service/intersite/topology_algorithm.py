@@ -146,7 +146,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped = gpd.sjoin_nearest(
         point_topology,
         sitelist_gdf[['site_id', 'site_name', 'region', 'centroid', 'geometry']],
-        max_distance=20000,
+        max_distance=5000,
         distance_col='dist_to_site'
     ).drop(columns='index_right')
 
@@ -154,7 +154,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped = mapped.drop(columns='centroid')
 
     # Ensure sequential ordering
-    mapped = mapped.sort_values(["ring_name", "ring_id", "num"])
+    mapped = mapped.sort_values(["ring_name", "ring_id", "site_type", "num"])
     mapped = mapped.drop_duplicates(['ring_name', 'site_id'])
 
 
@@ -190,7 +190,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
                 seg = pd.concat(
                     [a.add_suffix('_a'), b.add_suffix('_b')],
                     axis=0
-                ).to_frame().T  # -> 1-row DataFrame
+                ).to_frame().T
 
                 seg['ring_name'] = ring
                 seg['region'] = region
@@ -198,11 +198,10 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
                 mapped_fix.append(seg)
 
-
     mapped_fix = pd.concat(mapped_fix, ignore_index=True)
     return mapped_fix
 
-def main_topology(excel_path:str, line_file:str, export_loc:str, boq:bool=False, **kwargs):
+def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, **kwargs):
     cable_cost = kwargs.get("cable_cost", 35000)
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
@@ -222,7 +221,7 @@ def main_topology(excel_path:str, line_file:str, export_loc:str, boq:bool=False,
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
     site_data = topology_algo(sitelist_gdf, line_gdf, program)
-    # site_data = sanitize_header(site_data)
+    site_data = sanitize_header(site_data)
     # site_data = validate_fixroute(site_data)
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -244,8 +243,8 @@ def main_topology(excel_path:str, line_file:str, export_loc:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\SIte List dan closure.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Topo sample.kml"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Sitelist Topology Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Polygon Sample.kml"
     export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export"
     program = "Trial Topology"
     boq = False

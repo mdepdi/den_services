@@ -16,6 +16,7 @@ from service.intersite.boq_algorithm import main_boq
 from service.intersite.ring_algorithm import supervised_validation, main_supervised
 from modules.table import sanitize_header
 from modules.data import read_gdf
+from modules.utils import auto_group
 from core.logger import create_logger
 from core.config import settings
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -43,11 +44,13 @@ def validate_poligonize(excel_path:str):
         
         sitelist = pd.read_excel(excel, sheet_name='sitelist')
         hubs = pd.read_excel(excel, sheet_name='hubs')
+        sitelist['site_type'] = "Site List"
+        hubs['site_type'] = "FO Hub"
 
         print(f"ℹ️ Total sitelist: {len(sitelist):,}")
         print(f"ℹ️ Total hubs    : {len(hubs):,}")
 
-        used_col = ['site_id', 'long', 'lat', 'site_type']
+        used_col = ['site_id','site_name', 'long', 'lat', 'site_type']
         for col in used_col:
             if col not in sitelist.columns:
                 raise ValueError(f"Column {col} not found in Sitelist. Check your input.")
@@ -63,15 +66,13 @@ def validate_poligonize(excel_path:str):
 
         sitelist_gdf = gpd.GeoDataFrame(sitelist, geometry=sitelist_geom)
         hubs_gdf = gpd.GeoDataFrame(hubs, geometry=hubs_geom)
-        sitelist_gdf['site_type'] = "Site List"
-        hubs_gdf['site_type'] = "FO Hub"
         
     return sitelist_gdf, hubs_gdf
 
 def polygonize_algo(sitelist_gdf:gpd.GeoDataFrame, hubs_gdf:gpd.GeoDataFrame, polygon_gdf:gpd.GeoDataFrame, project_name:str):
     def get_code(hub_id:str):
         code = None
-        pattern = re.compile(r"\b(?P<num>\d{2})(?P<code>[A-Z]{3})(?P<tail>\d+)\b")
+        pattern = re.compile(r"\b(?P<num>\d{2})(?P<code>[A-Z]{3,4})(?P<tail>\d+)\b")
         match = pattern.search(hub_id)
         if match:
             code = match.group("code")
@@ -79,6 +80,12 @@ def polygonize_algo(sitelist_gdf:gpd.GeoDataFrame, hubs_gdf:gpd.GeoDataFrame, po
         
     print(f"ℹ️ Total Polygon: {len(polygon_gdf):,}")
     polygon_gdf['name'] = polygon_gdf.index + 1
+
+    if 'region' not in sitelist_gdf.columns:
+        concated = pd.concat(sitelist_gdf[['site_id', 'geometry']], hubs_gdf[['site_id', 'geometry']])
+        group = auto_group(concated, distance=20000)
+        sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']]).drop(columns='index_right')
+        hubs_gdf = gpd.sjoin(hubs_gdf, group[['region', 'geometry']]).drop(columns='index_right')
 
     # CONVERT CRS
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
@@ -166,7 +173,7 @@ def polygonize_algo(sitelist_gdf:gpd.GeoDataFrame, hubs_gdf:gpd.GeoDataFrame, po
         print(f"🔴 Ring data empty.")
         return None
 
-def main_poligonized(excel_path:str, polygon_file:str, export_loc:str, boq:bool=False, **kwargs):
+def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=False, **kwargs):
     cable_cost = kwargs.get("cable_cost", 35000)
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
@@ -207,9 +214,9 @@ def main_poligonized(excel_path:str, polygon_file:str, export_loc:str, boq:bool=
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\SERVICE\API\test\poligon_based_intersite\Template_Unsupervised_New site 2026 v1.2 - Combined.xlsx"
-    export_dir = r"D:\JACOBS\SERVICE\API\test\poligon_based_intersite\Export"
-    poligon_file = r"D:\JACOBS\SERVICE\API\test\poligon_based_intersite\Poligon Part 1.kmz"
+    excel_file = r"D:\JACOBS\SERVICE\API\data\template\Template_Polygon_Based.xlsx"
+    poligon_file = r"D:\JACOBS\SERVICE\API\data\template\Polygon_Sample.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Polygon Based"
     program = "Trial Poligonized"
     boq = False
 
@@ -220,7 +227,7 @@ if __name__ == "__main__":
     result = main_poligonized(
         excel_path=excel_file,
         polygon_file=poligon_file,
-        export_loc=export_dir,
+        export_dir=export_dir,
         boq=boq,
         program=program
     )

@@ -523,12 +523,13 @@ async def polygon_intersite(
     Create Intersite design **Polygon Based**.  
     Excel file must be containing **'sitelist'** and **'hubs'** sheet.
 
-    **Template Polygon Fiberization**  
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Unsupervised_Fiberization.xlsx)
+    **Template Polygon Based**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Polygon_Based.xlsx)
+
+    **Sample Polygon**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/Sample_Polygon.xlsx)
 
     **Note:**
-    - Hubs should containing 'FO Hub' for interconnection source.
-    - Each ring name must be on the same region.
     - Make sure the latitude and longitude is not reversed.
     """
 
@@ -552,7 +553,7 @@ async def polygon_intersite(
             tmp_fiber_path = tmp_fiber.name
         
         if suffix in ['.kml', '.kmz','.gpkg', '.parquet', '.shp']:
-            polygon_file = read_gdf(tmp_fiber_path, geom_type='polygon')
+            polygon_gdf = read_gdf(tmp_fiber_path, geom_type='polygon')
             print(f"📥 Reading polygon file: {polygon_file.filename}")
         else:
             return {"error": f"Unsupported polygon file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
@@ -561,13 +562,13 @@ async def polygon_intersite(
 
     # SAVE DATA
     excel_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_template_{uuid4().hex}.xlsx")
-    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_polygon_{uuid4().hex}.xlsx")
+    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_polygon_{uuid4().hex}.parquet")
     
     with pd.ExcelWriter(excel_path) as xls:
         hubs.to_excel(xls, sheet_name='hubs')
         sitelist.to_excel(xls, sheet_name='sitelist')
 
-    polygon_file.to_parquet(polygon_path, index=False)
+    polygon_gdf.to_parquet(polygon_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
     print(f"📥 Temporary Polygon data saved to: {polygon_path}")
 
@@ -600,13 +601,15 @@ async def topology_intersite(
 ):
     """
     Create Intersite design **Topology Based**.  
-    Excel file must be containing ['site_id', 'long', 'lat', 'site_type'].
+    Excel file must be containing ['site_id', 'site_name','long', 'lat'].
 
-    **Template Topology Fiberization**  
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Supervised_Fiberization.xlsx)
+    **Template Topology Based**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Topology_Based.xlsx)
+
+    **Sample Topology**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/Sample_Topology.xlsx)
 
     **Note:**
-    - Each ring name must be on the same region.
     - Make sure the latitude and longitude is not reversed.
     """
 
@@ -630,7 +633,7 @@ async def topology_intersite(
             tmp_fiber_path = tmp_fiber.name
         
         if suffix in ['.kml', '.kmz','.gpkg', '.parquet', '.shp']:
-            topology_file = read_gdf(tmp_fiber_path, geom_type='line')
+            topology_gdf = read_gdf(tmp_fiber_path, geom_type='line')
             print(f"📥 Reading topology file: {topology_file.filename}")
         else:
             return {"error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
@@ -639,12 +642,12 @@ async def topology_intersite(
 
     # SAVE DATA
     excel_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_template_{uuid4().hex}.xlsx")
-    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_topology_{uuid4().hex}.xlsx")
+    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_topology_{uuid4().hex}.parquet")
     
     with pd.ExcelWriter(excel_path) as xls:
         sitelist.to_excel(xls, sheet_name='sitelist')
 
-    topology_file.to_parquet(topology_path, index=False)
+    topology_gdf.to_parquet(topology_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
     print(f"📥 Temporary Topology data saved to: {topology_path}")
 

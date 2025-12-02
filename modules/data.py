@@ -6,10 +6,14 @@ from starlette.datastructures import UploadFile
 from tqdm import tqdm
 import sys
 import os
+
+sys.path.append(r"D:\JACOBS\SERVICE\API")
+
 from modules.geometry import explode_lines, identify_centerline
 from modules.kml import read_kml
 from modules.table import find_best_match
 from core.config import settings
+
 
 MAINDATA_DIR = settings.MAINDATA_DIR
 DATA_DIR = settings.DATA_DIR

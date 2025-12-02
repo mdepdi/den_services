@@ -366,15 +366,15 @@ def task_topology_intersite(self, data: dict):
         print(f"🌏 Celery Fiberization | Topology Based Task Started | Task ID: {self.request.id}")
         parsed_data = loads(data)
         excel_path = parsed_data.get("excel_path")
-        line_path = parsed_data.get("line_path")
+        topology_path = parsed_data.get("topology_path")
         boq = parsed_data.get("boq", False)
         program = parsed_data.get("program", 'Topology Based Fiberization')
         
         if DOCKER:
             if "/mnt/" not in excel_path:
                 excel_path = excel_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
-            if "/mnt/" not in line_path:
-                line_path = line_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
+            if "/mnt/" not in topology_path:
+                topology_path = topology_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
 
         # LOAD DATA
         date_today = datetime.now().strftime("%Y%m%d")
@@ -384,7 +384,7 @@ def task_topology_intersite(self, data: dict):
         self.update_state(state="PROGRESS", meta={"status": "Processing Topology Based data"})
         result = main_topology(
             excel_path=excel_path,
-            line_file=line_path,
+            line_file=topology_path,
             export_dir=export_loc,
             program=program,
             boq=boq,
@@ -412,14 +412,15 @@ def task_topology_intersite(self, data: dict):
         try:
             if os.path.exists(excel_path):
                 os.remove(excel_path)
-            if os.path.exists(line_path):
-                os.remove(line_path)
+            if os.path.exists(topology_path):
+                os.remove(topology_path)
         except Exception as cleanup_error:
             print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
 
     except Exception as e:
+        self.retry(exc=e, countdown=60, max_retries=3)
         self.update_state(state="FAILURE", meta={"status": str(e)})
         print(f"Exception occurred during Topology Based fiberization processing: {str(e)}")
         raise e
@@ -488,6 +489,7 @@ def task_boq(self, data: dict):
         return result
 
     except Exception as e:
+        self.retry(exc=e, countdown=60, max_retries=3)
         self.update_state(state="FAILURE", meta={"status": str(e)})
         print(f"Exception occurred during Topology Based fiberization processing: {str(e)}")
         raise e

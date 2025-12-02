@@ -75,8 +75,8 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
-    points_existing['long'] = points_existing.geometry.to_crs(epsg=4326).x
-    points_existing['lat'] = points_existing.geometry.to_crs(epsg=4326).y
+    points_existing['long'] = round(points_existing.geometry.to_crs(epsg=4326).x, 7)
+    points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 7)
     points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
     points_existing['program'] = points_existing['folders'].str.split(";").str[-3]
     points_existing['geometry'] = points_existing.geometry.force_2d()
@@ -624,6 +624,8 @@ def parallel_insert(
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
+    ring_list = ["TBG-KLA-MOCNPhase1-DF077"]
+
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
     mapped_insert["note"] = "Insert Site"
@@ -649,12 +651,9 @@ def parallel_insert(
     with ProcessPoolExecutor(max_workers=MAX_WORKER) as executor:
         futures = {}
         for ring in ring_list:
-            ring_insert = mapped_insert[mapped_insert["ring_name"] == ring]\
-                .drop_duplicates("geometry").reset_index(drop=True)
-            ring_fiber = prev_fiber[prev_fiber["ring_name"] == ring]\
-                .drop_duplicates("geometry").reset_index(drop=True)
-            ring_point = prev_point[prev_point["ring_name"] == ring]\
-                .drop_duplicates("geometry").reset_index(drop=True)
+            ring_insert = mapped_insert[mapped_insert["ring_name"] == ring].drop_duplicates("geometry").reset_index(drop=True)
+            ring_fiber = prev_fiber[prev_fiber["ring_name"] == ring].drop_duplicates("geometry").reset_index(drop=True)
+            ring_point = prev_point[prev_point["ring_name"] == ring].drop_duplicates("geometry").reset_index(drop=True)
 
             if ring_insert.empty:
                 logger.warning(f"⚠️ No insert data for ring {ring}, skipping.")
@@ -753,8 +752,8 @@ def save_kml(
         topology_region = topology[topology['region'] == region].copy()
 
         if 'long' not in region_points.columns or 'lat' not in region_points.columns:
-            region_points['long'] = region_points.geometry.to_crs(epsg=4326).x
-            region_points['lat'] = region_points.geometry.to_crs(epsg=4326).y
+            region_points['long'] = round(region_points.geometry.to_crs(epsg=4326).x, 7)
+            region_points['lat'] = round(region_points.geometry.to_crs(epsg=4326).y, 7)
         if 'vendor' not in region_points.columns:
             region_points['vendor'] = 'TBG'
         if 'program' not in region_points.columns:
@@ -774,7 +773,6 @@ def save_kml(
         }
         available_col = [col for col in used_columns.keys() if col in region_points.columns]
         ring_list = region_points['ring_name'].dropna().unique().tolist()
-        ring_list = ["TBG-TJK-MOCNPhase1-DF166"]
 
         for ring in tqdm(ring_list, desc=f"Processing rings in {region}"):
             ring_points = region_points[region_points['ring_name'] == ring].copy()
