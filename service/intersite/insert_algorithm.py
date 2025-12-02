@@ -41,6 +41,9 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
     # INSERT SITES
     if isinstance(insert_sites, str):
         insert_sites = read_gdf(insert_sites)
+        insert_sites = sanitize_header(insert_sites, lowercase=True)
+        insert_sites['long'] = insert_sites.geometry.to_crs(epsg=4326).x
+        insert_sites['lat'] = insert_sites.geometry.to_crs(epsg=4326).y
     elif isinstance(insert_sites, gpd.GeoDataFrame):
         insert_sites = sanitize_header(insert_sites, lowercase=True)
         insert_sites['long'] = insert_sites.geometry.to_crs(epsg=4326).x
