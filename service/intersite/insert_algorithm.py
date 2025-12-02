@@ -736,7 +736,7 @@ def save_kml(
     date_today = datetime.now().strftime("%Y%m%d")
 
     if 'program' in points.columns:
-        program_mode = points['program'].dropna().mode()
+        program_mode = points[points['note'].str.lower().str.contains('insert')]['program'].dropna().mode()
         program = program_mode.iloc[0] if not program_mode.empty else 'Unknown Program'
         kmz_path = os.path.join(export_dir, f"Intersite Design_{program}_{method}_{date_today}.kmz")
     else:
@@ -774,6 +774,8 @@ def save_kml(
         }
         available_col = [col for col in used_columns.keys() if col in region_points.columns]
         ring_list = region_points['ring_name'].dropna().unique().tolist()
+        ring_list = ["TBG-TJK-MOCNPhase1-DF166"]
+
         for ring in tqdm(ring_list, desc=f"Processing rings in {region}"):
             ring_points = region_points[region_points['ring_name'] == ring].copy()
             ring_paths = region_paths[region_paths['ring_name'] == ring].copy()
@@ -1305,7 +1307,7 @@ def main_insertring(
 if __name__ == "__main__":
     insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Insert Site.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\20251119-Week47-TBG-v1.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V3_Overlap Check"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V3_Overlap Check2"
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
