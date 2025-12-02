@@ -129,7 +129,6 @@ config.json
 # =====================================
 
 # Heavy data folders
-data/
 dataset/
 uploads/
 exports/
