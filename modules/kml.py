@@ -3,9 +3,11 @@ import html
 import os
 import zipfile
 import pandas as pd
+import numpy as np
 import geopandas as gpd
 from bs4 import BeautifulSoup
 from shapely.geometry import Point, LineString, Polygon
+from modules.table import sanitize_header
 
 def export_kml(
     gdf,
@@ -327,3 +329,53 @@ def read_kml(file):
         raise ValueError(f"Error in GeoDataFrame conversion: {e}")
     
     return points, lines, polygons
+
+
+def validate_kmz_design(filepath:str):
+    points_kmz, lines_kmz, _ = read_kml(filepath)
+    points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
+    lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
+    points_kmz = sanitize_header(points_kmz)
+    lines_kmz = sanitize_header(lines_kmz)
+    points_existing = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
+    lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route')].copy()
+    
+    # POINT EXISTING
+    points_existing['site_id'] = points_existing['name']
+    points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
+    points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
+    points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
+    points_existing['long'] = points_existing.geometry.to_crs(epsg=4326).x
+    points_existing['lat'] = points_existing.geometry.to_crs(epsg=4326).y
+    points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
+    points_existing['program'] = points_existing['folders'].str.split(";").str[-3]
+    points_existing['geometry'] = points_existing.geometry.force_2d()
+    points_existing['region'] = points_existing['folders'].str.extract(r'([A-Z]{3,6});')
+
+    # LINES EXISTING
+    lines_existing['segment'] = lines_existing['name']
+    lines_existing['near_end'] = lines_existing['segment'].str.split("-").str[0]
+    lines_existing['far_end'] = lines_existing['segment'].str.split("-").str[-1]
+    lines_existing['geometry'] = lines_existing.geometry.force_2d()
+    lines_existing['ring_name'] = lines_existing['folders'].str.split(";").str[-2]
+    lines_existing['program'] = lines_existing['folders'].str.split(";").str[-3]
+    lines_existing['region'] = lines_existing['folders'].str.extract(r'([A-Z]{3,6});')
+
+    existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
+    for col in existing_col:
+        if col not in points_existing.columns:
+            raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
+    points_existing = points_existing[existing_col]
+
+    existing_col = ['segment', 'near_end', 'far_end', 'ring_name', 'program', 'region','geometry']
+    for col in existing_col:
+        if col not in lines_existing.columns:
+            raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")
+    lines_existing = lines_existing[existing_col]
+
+    if points_existing.empty:
+        raise ValueError(f"Point data in existing kmz is empty")
+
+    if lines_existing.empty:
+        raise ValueError(f"Lines data in existing kmz is empty")
+    return points_existing, lines_existing

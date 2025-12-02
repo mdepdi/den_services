@@ -123,7 +123,7 @@ def identify_insert(insert_gdf:gpd.GeoDataFrame, lines_existing:gpd.GeoDataFrame
     return insert_reached, insert_not_reached
 
 
-def build_connection(ring: str, to_insert:gpd.GeoDataFrame, target_fiber:gpd.GeoDataFrame, target_point:gpd.GeoDataFrame, max_member:int=None, start_column:str='near_end')-> tuple:
+def build_connection(ring: str, to_insert:gpd.GeoDataFrame, target_fiber:gpd.GeoDataFrame, target_point:gpd.GeoDataFrame, max_member:int=None, start_column:str='near_end', max_distance:int=3000)-> tuple:
     if target_fiber.crs != 'EPSG:3857':
         target_fiber = target_fiber.to_crs(epsg=3857)
     if target_point.crs != 'EPSG:3857':
@@ -724,14 +724,19 @@ def save_kml(
 ):
     import simplekml
 
-    date_today = datetime.now().strftime("%Y%m%d")
-    kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
-    logger.info(f"🧩 Exporting KML/KMZ to {kmz_path}")
 
     points = points.to_crs(epsg=4326).reset_index(drop=True)
     paths = paths.to_crs(epsg=4326).reset_index(drop=True)
     topology = topology.to_crs(epsg=4326).reset_index(drop=True)
 
+    if 'program' in points.columns:
+        program = points['program'].mode()[0]
+        kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
+    else:
+        program = None
+        kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}_{program}.kmz")
+
+    logger.info(f"🧩 Exporting KML/KMZ to {kmz_path}")
     main_kml = simplekml.Kml()
     region_list = points['region'].dropna().unique().tolist()
     for region in region_list:
@@ -783,6 +788,7 @@ def save_kml(
             # PRIORITY SITES
             existing_sites = site_list[site_list['Note'].str.lower().str.contains('existing')]
             insert_sites = site_list[site_list['Note'].str.lower().str.contains('insert')]
+            fo_hub = fo_hub.drop(columns='Note')
             existing_sites = existing_sites.drop(columns='Note')
             insert_sites = insert_sites.drop(columns='Note')
 
@@ -796,6 +802,7 @@ def save_kml(
                 size=3,
                 popup=False,
             )
+
             main_kml = export_kml(
                 ring_paths,
                 main_kml,

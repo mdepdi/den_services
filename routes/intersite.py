@@ -16,6 +16,7 @@ import zipfile
 
 from core.config import settings
 from modules.data import read_gdf
+from modules.kml import read_kml, validate_kmz_design
 from modules.table import sanitize_header
 
 from service.intersite.ring_algorithm import supervised_validation
@@ -26,7 +27,7 @@ from service.intersite.poligonized_algorithm import validate_poligonize
 from service.intersite.insert_algorithm import validate_insert
 from modules.validation import input_insertring, identify_fiberzone, prepare_prevdata, identify_insertdata
 from service.update_intersite import main_update_intersite
-from tasks.intersite_celery import task_insertring, task_supervised, task_unsupervised, task_fixroute, task_polygon_intersite, task_topology_intersite
+from tasks.intersite_celery import task_insertring, task_supervised, task_unsupervised, task_fixroute, task_polygon_intersite, task_topology_intersite, task_boq
 
 # EXPORT DIR
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -666,6 +667,67 @@ async def topology_intersite(
     except Exception as e:
         return {"error": f"Failed to process data: {str(e)}"}
 
+
+# ================
+# GENERATE BOQ
+# ================
+@router.post("/boq", tags=["Intersite"])
+async def boq_intersite(
+    design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
+    program: Optional[str] = Form("BOQ", description="Program name if 'program' column not provided."),
+):
+    """
+    Create Intersite Bill of Quantity .  
+    KMZ file must be containing ['Topology', 'Route', 'FO Hub', 'Site List'].
+
+    **Input Design Sample**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    """
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
+    os.makedirs(boq_upload, exist_ok=True)
+    
+    try:
+        suffix = os.path.splitext(design_file.filename)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
+            tmp_fiber.write(design_file.file.read())
+            tmp_fiber_path = tmp_fiber.name
+        
+        if suffix in ['.kml', '.kmz']:
+            point_kmz, line_kmz, _ = validate_kmz_design(tmp_fiber_path)
+        else:
+            return {"error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
+    except Exception as e:
+        return {"error": f"Failed to read topology file: {str(e)}"}
+
+    # SAVE DATA
+    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_points_kmz_{uuid4().hex}.xlsx")
+    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_lines_kmz_{uuid4().hex}.xlsx")
+
+    point_kmz.to_parquet(points_path, index=False)
+    line_kmz.to_parquet(lines_path, index=False)
+    print(f"📥 Temporary Points data saved to   : {points_path}")
+    print(f"📥 Temporary Lines data saved to    : {lines_path}")
+
+    # Process data
+    try:
+        data = {
+            "points_path": points_path,
+            "lines_path": lines_path,
+            "program": program
+        }
+        data = dumps(data, default=str)
+        celery_task = task_boq.apply_async(args=[data])
+
+        return {
+            "message": "BOQ task has been initiated.",
+            "task_id": celery_task.id,
+            "task_status_url": f"/tasks/status/{celery_task.id}"
+        }
+    except Exception as e:
+        return {"error": f"Failed to process data: {str(e)}"}
+
 # ================
 # UPDATE INTERSITE
 # ================
@@ -707,7 +769,7 @@ async def update_intersite(
         route_gdf = read_gdf(tmp_route_path)
         print(f"📥 Reading linesetring file: {route_gdf.filename}")
     else:
-        raise HTTPException(status_code=400, detail="Unsupported linesetring file format. Supported formats are GPKG, Parquet, and Shapefile.")
+        raise HTTPException(status_code=400, detail="Unsupported linestring file format. Supported formats are GPKG, Parquet, and Shapefile.")
     
     for geom_type in route_gdf.geom_type:
         if geom_type not in ['Linestring', 'MultiLineString']:

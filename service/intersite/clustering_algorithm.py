@@ -45,7 +45,6 @@ from service.intersite.ring_algorithm import main_supervised
 # ------------------------------------------------------
 # 1) CLUSTERING CORE
 # ------------------------------------------------------
-
 def dm_cluster(G, gdf_point, node_col="nearest_node", cutoff=None, weight='length', workers=4):
     """Builds a Dijkstra-based distance matrix."""
     logger.info("🚧 Building Dijkstra Distance Matrix...")

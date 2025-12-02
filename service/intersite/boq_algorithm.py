@@ -391,7 +391,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # =============================
     # LOAD FO REFERENCE GEOMETRY
     # =============================
-    fo_route = r"D:\JACOBS\DATA\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
+    fo_route = r"D:\JACOBS\SERVICE\API\data\FO TBG Only_01062025.parquet"
     fo_route = gpd.read_parquet(fo_route)
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
@@ -419,8 +419,8 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     nodes = nodes.to_crs(epsg=3857)
     edges = edges.to_crs(epsg=3857)
 
-    nodes.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Nodes_{ring_name}.parquet")
-    edges.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Edges_{ring_name}.parquet")
+    # nodes.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Nodes_{ring_name}.parquet")
+    # edges.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Edges_{ring_name}.parquet")
 
     # =============================
     # IDENTIFY TURN / BRANCH POINTS
@@ -586,14 +586,14 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # CLASSIFY OBSTACLE
     # =============================
     lines = obstacle_detection(lines)
-
     logger.info(f"🟢 {ring_name} BOQ Processing complete.\n")
     return points, lines
 
 
-def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame):
+def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, **kwargs):
     from concurrent.futures import ProcessPoolExecutor, as_completed
     ringlist = set(points_gdf['ring_name'])
+    task_celery = kwargs.get("task_celery", False)
 
     with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {}
@@ -605,6 +605,7 @@ def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame):
         
         points_compiled = []
         lines_compiled = []
+
         for future in tqdm(as_completed(futures), total=len(futures), desc="Process BOQ..."):
             ring = futures[future]
             try:
@@ -613,11 +614,28 @@ def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame):
                     points_result, lines_result = result
                     points_compiled.append(points_result)
                     lines_compiled.append(lines_result)
+
+                    if task_celery:
+                        task_celery.update_state(
+                            state="PROGRESS",
+                            meta={ "status": (f"Completed BOQ for {len(lines_compiled)}/{len(ringlist):,} rings")},
+                        )
             except Exception as e:
-                raise(f"🔴 Error BOQ in {ring}: {e}")
+                if task_celery:
+                    task_celery.update_state(
+                        state="FAILURE",
+                        meta={
+                            "status": (
+                                f"Error in ring {ring}: {e}. "
+                                f"Completed BOQ for {len(lines_compiled)}/{len(ringlist)} rings"
+                            )
+                        },
+                    )
+                logger.error(f"🔴 Error BOQ in {ring}: {e}")
 
         points_compiled = pd.concat(points_compiled)
         lines_compiled = pd.concat(lines_compiled)
+
     return points_compiled, lines_compiled
 
 def compile_dict(data_gdf:gpd.GeoDataFrame, column:str):
@@ -1285,9 +1303,10 @@ def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir
 def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **kwargs):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Not Defined")
+    task_celery = kwargs.get("task_celery", False)
 
     start_time = time.time()
-    points_boq, lines_boq = parallel_boq(points, lines)
+    points_boq, lines_boq = parallel_boq(points, lines, task_celery=task_celery)
 
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir)
@@ -1305,11 +1324,18 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **
     ring_names = points_boq['ring_name'].dropna().unique().tolist()
     output_kmz = os.path.join(export_dir, "BOQ KMZ Design.kmz")
     main_kmz = simplekml.Kml()
-    for ring in tqdm(ring_names, total=len(ring_names), desc='Process KMZ BOQ'):
+    for num, ring in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process KMZ BOQ'):
         ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
         ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
         main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor=vendor, program=program)
         logger.info(f"🟢 {ring} BOQ KMZ inserted.")
+
+        if task_celery:
+            task_celery.update_state(
+                state="PROGRESS",
+                meta={ "status": (f"Compile KMz for {num}/{len(ring_names):,} rings")},
+            )
+
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)
     end_time = time.time()
@@ -1320,6 +1346,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **
     logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
     logger.info(f"Excel Result Time   : {excel_time:,} minutes")
     logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")
+
 
 if __name__ == "__main__":
     all_points = gpd.read_parquet(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Points.parquet")
