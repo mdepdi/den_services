@@ -215,7 +215,7 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
     # --- EXTRACT EDGES ---
     edges = []
-    for _, row in tqdm(gdf.iterrows(), desc="Extract Edges"):
+    for _, row in tqdm(gdf.iterrows(), desc="Extract Edges", total=len(gdf)):
         geom = row.geometry
         if geom.is_empty:
             continue
@@ -236,7 +236,7 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
     # --- BUILD NODES ---
     nodes = []
-    for _, e in tqdm(edges_gdf.iterrows(), desc="Extract Nodes"):
+    for _, e in tqdm(edges_gdf.iterrows(), desc="Extract Nodes", total=len(edges_gdf)):
         nodes.append({"id_line": e["id_line"], "geometry": e["u"], **{k: v for k, v in edges_gdf.items()}})
         nodes.append({"id_line": e["id_line"], "geometry": e["v"], **{k: v for k, v in edges_gdf.items()}})
     nodes_gdf = gpd.GeoDataFrame(nodes, geometry="geometry", crs=gdf.crs)
