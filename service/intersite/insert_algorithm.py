@@ -470,9 +470,10 @@ def routing_insert(
             existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=50)
 
             # compute lengths
-            overlap_prev = existing_line.intersection(prev_geom.buffer(50))
+            overlap_prev = path_geom.intersection(prev_geom.buffer(50))
+            overlap_length = prev_geom.length
             percentage = overlap_prev.length / prev_geom.length
-            remark_overlap = 'Valid' if percentage > 20 else 'Invalid'
+            remark_overlap = 'Valid' if percentage > 0.2 or overlap_length > 5000 else 'Invalid'
             existing_length = existing_line.length * 1.1 if existing_line.length > 0 else 50
             new_length = new_line.length * 1.1 + 500 if new_line.length > 0 else 50
             total_length = existing_length + new_length
@@ -488,6 +489,7 @@ def routing_insert(
                 "route_type": "New Route",
                 "fo_note": "merged",
                 "overlap": percentage,
+                "overlap_length": overlap_length,
                 "overlap_remark": remark_overlap,
                 "geometry": path_geom,
             })
@@ -520,6 +522,7 @@ def routing_insert(
                 "route_type": "Existing Route",
                 "fo_note": "existing",
                 "overlap": None,
+                "overlap_length": None,
                 "overlap_remark": None,
                 "geometry": merged
             })
@@ -1049,6 +1052,7 @@ def ioh_report(
 
         # OVERLAP
         "overlap": "overlap",
+        "overlap_length": "overlap_length",
         "overlap_remark": "overlap_remark",
     }
 
