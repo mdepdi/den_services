@@ -614,7 +614,6 @@ def parallel_insert(
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
-    ring_list = ["TBG-LIW-Q2CapExpansion2025-DF022"]
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
     mapped_insert["note"] = "Insert Site"
