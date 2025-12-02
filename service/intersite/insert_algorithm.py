@@ -5,6 +5,7 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 import networkx as nx
+import simplekml
 from datetime import datetime
 from time import time
 from shapely.ops import linemerge, unary_union
@@ -729,12 +730,10 @@ def save_kml(
     export_dir: str,
     method='Supervised'
 ):
-    import simplekml
-
-
     points = points.to_crs(epsg=4326).reset_index(drop=True)
     paths = paths.to_crs(epsg=4326).reset_index(drop=True)
     topology = topology.to_crs(epsg=4326).reset_index(drop=True)
+    date_today = datetime.now().strftime("%Y%m%d")
 
     if 'program' in points.columns:
         program_mode = points['program'].dropna().mode()
