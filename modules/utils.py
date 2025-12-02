@@ -359,56 +359,59 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
     topology_records = []
 
     for ring in ring_list:
-        ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
-        if ring_points.empty:
-            continue
-
-        region = next((x for x in ring_points.get('region', []) if pd.notna(x)), 'Unknown Region')
-        program = next((x for x in ring_points.get('project', []) if pd.notna(x)), 'Unknown Program')
-        fo_hub = ring_points[ring_points['site_type'] == 'FO Hub'].drop_duplicates('geometry')
-        fo_hub_count = len(fo_hub)
-
-        for i in range(len(ring_points)):
-            start_point = ring_points.iloc[i]
-            end_point = ring_points.iloc[(i + 1) % len(ring_points)]
-
-            # skip bad geometries
-            if start_point.geometry is None or end_point.geometry is None:
-                print(f"⚠️ Skipping segment in ring {ring}: invalid geometry.")
+        try:
+            ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
+            if ring_points.empty:
                 continue
 
-            # handle FO hub cases
-            match fo_hub_count:
-                case 1:
-                    pass
-                case 2:
-                    if (i + 1) % len(ring_points) == 0:
-                        continue
-                case _:
-                    print(fo_hub)
-                    raise ValueError(f"Ring {ring} has {fo_hub_count} FO Hubs, which is not supported.")
+            region = next((x for x in ring_points.get('region', []) if pd.notna(x)), 'Unknown Region')
+            program = next((x for x in ring_points.get('project', []) if pd.notna(x)), 'Unknown Program')
+            fo_hub = ring_points[ring_points['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
+            fo_hub_count = len(fo_hub)
 
-            try:
-                start_coords = list(start_point.geometry.coords)[0][:2]
-                end_coords = list(end_point.geometry.coords)[0][:2]
-                line_geom = LineString([start_coords, end_coords])
-            except Exception as e:
-                print(f"⚠️ Failed to create line in ring {ring}: {e}")
-                continue
+            for i in range(len(ring_points)):
+                start_point = ring_points.iloc[i]
+                end_point = ring_points.iloc[(i + 1) % len(ring_points)]
 
-            record = {
-                'name': f"{start_point['site_id']}-{end_point['site_id']}",
-                'near_end': start_point['site_id'],
-                'far_end': end_point['site_id'],
-                'ring_name': ring,
-                'region': region,
-                'program': program,
-                'length': line_geom.length,
-                'route_type': 'Topology',
-                'fo_note': 'topology',
-                'geometry': line_geom
-            }
-            topology_records.append(record)
+                # skip bad geometries
+                if start_point.geometry is None or end_point.geometry is None:
+                    print(f"⚠️ Skipping segment in ring {ring}: invalid geometry.")
+                    continue
+
+                # handle FO hub cases
+                match fo_hub_count:
+                    case 1:
+                        pass
+                    case 2:
+                        if (i + 1) % len(ring_points) == 0:
+                            continue
+                    case _:
+                        print(fo_hub)
+                        raise ValueError(f"Ring {ring} has {fo_hub_count} FO Hubs, which is not supported.")
+
+                try:
+                    start_coords = list(start_point.geometry.coords)[0][:2]
+                    end_coords = list(end_point.geometry.coords)[0][:2]
+                    line_geom = LineString([start_coords, end_coords])
+                except Exception as e:
+                    print(f"⚠️ Failed to create line in ring {ring}: {e}")
+                    continue
+
+                record = {
+                    'name': f"{start_point['site_id']}-{end_point['site_id']}",
+                    'near_end': start_point['site_id'],
+                    'far_end': end_point['site_id'],
+                    'ring_name': ring,
+                    'region': region,
+                    'program': program,
+                    'length': line_geom.length,
+                    'route_type': 'Topology',
+                    'fo_note': 'topology',
+                    'geometry': line_geom
+                }
+                topology_records.append(record)
+        except Exception as e:
+            print(f"Error in ring {ring}: {e}")
 
     if not topology_records:
         print("⚠️ No topology records created.")

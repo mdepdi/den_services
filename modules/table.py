@@ -45,7 +45,7 @@ def sanitize_header(df, preview_row = 5, lowercase=False):
                 print(f"Header sanitized | Start from row {idx + 1} | Columns: {[col.strip() for col in df.columns[:3]]} ...")
                 break
     else:
-        df.columns = [col.strip() for col in df.columns]
+        df.columns = [str(col).strip() for col in df.columns]
     
     # Drop nan columns
     df = df.dropna(axis=1, how='all')

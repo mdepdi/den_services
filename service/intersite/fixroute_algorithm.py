@@ -247,6 +247,7 @@ def validate_fixroute(df: pd.DataFrame):
         geom_ne = gpd.points_from_xy(df_ne["longitude"], df_ne["latitude"])
         geom_fe = gpd.points_from_xy(df_fe["longitude"], df_fe["latitude"])
     except:
+        print(df.head())
         try:
             geom_ne = gpd.points_from_xy(df_ne["long"], df_ne["lat"])
             geom_fe = gpd.points_from_xy(df_fe["long"], df_fe["lat"])
@@ -297,7 +298,7 @@ def main_fixroute(
         
         if task_celery:
             task_celery.update_state(state="PROGRESS", meta={"status": "Starting Parallel Fix Route"})
-        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, task_celery)
+        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, task_celery=task_celery)
 
     if not updated_points.empty:
         logger.info(f"ℹ️ Total updated points: {len(updated_points):,}")

@@ -271,8 +271,7 @@ async def insert_ring(
     with open(insert_path, "wb") as f:
         f.write(await insert_list.read())
     print(f"📥 Saved Insert List → {insert_path}")
-    excel_df = read_gdf(insert_path)
-    _, _, _ = validate_insert(excel_df, kmz_path)
+    _, _, _ = validate_insert(insert_path, kmz_path)
 
     params = dumps({
         "insert_list_path": insert_path,

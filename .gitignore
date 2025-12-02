@@ -132,8 +132,7 @@ config.json
 data/
 dataset/
 uploads/
-export/
-upload/
+exports/
 dump/
 test/
 
