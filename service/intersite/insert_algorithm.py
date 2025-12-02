@@ -40,7 +40,7 @@ logger = create_logger(__file__)
 def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-"):
     # INSERT SITES
     if isinstance(insert_sites, str):
-        insert_sites = read_gdf(str)
+        insert_sites = read_gdf(insert_sites)
     elif isinstance(insert_sites, gpd.GeoDataFrame):
         insert_sites = sanitize_header(insert_sites, lowercase=True)
         insert_sites['long'] = insert_sites.geometry.to_crs(epsg=4326).x
@@ -390,9 +390,23 @@ def routing_insert(
             how="left", 
             distance_col="dist_to_node"
         ).rename(columns={"node_id": "nearest_node"})
+    
+    # IDENTIFY PREVIOUS FIBER NODES
+    prevfiber_buff = target_fiber.copy()
+    prevfiber_buff['geometry'] = prevfiber_buff.geometry.buffer(20)
+    node_prevfiber = gpd.sjoin(nodes, prevfiber_buff[['geometry', 'near_end', 'far_end']], how='inner', predicate='intersects').drop(columns=['index_right'])
+    ref_prevfiber = set(node_prevfiber['node_id'])
+
+    # MAXIMIZE EXISTING FIBER
+    for u, v, data in G.edges(data=True):
+        base_len = data.get("weight", 1.0)
+        if (u in ref_prevfiber) and (v in ref_prevfiber):
+            cost = base_len * 0.125
+        else:
+            cost = base_len
+        data["weight"] = cost
 
     segments = []
-
     # ===============================
     # MAIN LOOP
     # ===============================
@@ -442,30 +456,26 @@ def routing_insert(
 
             # if both are insert → use previous new segment
             if sp["note"] == "insert" and ep["note"] == "insert" and len(segments) > 0:
-                seg_prev = segments[-1]["geometry"] if len(segments) > 0 else LineString()
-                prev_geom = [target_fiber.geometry.union_all(), seg_prev]
-                prev_geom = unary_union(prev_geom)
+                # seg_prev = segments[-1]["geometry"] if len(segments) > 0 else LineString()
+                prev_geom = target_fiber.geometry.union_all()
+                prev_geom = linemerge(prev_geom) if prev_geom.geom_type == "MultiLineString" else prev_geom
 
-            prev_geom = prev_geom
-
-            # ----- Routing -----
             try:
                 path, path_geom, _ = route_path(start_node, end_node, G, roads, merged=True)
             except Exception:
                 print(f"⚠️ No path between {start_id} → {end_id}")
                 continue
 
-            path_geom = path_geom
             path_geom, _ = dropwire_connection(path_geom, sp, ep, nodes, start_node, end_node)
-
-            # ----- Intersection -----
             existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=50)
 
             # compute lengths
-            existing_length = existing_line.length
-            new_length = new_line.length
+            overlap_prev = existing_line.intersection(prev_geom.buffer(50))
+            percentage = overlap_prev.length / prev_geom.length
+            remark_overlap = 'Valid' if percentage > 20 else 'Invalid'
+            existing_length = existing_line.length * 1.1 if existing_line.length > 0 else 50
+            new_length = new_line.length * 1.1 + 500 if new_line.length > 0 else 50
             total_length = existing_length + new_length
-
             segment_name = f"{start_id}-{end_id}"
 
             segments.append({
@@ -477,9 +487,10 @@ def routing_insert(
                 "length": round(total_length, 2),
                 "route_type": "New Route",
                 "fo_note": "merged",
+                "overlap": percentage,
+                "overlap_remark": remark_overlap,
                 "geometry": path_geom,
             })
-
             print(f"🟢 NEW   {segment_name:<20} | {total_length:10.2f} m")
 
         # ===========================
@@ -508,9 +519,10 @@ def routing_insert(
                 "length": round(seg_length, 2),
                 "route_type": "Existing Route",
                 "fo_note": "existing",
+                "overlap": None,
+                "overlap_remark": None,
                 "geometry": merged
             })
-
             print(f"🟢 EXIST {segment_name:<20} | {seg_length:10.2f} m")
 
     if len(segments) == 0:
@@ -599,7 +611,7 @@ def parallel_insert(
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
-    # ring_list = ["TBG-KIS-Phase4a-DF163", "TBG-SPRO-FALCON-DF010"]
+    ring_list = ["TBG-LIW-Q2CapExpansion2025-DF022"]
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
     mapped_insert["note"] = "Insert Site"
@@ -625,9 +637,12 @@ def parallel_insert(
     with ProcessPoolExecutor(max_workers=MAX_WORKER) as executor:
         futures = {}
         for ring in ring_list:
-            ring_insert = mapped_insert[mapped_insert["ring_name"] == ring].reset_index(drop=True)
-            ring_fiber = prev_fiber[prev_fiber["ring_name"] == ring].reset_index(drop=True)
-            ring_point = prev_point[prev_point["ring_name"] == ring].reset_index(drop=True)
+            ring_insert = mapped_insert[mapped_insert["ring_name"] == ring]\
+                .drop_duplicates("geometry").reset_index(drop=True)
+            ring_fiber = prev_fiber[prev_fiber["ring_name"] == ring]\
+                .drop_duplicates("geometry").reset_index(drop=True)
+            ring_point = prev_point[prev_point["ring_name"] == ring]\
+                .drop_duplicates("geometry").reset_index(drop=True)
 
             if ring_insert.empty:
                 logger.warning(f"⚠️ No insert data for ring {ring}, skipping.")
@@ -646,17 +661,28 @@ def parallel_insert(
                 ring_point,
                 max_member,
             )
-            futures[future] = ring
+            futures[future] = {
+                "ring": ring,
+                "ring_insert": ring_insert,
+                "ring_fiber": ring_fiber,
+                "ring_point": ring_point,
+            }
 
         for future in tqdm(
             as_completed(futures), total=len(futures), desc="Processing Rings"
         ):
-            ring = futures[future]
+            meta = futures[future]
+            ring = meta["ring"]
             try:
                 new_points, new_segments = future.result()
+                if (new_points is None) and (new_segments is None):
+                    logger.warning(f"⚠️ insert_algo returned None for ring {ring}, skipping.")
+                    continue
+
                 if new_points is not None and not new_points.empty:
                     all_new_points.append(new_points)
                     logger.info(f"✅ Completed processing for ring {ring} with {len(new_points):,} new points.")
+
                 if new_segments is not None and not new_segments.empty:
                     all_new_segments.append(new_segments)
                     logger.info(f"✅ Completed processing for ring {ring} with {len(new_segments):,} new segments.")
@@ -664,13 +690,13 @@ def parallel_insert(
                 if task_celery:
                     task_celery.update_state(
                         state="PROGRESS",
-                        meta={ "status": f"Completed {len(all_new_points)}/{len(ring_list)} rings."},
+                        meta={"status": f"Completed {len(all_new_points)}/{len(ring_list)} rings."},
                     )
+
             except Exception as e:
                 logger.error(f"❌ Error processing ring {ring}: {e}")
-                all_new_points.append(ring_point)
-                all_new_segments.append(ring_fiber)
-
+                all_new_points.append(meta["ring_point"])
+                all_new_segments.append(meta["ring_fiber"])
 
     if all_new_points:
         all_new_points = pd.concat(all_new_points, ignore_index=True)
@@ -867,20 +893,20 @@ def save_intersite(
             excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
             logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records.")
 
-def mark_insert(updated_points: gpd.GeoDataFrame, updated_paths:gpd.GeoDataFrame):
-    grouped = updated_points.groupby('ring_name')
+def mark_insert(updated_points: gpd.GeoDataFrame, updated_paths: gpd.GeoDataFrame):
+    grouped = updated_points.groupby("ring_name")
     dropped = []
-    for idx, group in grouped:
-        all_existing = (group['note'] == 'existing').all()
-        no_insert = not (group['note'] == 'insert').any()
+    for ring, group in grouped:
+        all_existing = (group["note"] == "existing").all()
+        has_insert = (group["note"] == "insert").any()
 
-        if all_existing or no_insert:
-            print(f"⚠️ Skipping {idx}: all sites are existing, no new insert required.")
-            dropped.append(idx)
-    
+        if all_existing and not has_insert:
+            print(f"⚠️ {ring}: all sites existing, no insert – keeping ring but marking as pure existing.")
+            dropped.append(ring)
+
     inserted_points = updated_points[updated_points["note"].str.lower().str.contains("insert")].copy()
-    updated_points = updated_points[~updated_points['ring_name'].isin(dropped)].reset_index(drop=True)
-    updated_paths = updated_paths[~updated_paths['ring_name'].isin(dropped)].reset_index(drop=True)
+    updated_points = updated_points[~updated_points["ring_name"].isin(dropped)].reset_index(drop=True)
+    updated_paths = updated_paths[~updated_paths["ring_name"].isin(dropped)].reset_index(drop=True)
     print(f"ℹ️ Total Inserted Points: {len(inserted_points):,}")
     return updated_points, updated_paths
 
@@ -1020,6 +1046,10 @@ def ioh_report(
         "peer_1_name": "Peer 1 Name",
         "peer_2_id": "Peer 2 (SITE ID)",
         "peer_2_name": "Peer 2 Name",
+
+        # OVERLAP
+        "overlap": "overlap",
+        "overlap_remark": "overlap_remark",
     }
 
 
@@ -1032,6 +1062,8 @@ def ioh_report(
     for ring in ringlist:
         ring_paths = updated_paths[updated_paths["ring_name"] == ring].copy()
         ring_points = updated_points[updated_points["ring_name"] == ring].copy()
+        ring_paths = ring_paths.drop_duplicates("geometry")
+        ring_points = ring_points.drop_duplicates("geometry")
         city = gpd.sjoin(admin, ring_points[['geometry']]).drop(columns="index_right")
         if not city.empty:
             city = city['Kabkot'].mode()[0]
@@ -1178,7 +1210,6 @@ def ioh_report(
     sheet_paths = sheet_paths[insert_col]
     sheet_paths = sheet_paths.rename(columns=insert_column)
 
-
     # =====================================================
     # SAVE EXCEL
     # =====================================================
@@ -1257,7 +1288,7 @@ def main_insertring(
 if __name__ == "__main__":
     insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\Insert Site.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Insert Algorithm\20251119-Week47-TBG-v1.kmz"
-    export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V2"
+    export_dir = r"D:\JACOBS\SERVICE\API\test\Trial Insert Ring TX Expansion 2026 V3_Overlap Check"
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"

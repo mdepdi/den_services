@@ -41,7 +41,7 @@ def validate_topology(excel_path:str):
         sitelist = pd.read_excel(excel)
         print(f"ℹ️ Total sitelist: {len(sitelist):,}")
 
-        used_col = ['site_id', 'long', 'lat', 'site_type']
+        used_col = ['site_id', 'long', 'lat']
         for col in used_col:
             if col not in sitelist.columns:
                 raise ValueError(f"Column {col} not found in Sitelist. Check your input.")
@@ -56,7 +56,6 @@ def validate_topology(excel_path:str):
 def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vendor='TBG', program='Intersite'):
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
-
     # ----------------------------------------------------------------------
     # Ensure Required Columns
     # ----------------------------------------------------------------------
@@ -70,7 +69,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     if 'region' not in sitelist_gdf.columns:
         group = auto_group(sitelist_gdf)
         sitelist_gdf = gpd.sjoin(
-            sitelist_gdf, group, how='left'
+            sitelist_gdf, group[['region', 'geometry']], how='left'
         ).drop(columns='index_right')
 
     # ----------------------------------------------------------------------
@@ -90,11 +89,9 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     for idx, row in line_gdf.iterrows():
         geom = row.geometry
 
-        # Merge MultiLineString properly
         if geom.geom_type == 'MultiLineString':
             merged = linemerge(geom)
             if merged.geom_type == "MultiLineString":
-                # Still multi? explode manually
                 for part in merged:
                     coords = list(part.coords)
                     for num, coord in enumerate(coords):
@@ -110,6 +107,8 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
                             'num': num,
                             'site_type': site_type,
                             'flag': flag,
+                            'long': point.x,
+                            'lat': point.y,
                             'geometry': point
                         })
                 continue
@@ -131,6 +130,8 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
                 'num': num,
                 'site_type': site_type,
                 'flag': flag,
+                'long': point.x,
+                'lat': point.y,
                 'geometry': point
             })
 
@@ -142,11 +143,10 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     # Map to nearest sitelist
     # ----------------------------------------------------------------------
     sitelist_gdf['centroid'] = sitelist_gdf.geometry.centroid
-
     mapped = gpd.sjoin_nearest(
         point_topology,
         sitelist_gdf[['site_id', 'site_name', 'region', 'centroid', 'geometry']],
-        max_distance=1000,
+        max_distance=20000,
         distance_col='dist_to_site'
     ).drop(columns='index_right')
 
@@ -155,7 +155,8 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
     # Ensure sequential ordering
     mapped = mapped.sort_values(["ring_name", "ring_id", "num"])
-    mapped = mapped.drop_duplicates('site_id')  # avoid accidental duplicate match
+    mapped = mapped.drop_duplicates(['ring_name', 'site_id'])
+
 
     # Convert to lat/lon
     mapped_ll = mapped.to_crs(4326)
@@ -174,19 +175,29 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
         ring_data = ring_data.sort_values("num").reset_index(drop=True)
         total_data = len(ring_data)
 
-        for i in range(total_data - 1):
-            a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
-            b = ring_data.iloc[i+1].drop(['geometry', 'region', 'ring_name'])
+        for ring in mapped['ring_name'].unique():
+            ring_data = mapped[mapped['ring_name'] == ring].copy()
+            region = ring_data['region'].mode()[0]
 
-            seg = a.add_suffix('_a').to_frame().T.join(
-                b.add_suffix('_b')
-            )
+            ring_data = ring_data.sort_values("num").reset_index(drop=True)
+            total_data = len(ring_data)
 
-            seg['ring_name'] = ring
-            seg['region'] = region
-            seg['sequence'] = i
+            for i in range(total_data - 1):
+                a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
+                b = ring_data.iloc[i+1].drop(['geometry', 'region', 'ring_name'])
 
-            mapped_fix.append(seg)
+                # Concatenate horizontally
+                seg = pd.concat(
+                    [a.add_suffix('_a'), b.add_suffix('_b')],
+                    axis=0
+                ).to_frame().T  # -> 1-row DataFrame
+
+                seg['ring_name'] = ring
+                seg['region'] = region
+                seg['sequence'] = i
+
+                mapped_fix.append(seg)
+
 
     mapped_fix = pd.concat(mapped_fix, ignore_index=True)
     return mapped_fix
@@ -210,10 +221,9 @@ def main_topology(excel_path:str, line_file:str, export_loc:str, boq:bool=False,
     
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
-    mapped_topology = topology_algo(sitelist_gdf, line_gdf, program)
-
-    site_data = sanitize_header(mapped_topology)
-    site_data = validate_fixroute(site_data)
+    site_data = topology_algo(sitelist_gdf, line_gdf, program)
+    # site_data = sanitize_header(site_data)
+    # site_data = validate_fixroute(site_data)
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
@@ -234,11 +244,11 @@ def main_topology(excel_path:str, line_file:str, export_loc:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\SERVICE\API\test\poligon_based_intersite\Template_Unsupervised_New site 2026 v1.2 - Combined.xlsx"
-    export_dir = r"D:\JACOBS\SERVICE\API\test\poligon_based_intersite\Export"
-    poligon_file = r"D:\JACOBS\SERVICE\API\test\poligon_based_intersite\Poligon Part 1.kmz"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\SIte List dan closure.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Topo sample.kml"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export"
     program = "Trial Topology"
-    boq = True
+    boq = False
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
@@ -246,7 +256,7 @@ if __name__ == "__main__":
 
     result = main_topology(
         excel_path=excel_file,
-        polygon_file=poligon_file,
+        line_file=line_file,
         export_loc=export_dir,
         boq=boq,
         program=program
