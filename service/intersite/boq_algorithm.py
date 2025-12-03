@@ -1198,6 +1198,7 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
 
     # -- Route --
     ring_route = lines_boq.copy()
+    ring_route['length'] = ring_route.geometry.to_crs(epsg=3857).length
     route_columns = [ "near_end", "far_end", "geometry", "ring_name", "length"]
     ring_route = ring_route[route_columns].copy()
     ring_route["name"] = ring_route["near_end"] + "-" + ring_route["far_end"]
