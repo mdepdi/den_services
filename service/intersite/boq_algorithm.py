@@ -532,7 +532,6 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     for idx, row in existing_route.iterrows():
         if idx in dropped:
             continue
-        
         geom = row.geometry.buffer(5)
         within_idx = existing_route[(existing_route.index != idx) & (existing_route.within(geom))]
         if not within_idx.empty:
