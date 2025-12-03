@@ -13,9 +13,10 @@ from shapely.strtree import STRtree
 from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points
 from shapely.ops import linemerge
-from modules.kml import export_kml, sanitize_kml
+from modules.kml import export_kml, sanitize_kml, validate_kmz_design
 from modules.table import excel_styler
 from modules.utils import auto_group
+from modules.geometry import relative_intersection
 from core.config import settings
 
 MAINDATA_DIR = settings.MAINDATA_DIR
@@ -28,85 +29,97 @@ from core.logger import create_logger
 logger = create_logger(__file__)
 
 def detect_turn(nodes_gdf: gpd.GeoDataFrame,
-                        edges_gdf: gpd.GeoDataFrame,
-                        tol: float = 5.0,
-                        min_cover_ratio: float = 0.8):
+                     edges_gdf: gpd.GeoDataFrame,
+                     angle_thresh_deg: float = 150.0):
     """
-    Detect turn nodes using an area-based approach.
-    Adapted and improved from the reference implementation.
-    Works in projected CRS (meters).
+    Faster turn detection using only topology and angles.
 
-    Parameters
-    ----------
-    nodes_gdf : GeoDataFrame
-        Node geometries (e.g., poles).
-    edges_gdf : GeoDataFrame
-        Line geometries (e.g., cables).
-    tol : float, optional
-        Buffer radius around each node in meters.
-    min_cover_ratio : float, optional
-        Ratio threshold (min_area/max_area). < this → likely a turn.
-
-    Returns
-    -------
-    GeoDataFrame
-        Same nodes_gdf with added columns:
-        - 'turn_isec': 0=straight, 2=turn, >2=multi
-        - 'turn_ratio': area ratio (min/max)
-        - 'area_count': number of valid buffer overlap parts
+    - No buffers
+    - No gpd.overlay
+    - Classification:
+        * turn_isec >= 3  -> 'branch'
+        * turn_isec == 2 & angle < angle_thresh -> 'turn'
+        * else -> 'straight'
     """
-    if nodes_gdf.crs is None or edges_gdf.crs is None:
-        raise ValueError("Both layers must have CRS defined (use meters).")
+    nodes = nodes_gdf.copy().reset_index(drop=True)
+    nodes["turn_note"] = "straight"
+    nodes["turn_isec"] = 0
+    nodes["turn_ratio"] = 1.0    # not really used anymore
+    nodes["area_count"] = 1
 
-    nodes = nodes_gdf.copy()
-    nodes = nodes.reset_index(drop=True)
-    nodes["id"] = nodes.index
-    nodes["turn_note"] = 'straight'
-    nodes["turn_isec"] = -1.0
-    nodes["turn_ratio"] = -1.0
-    nodes["area_count"] = None
-    
-    # # --- group nodes ---
-    # group = auto_group(nodes, distance=5)
-    # group = group.rename(columns={'region':'group'})
-    # nodes = nodes.sjoin(group[['geometry', 'group']]).drop(columns="index_right")
-    
-    # --- buffer nodes ---
-    nodes_buff = nodes.copy()
-    nodes_buff["geometry"] = nodes_buff.geometry.buffer(tol)
+    # build map: node_id -> list of direction vectors (dx, dy)
+    node_dirs = {nid: [] for nid in nodes["node_id"]}
 
-    edges_buff = edges_gdf.copy()
-    edges_buff["geometry"] = edges_buff.geometry.buffer(0.5) 
+    def edge_dirs_at_node(edge_geom, node_point: Point):
+        coords = list(edge_geom.coords)
+        d0 = node_point.distance(Point(coords[0]))
+        d1 = node_point.distance(Point(coords[-1]))
+        if d0 <= d1:
+            # direction from node to next coord
+            if len(coords) >= 2:
+                dx = coords[1][0] - coords[0][0]
+                dy = coords[1][1] - coords[0][1]
+            else:
+                dx = dy = 0.0
+        else:
+            # direction from node to previous coord
+            if len(coords) >= 2:
+                dx = coords[-2][0] - coords[-1][0]
+                dy = coords[-2][1] - coords[-1][1]
+            else:
+                dx = dy = 0.0
+        return (dx, dy)
 
-    diff = gpd.overlay(nodes_buff[["id", "geometry"]], edges_buff, how="difference")
-    diff = diff.explode(index_parts=True).reset_index(drop=True)
-    diff["area"] = diff.geometry.area
+    # build a quick lookup for node geometries
+    node_geom_map = dict(zip(nodes["node_id"], nodes.geometry))
 
-    area_group = diff.groupby("id")["area"].apply(list).reset_index(name="area_list")
+    # iterate edges, add direction vectors to node_dirs
+    for _, e in edges_gdf.iterrows():
+        for side in ("node_start", "node_end"):
+            nid = e[side]
+            if nid not in node_dirs:
+                continue
+            node_pt = node_geom_map.get(nid)
+            if node_pt is None:
+                continue
+            dx, dy = edge_dirs_at_node(e.geometry, node_pt)
+            norm = np.hypot(dx, dy)
+            if norm == 0:
+                continue
+            node_dirs[nid].append((dx / norm, dy / norm))
 
-    # --- analyze ratio ---
-    for idx, row in area_group.iterrows():
-        areas = [a for a in row["area_list"] if a > 0]
-        if len(areas) < 2:
+    # classify each node
+    for idx, row in nodes.iterrows():
+        nid = row["node_id"]
+        dirs = node_dirs.get(nid, [])
+        k = len(dirs)
+
+        if k == 0 or k == 1:
+            # isolated or dead-end
+            nodes.at[idx, "turn_isec"] = k
+            nodes.at[idx, "turn_note"] = "straight"
             continue
 
-        max_area = max(areas)
-        min_area = min(areas)
-        ratio = min_area / max_area if max_area > 0 else np.nan
+        if k >= 3:
+            nodes.at[idx, "turn_isec"] = k
+            nodes.at[idx, "turn_note"] = "branch"
+            continue
 
-        nodes.loc[row["id"], "turn_ratio"] = round(ratio, 3)
-        nodes.loc[row["id"], "area_count"] = len(areas)
+        # k == 2 -> check angle between two vectors
+        (dx1, dy1), (dx2, dy2) = dirs[:2]
+        dot = dx1 * dx2 + dy1 * dy2
+        dot = max(-1.0, min(1.0, dot))
+        angle_rad = np.arccos(dot)
+        angle_deg = np.degrees(angle_rad)
 
-        # classify
-        if len(areas) >= 3:
-            nodes.loc[row["id"], "turn_isec"] = len(areas)
-            nodes.loc[row["id"], "turn_note"] = "branch" # branch
-        elif ratio < min_cover_ratio:
-            nodes.loc[row["id"], "turn_isec"] = 2   # turn
-            nodes.loc[row["id"], "turn_note"] = "turn"
+        # if angle close to 180° => straight, else turn
+        # angle here is the "inside" angle; 180 ~ straight, 90 ~ corner
+        if angle_deg >= angle_thresh_deg:
+            nodes.at[idx, "turn_isec"] = 0
+            nodes.at[idx, "turn_note"] = "straight"
         else:
-            nodes.loc[row["id"], "turn_isec"] = 0   # straight
-            nodes.loc[row["id"], "turn_note"] = "straight"
+            nodes.at[idx, "turn_isec"] = 2
+            nodes.at[idx, "turn_note"] = "turn"
 
     return nodes
 
@@ -175,7 +188,7 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
 
     # --- TURN ---
-    nodes_gdf = detect_turn(nodes_gdf, edges_gdf, tol=2)
+    nodes_gdf = detect_turn(nodes_gdf, edges_gdf, angle_thresh_deg=150)
 
     # --- CLEAN OUTPUT ---
     edges_gdf = edges_gdf.drop(columns=["u", "v"])
@@ -225,7 +238,7 @@ def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -
     Returns a GeoDataFrame of substring segments with source attributes + index_right.
     """
     if source_gdf.crs != ref_gdf.crs:
-        ref_gdf = ref_gdf.to_crs(source_gdf.crs)
+        ref_gdf = ref_gdf.to_crs(epsg=3857)
     if source_gdf.crs.to_epsg() != 3857:
         source_gdf = source_gdf.to_crs(3857)
 
@@ -247,44 +260,46 @@ def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -
         ref_idx = row["index_right"]
         ref_geom = ref_dict[ref_idx]
 
-        inter = shapely.intersection(src_geom, ref_geom)
-        inter_length = inter.length
-        length_ratio = inter_length / src_length
+        # inter = shapely.intersection(src_geom, ref_geom)
+        # inter_length = inter.length
+        # length_ratio = inter_length / src_length
 
-        if inter.is_empty:
-            continue
+        # if inter.is_empty:
+        #     continue
 
-        anchors = []
-        # POINT
-        if isinstance(inter, Point):
-            anchors.append(inter)
-        elif isinstance(inter, MultiPoint):
-            anchors.extend(list(inter.geoms))
+        # anchors = []
+        # # POINT
+        # if isinstance(inter, Point):
+        #     anchors.append(inter)
+        # elif isinstance(inter, MultiPoint):
+        #     anchors.extend(list(inter.geoms))
 
-        # LINESTRING
-        if isinstance(inter, LineString):
-            coords = list(inter.coords)
-            if len(coords) >= 2:
-                anchors.append(Point(coords[0]))
-                anchors.append(Point(coords[-1]))
-        elif isinstance(inter, MultiLineString):
-            for seg in inter.geoms:
-                coords = list(seg.coords)
-                if len(coords) >= 2:
-                    anchors.append(Point(coords[0]))
-                    anchors.append(Point(coords[-1]))
+        # # LINESTRING
+        # if isinstance(inter, LineString):
+        #     coords = list(inter.coords)
+        #     if len(coords) >= 2:
+        #         anchors.append(Point(coords[0]))
+        #         anchors.append(Point(coords[-1]))
+        # elif isinstance(inter, MultiLineString):
+        #     for seg in inter.geoms:
+        #         coords = list(seg.coords)
+        #         if len(coords) >= 2:
+        #             anchors.append(Point(coords[0]))
+        #             anchors.append(Point(coords[-1]))
 
-        if len(anchors) < 2:
-            continue
+        # if len(anchors) < 2:
+        #     continue
         
-        # ANCHOR MAPPING DISTANCE
-        dists = [src_geom.project(pt) for pt in anchors]
-        start_d, end_d = min(dists), max(dists)
-        if end_d - start_d <= 0:
-            continue
+        # # ANCHOR MAPPING DISTANCE
+        # dists = [src_geom.project(pt) for pt in anchors]
+        # start_d, end_d = min(dists), max(dists)
+        # if end_d - start_d <= 0:
+        #     continue
         
-        # SEGMENT
-        seg = substring(src_geom, start_d, end_d)
+        # # SEGMENT
+        # seg = substring(src_geom, start_d, end_d)
+        seg, new_line = relative_intersection(src_geom, ref_geom, tolerance=20)
+
         
         # DIFF 
         diff = shapely.difference(src_geom, ref_geom)
@@ -418,7 +433,9 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # =============================
     # ROUTE PREPROCESS
     # =============================
+    print(f"Run Preprocess")
     nodes, edges = route_preprocess(lines)
+    print(f"Preprocess Done")
     nodes = nodes.to_crs(epsg=3857)
     edges = edges.to_crs(epsg=3857)
 
@@ -1348,24 +1365,14 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **
 
 
 if __name__ == "__main__":
-    all_points = gpd.read_parquet(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Points.parquet")
-    all_lines = gpd.read_parquet(r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\20251107\Intersite Design\W45_20251107\Supervised\Checkpoint\All_Paths.parquet")
-    
-    # list_ring = [
-    #     "TBG-MRS-H2B2NewSiteCoverage-DF066",
-    #     "TBG-MRS-H2B2NewSiteCoverage-DF065",
-    #     "TBG-MRS-H2B2NewSiteCoverage-DF064",
-    #     "TBG-MRS-H2B2NewSiteCoverage-DF063",
-    # ]
-    
-    # all_points = all_points[all_points['ring_name'].isin(list_ring)]
-    # all_lines = all_lines[all_lines['ring_name'].isin(list_ring)]
+    kmz_path = r"C:\Users\202412020172\Downloads\BOQ_Design_Sample.kmz"
+    points_kmz, lines_kmz = validate_kmz_design(kmz_path)
     
     export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\BOQ"
     os.makedirs(export_dir, exist_ok=True)
     
     start_time = time.time()
-    points_boq, lines_boq = parallel_boq(all_points, all_lines)
+    points_boq, lines_boq = parallel_boq(points_kmz, lines_kmz)
 
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir)

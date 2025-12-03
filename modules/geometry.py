@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from shapely.geometry import Point, LineString, MultiLineString, Polygon, MultiPolygon
+from shapely.ops import substring, linemerge
 
 def explode_lines(gdf):
     """Explode lines into individual segments."""
@@ -113,89 +114,186 @@ def identify_centerline(line_data, tolerance=0.5):
     return line_data, point_coords
 
 def detect_turn(nodes_gdf: gpd.GeoDataFrame,
-                        edges_gdf: gpd.GeoDataFrame,
-                        tol: float = 5.0,
-                        min_cover_ratio: float = 0.8):
+                     edges_gdf: gpd.GeoDataFrame,
+                     angle_thresh_deg: float = 150.0):
     """
-    Detect turn nodes using an area-based approach.
-    Adapted and improved from the reference implementation.
-    Works in projected CRS (meters).
+    Faster turn detection using only topology and angles.
 
-    Parameters
-    ----------
-    nodes_gdf : GeoDataFrame
-        Node geometries (e.g., poles).
-    edges_gdf : GeoDataFrame
-        Line geometries (e.g., cables).
-    tol : float, optional
-        Buffer radius around each node in meters.
-    min_cover_ratio : float, optional
-        Ratio threshold (min_area/max_area). < this → likely a turn.
-
-    Returns
-    -------
-    GeoDataFrame
-        Same nodes_gdf with added columns:
-        - 'turn_isec': 0=straight, 2=turn, >2=multi
-        - 'turn_ratio': area ratio (min/max)
-        - 'area_count': number of valid buffer overlap parts
+    - No buffers
+    - No gpd.overlay
+    - Classification:
+        * turn_isec >= 3  -> 'branch'
+        * turn_isec == 2 & angle < angle_thresh -> 'turn'
+        * else -> 'straight'
     """
-    if nodes_gdf.crs is None or edges_gdf.crs is None:
-        raise ValueError("Both layers must have CRS defined (use meters).")
+    nodes = nodes_gdf.copy().reset_index(drop=True)
+    nodes["turn_note"] = "straight"
+    nodes["turn_isec"] = 0
+    nodes["turn_ratio"] = 1.0    # not really used anymore
+    nodes["area_count"] = 1
 
-    nodes = nodes_gdf.copy()
-    nodes = nodes.reset_index(drop=True)
-    nodes["id"] = nodes.index
-    nodes["turn_note"] = 'straight'
-    nodes["turn_isec"] = -1.0
-    nodes["turn_ratio"] = -1.0
-    nodes["area_count"] = None
-    
-    # # --- group nodes ---
-    # group = auto_group(nodes, distance=5)
-    # group = group.rename(columns={'region':'group'})
-    # nodes = nodes.sjoin(group[['geometry', 'group']]).drop(columns="index_right")
-    
-    # --- buffer nodes ---
-    nodes_buff = nodes.copy()
-    nodes_buff["geometry"] = nodes_buff.geometry.buffer(tol)
+    # build map: node_id -> list of direction vectors (dx, dy)
+    node_dirs = {nid: [] for nid in nodes["node_id"]}
 
-    edges_buff = edges_gdf.copy()
-    edges_buff["geometry"] = edges_buff.geometry.buffer(0.5) 
+    def edge_dirs_at_node(edge_geom, node_point: Point):
+        coords = list(edge_geom.coords)
+        d0 = node_point.distance(Point(coords[0]))
+        d1 = node_point.distance(Point(coords[-1]))
+        if d0 <= d1:
+            # direction from node to next coord
+            if len(coords) >= 2:
+                dx = coords[1][0] - coords[0][0]
+                dy = coords[1][1] - coords[0][1]
+            else:
+                dx = dy = 0.0
+        else:
+            # direction from node to previous coord
+            if len(coords) >= 2:
+                dx = coords[-2][0] - coords[-1][0]
+                dy = coords[-2][1] - coords[-1][1]
+            else:
+                dx = dy = 0.0
+        return (dx, dy)
 
-    diff = gpd.overlay(nodes_buff[["id", "geometry"]], edges_buff, how="difference")
-    diff = diff.explode(index_parts=True).reset_index(drop=True)
-    diff["area"] = diff.geometry.area
+    # build a quick lookup for node geometries
+    node_geom_map = dict(zip(nodes["node_id"], nodes.geometry))
 
-    area_group = diff.groupby("id")["area"].apply(list).reset_index(name="area_list")
+    # iterate edges, add direction vectors to node_dirs
+    for _, e in edges_gdf.iterrows():
+        for side in ("node_start", "node_end"):
+            nid = e[side]
+            if nid not in node_dirs:
+                continue
+            node_pt = node_geom_map.get(nid)
+            if node_pt is None:
+                continue
+            dx, dy = edge_dirs_at_node(e.geometry, node_pt)
+            norm = np.hypot(dx, dy)
+            if norm == 0:
+                continue
+            node_dirs[nid].append((dx / norm, dy / norm))
 
-    # --- analyze ratio ---
-    for idx, row in area_group.iterrows():
-        areas = [a for a in row["area_list"] if a > 0]
-        if len(areas) < 2:
+    # classify each node
+    for idx, row in nodes.iterrows():
+        nid = row["node_id"]
+        dirs = node_dirs.get(nid, [])
+        k = len(dirs)
+
+        if k == 0 or k == 1:
+            # isolated or dead-end
+            nodes.at[idx, "turn_isec"] = k
+            nodes.at[idx, "turn_note"] = "straight"
             continue
 
-        max_area = max(areas)
-        min_area = min(areas)
-        ratio = min_area / max_area if max_area > 0 else np.nan
+        if k >= 3:
+            nodes.at[idx, "turn_isec"] = k
+            nodes.at[idx, "turn_note"] = "branch"
+            continue
 
-        nodes.loc[row["id"], "turn_ratio"] = round(ratio, 3)
-        nodes.loc[row["id"], "area_count"] = len(areas)
+        # k == 2 -> check angle between two vectors
+        (dx1, dy1), (dx2, dy2) = dirs[:2]
+        dot = dx1 * dx2 + dy1 * dy2
+        dot = max(-1.0, min(1.0, dot))
+        angle_rad = np.arccos(dot)
+        angle_deg = np.degrees(angle_rad)
 
-        # classify
-        if len(areas) >= 3:
-            nodes.loc[row["id"], "turn_isec"] = len(areas)
-            nodes.loc[row["id"], "turn_note"] = "branch" # branch
-        elif ratio < min_cover_ratio:
-            nodes.loc[row["id"], "turn_isec"] = 2   # turn
-            nodes.loc[row["id"], "turn_note"] = "turn"
+        # if angle close to 180° => straight, else turn
+        # angle here is the "inside" angle; 180 ~ straight, 90 ~ corner
+        if angle_deg >= angle_thresh_deg:
+            nodes.at[idx, "turn_isec"] = 0
+            nodes.at[idx, "turn_note"] = "straight"
         else:
-            nodes.loc[row["id"], "turn_isec"] = 0   # straight
-            nodes.loc[row["id"], "turn_note"] = "straight"
+            nodes.at[idx, "turn_isec"] = 2
+            nodes.at[idx, "turn_note"] = "turn"
 
     return nodes
 
-def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 8):
+def relative_intersection(line_a: LineString | MultiLineString, line_b: LineString | MultiLineString, tolerance=0.0):
+    """
+    Detect overlapping portions of line_a and line_b based on
+    projection distance (lowest → highest).
+    
+    Returns:
+        overlap_geom: LineString / MultiLineString
+        new_geom:     LineString / MultiLineString
+    """
+
+    if line_a.geom_type == "MultiLineString":
+        line_a = linemerge(line_a)
+        if line_a.geom_type == "MultiLineString":
+            geoms = list(line_a.geoms)
+            longest = geoms[0]
+            for geom in geoms:
+                if geom.length > longest.length:
+                    longest = geom
+            line_a = longest
+
+    if line_b.geom_type == "MultiLineString":
+        line_b = linemerge(line_b)
+        if line_b.geom_type == "MultiLineString":
+            geoms = list(line_b.geoms)
+            longest = geoms[0]
+            for geom in geoms:
+                if geom.length > longest.length:
+                    longest = geom
+            line_b = longest
+
+
+    if tolerance > 0:
+        lineA = line_a.buffer(tolerance)
+        lineB = line_b.buffer(tolerance)
+    else:
+        lineA = line_a
+        lineB = line_b
+
+    # ---- 1. Compute intersection ----
+    inter = line_a.intersection(lineB)
+    if inter is None:
+        return LineString(), line_a
+    if inter.is_empty:
+        return LineString(), line_a
+
+    # ---- 2. Extract all intersection endpoints ----
+    pts = []
+
+    # Intersection may be LineString, MultiLineString, or Points
+    if isinstance(inter, LineString):
+        pts.extend([inter.coords[0], inter.coords[-1]])
+
+    elif isinstance(inter, MultiLineString):
+        for seg in inter.geoms:
+            pts.extend([seg.coords[0], seg.coords[-1]])
+
+    else:
+        for g in inter.geoms:
+            pts.append((g.x, g.y))
+
+    # ---- 3. Project intersection endpoints onto line_a ----
+    dist_list = sorted([line_a.project(Point(p)) for p in pts])
+    dist_list = sorted(list(set(dist_list)))
+
+    if len(dist_list) < 2:
+        return None, line_a
+
+    start_d = dist_list[0]
+    end_d   = dist_list[-1]
+    overlap_geom = substring(line_a, start_d, end_d)
+
+    # ---- 5. Compute remaining "new" segments ----
+    new_segments = []
+    if start_d > 0:
+        new_segments.append(substring(line_a, 0, start_d))
+    if end_d < line_a.length:
+        new_segments.append(substring(line_a, end_d, line_a.length))
+
+    if len(new_segments) == 1:
+        new_geom = new_segments[0]
+    else:
+        new_geom = MultiLineString([s for s in new_segments if not s.is_empty])
+    return overlap_geom, new_geom
+
+
+def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12):
     """
     Generate nodes and edges (u, v) from LineString/MultiLineString geometries.
     Each vertex is treated as a node.
@@ -237,8 +335,8 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 8)
     # --- BUILD NODES ---
     nodes = []
     for _, e in edges_gdf.iterrows():
-        nodes.append({"id_line": e["id_line"], "geometry": e["u"], **{k: v for k, v in edges_gdf.items()}})
-        nodes.append({"id_line": e["id_line"], "geometry": e["v"], **{k: v for k, v in edges_gdf.items()}})
+        nodes.append({"id_line": e["id_line"], "geometry": e["u"]})
+        nodes.append({"id_line": e["id_line"], "geometry": e["v"]})
     nodes_gdf = gpd.GeoDataFrame(nodes, geometry="geometry", crs=gdf.crs)
 
     nodes_gdf["x"] = nodes_gdf.geometry.x.round(decimals)
@@ -258,15 +356,15 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 8)
     edges_gdf["node_end"] = edges_gdf["v"].apply(find_node)
     edges_gdf["length"] = edges_gdf.geometry.length
 
-    # # --- TURN ---
-    # nodes_gdf = detect_turn(nodes_gdf, edges_gdf, tol=2)
+
+    # --- TURN ---
+    nodes_gdf = detect_turn(nodes_gdf, edges_gdf, angle_thresh_deg=150)
 
     # --- CLEAN OUTPUT ---
     edges_gdf = edges_gdf.drop(columns=["u", "v"])
-    # nodes_gdf = nodes_gdf[["node_id", "x", "y", "count", "turn_isec","turn_ratio", "turn_note", "geometry"]]
+    nodes_gdf = nodes_gdf[["node_id", "x", "y", "count", "turn_isec","turn_ratio", "turn_note", "geometry"]]
 
     # CRS
     nodes_gdf = nodes_gdf.to_crs(crs_input)
     edges_gdf = edges_gdf.to_crs(crs_input)
-
     return nodes_gdf, edges_gdf
