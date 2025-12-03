@@ -532,6 +532,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     for idx, row in existing_route.iterrows():
         if idx in dropped:
             continue
+        
         geom = row.geometry.buffer(5)
         within_idx = existing_route[(existing_route.index != idx) & (existing_route.within(geom))]
         if not within_idx.empty:
@@ -624,17 +625,8 @@ def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, **kwar
                             meta={ "status": (f"Completed BOQ for {len(lines_compiled)}/{len(ringlist):,} rings")},
                         )
             except Exception as e:
-                if task_celery:
-                    task_celery.update_state(
-                        state="FAILURE",
-                        meta={
-                            "status": (
-                                f"Error in ring {ring}: {e}. "
-                                f"Completed BOQ for {len(lines_compiled)}/{len(ringlist)} rings"
-                            )
-                        },
-                    )
                 logger.error(f"🔴 Error BOQ in {ring}: {e}")
+                continue
 
         points_compiled = pd.concat(points_compiled)
         lines_compiled = pd.concat(lines_compiled)
@@ -1330,16 +1322,19 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **
     output_kmz = os.path.join(export_dir, "BOQ KMZ Design.kmz")
     main_kmz = simplekml.Kml()
     for num, ring in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process KMZ BOQ'):
-        ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
-        ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
-        main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor=vendor, program=program)
-        logger.info(f"🟢 {ring} BOQ KMZ inserted.")
+        try:
+            ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
+            ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
+            main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor=vendor, program=program)
+            logger.info(f"🟢 {ring} BOQ KMZ inserted.")
 
-        if task_celery:
-            task_celery.update_state(
-                state="PROGRESS",
-                meta={ "status": (f"Compile KMz for {num}/{len(ring_names):,} rings")},
-            )
+            if task_celery:
+                task_celery.update_state(
+                    state="PROGRESS",
+                    meta={ "status": (f"Compile KMz for {num}/{len(ring_names):,} rings")},
+                )
+        except Exception as e:
+            print(f"Error in ring {ring}: {e}")
 
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)

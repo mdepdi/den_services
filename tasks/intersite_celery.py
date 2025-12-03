@@ -471,7 +471,7 @@ def task_boq(self, data: dict):
         )
 
         # ZIPFILE
-        zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Topology_Task.zip"
+        zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(export_loc):
@@ -484,7 +484,7 @@ def task_boq(self, data: dict):
         
         self.update_state(
             state="SUCCESS",
-            meta={"status": "Topology Based fiberization data processed successfully", "result": result, "zip_file": zip_filepath},
+            meta={"status": "BOQ Task fiberization data processed successfully", "result": result, "zip_file": zip_filepath},
         )
 
         # CLEAN UP TEMP FILES
@@ -500,5 +500,5 @@ def task_boq(self, data: dict):
     except Exception as e:
         self.retry(exc=e, countdown=60, max_retries=3)
         self.update_state(state="FAILURE", meta={"status": str(e)})
-        print(f"Exception occurred during Topology Based fiberization processing: {str(e)}")
+        print(f"Exception occurred during BOQ Task fiberization processing: {str(e)}")
         raise e
