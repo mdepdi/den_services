@@ -708,7 +708,7 @@ async def boq_intersite(
             tmp_fiber_path = tmp_fiber.name
         
         if suffix in ['.kml', '.kmz']:
-            point_kmz, line_kmz, _ = validate_kmz_design(tmp_fiber_path)
+            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path)
         else:
             return {"error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
     except Exception as e:
