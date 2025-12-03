@@ -979,6 +979,7 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
 
     # -- Route --
     route = lines_boq.copy()
+    route['length'] = route.geometry.to_crs(epsg=3857).length
     route_columns = [ "near_end", "far_end", "geometry", "ring_name", "length"]
     route = route[route_columns].copy()
     route["name"] = route["near_end"] + "-" + route["far_end"]
