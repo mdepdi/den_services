@@ -497,7 +497,6 @@ def task_boq(self, data: dict):
             print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
-
     except Exception as e:
         self.retry(exc=e, countdown=60, max_retries=3)
         self.update_state(state="FAILURE", meta={"status": str(e)})

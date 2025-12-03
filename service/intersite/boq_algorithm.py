@@ -16,7 +16,10 @@ from shapely.ops import linemerge
 from modules.kml import export_kml, sanitize_kml
 from modules.table import excel_styler
 from modules.utils import auto_group
+from core.config import settings
 
+MAINDATA_DIR = settings.MAINDATA_DIR
+DATA_DIR = settings.DATA_DIR
 
 # ------------------------------------------------------
 # LOGGER
@@ -315,8 +318,8 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame):
     lines_gdf["line_id"] = lines_gdf.index
 
     ring_name = lines_gdf['ring_name'].mode()[0]
-    osm_railway = gpd.read_parquet(r"D:\JACOBS\DATA\03. Road Network\railway_osm.parquet")
-    osm_toll = gpd.read_parquet(r"D:\JACOBS\DATA\03. Road Network\toll.parquet")
+    osm_railway = gpd.read_parquet(f"{MAINDATA_DIR}/03. Road Network/railway_osm.parquet")
+    osm_toll = gpd.read_parquet(f"{MAINDATA_DIR}/03. Road Network/toll.parquet")
     osm_railway = osm_railway.rename(columns={'name':'rail_name'})
     osm_toll = osm_toll.rename(columns={'name':'toll_name'})
 
@@ -391,7 +394,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # =============================
     # LOAD FO REFERENCE GEOMETRY
     # =============================
-    fo_route = r"D:\JACOBS\SERVICE\API\data\FO TBG Only_01062025.parquet"
+    fo_route = fr"{DATA_DIR}/FO TBG Only_01062025.parquet"
     fo_route = gpd.read_parquet(fo_route)
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
@@ -539,7 +542,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
         existing_route = existing_route.drop(index=dropped)
         logger.info(f"ℹ️ Dropped {len(dropped)} overlapped lines.")
     existing_route = existing_route.drop_duplicates('geometry').reset_index(drop=True)
-    existing_route.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 1\BoQ Intersite\Export\Trial BOQ\Existing Route_{ring_name}.parquet")
+    # existing_route.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 1\BoQ Intersite\Export\Trial BOQ\Existing Route_{ring_name}.parquet")
 
     lines['fo_exist'] = [{} for _ in range(len(lines))]
     lines['pole_exist'] = [{} for _ in range(len(lines))]
