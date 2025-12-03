@@ -715,15 +715,14 @@ async def boq_intersite(
         return {"error": f"Failed to read topology file: {str(e)}"}
 
     # SAVE DATA
-    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_points_kmz_{uuid4().hex}.xlsx")
-    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_lines_kmz_{uuid4().hex}.xlsx")
+    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_points_kmz_{uuid4().hex}.parquet")
+    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_lines_kmz_{uuid4().hex}.parquet")
 
     point_kmz.to_parquet(points_path, index=False)
     line_kmz.to_parquet(lines_path, index=False)
     print(f"📥 Temporary Points data saved to   : {points_path}")
     print(f"📥 Temporary Lines data saved to    : {lines_path}")
 
-    # Process data
     try:
         data = {
             "points_path": points_path,
