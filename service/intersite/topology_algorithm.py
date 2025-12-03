@@ -86,7 +86,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     # ----------------------------------------------------------------------
     point_topology = []
 
-    for idx, row in line_gdf.iterrows():
+    for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
 
         if geom.geom_type == 'MultiLineString':
@@ -155,8 +155,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
     # Ensure sequential ordering
     mapped = mapped.sort_values(["ring_name", "ring_id", "site_type", "num"])
-    mapped = mapped.drop_duplicates(['ring_name', 'site_id'])
-
+    mapped = mapped.drop_duplicates(['ring_name', 'site_id', 'flag'])
 
     # Convert to lat/lon
     mapped_ll = mapped.to_crs(4326)

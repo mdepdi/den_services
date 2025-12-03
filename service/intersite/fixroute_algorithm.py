@@ -160,8 +160,8 @@ def parallel_fixroute(
     **kwargs
     ) -> tuple:
 
-    task_celery = kwargs.get("task_celery", None)
-    spof_threshold = kwargs.get("spof_threshold", None)
+    task_celery = kwargs.get("task_celery", False)
+    spof_threshold = kwargs.get("spof_threshold", 3000)
     ring_list = ne_data['ring_name'].dropna().unique().tolist()
     logger.info(f"🔄 Total Rings to Process: {len(ring_list):,}")
 
@@ -273,7 +273,7 @@ def main_fixroute(
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Fix Route")
-    task_celery = kwargs.get("task_celery", None)
+    task_celery = kwargs.get("task_celery", False)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
     logger.info(f"🌏 Starting Intersite")

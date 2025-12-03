@@ -849,16 +849,6 @@ def ring_parallel(
                     )
             except Exception as e:
                 logger.error(f"❌ Error processing cluster {cluster_id}: {e}")
-                if task_celery:
-                    task_celery.update_state(
-                        state="FAILURE",
-                        meta={
-                            "status": (
-                                f"Error in cluster {cluster_id}: {e}. "
-                                f"Completed {len(final_paths)}/{total_futures} clusters"
-                            )
-                        },
-                    )
                 continue
 
         if final_paths:
