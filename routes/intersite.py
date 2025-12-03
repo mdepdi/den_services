@@ -534,7 +534,7 @@ async def polygon_intersite(
     [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Polygon_Based.xlsx)
 
     **Sample Polygon**  
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Sample_Polygon.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/Polygon_Sample.kmz)
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
@@ -616,7 +616,7 @@ async def topology_intersite(
     [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Topology_Based.xlsx)
 
     **Sample Topology**  
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Sample_Topology.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/Topology_Sample.kmz)
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
