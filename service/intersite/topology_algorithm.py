@@ -146,7 +146,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped = gpd.sjoin_nearest(
         point_topology,
         sitelist_gdf[['site_id', 'site_name', 'region', 'centroid', 'geometry']],
-        max_distance=5000,
+        max_distance=2000,
         distance_col='dist_to_site'
     ).drop(columns='index_right')
 
@@ -166,7 +166,6 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     # Build sequential fiber segments
     # ----------------------------------------------------------------------
     mapped_fix = []
-
     for ring in mapped['ring_name'].unique():
         ring_data = mapped[mapped['ring_name'] == ring].copy()
         region = ring_data['region'].mode()[0]
@@ -174,28 +173,21 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
         ring_data = ring_data.sort_values("num").reset_index(drop=True)
         total_data = len(ring_data)
 
-        for ring in mapped['ring_name'].unique():
-            ring_data = mapped[mapped['ring_name'] == ring].copy()
-            region = ring_data['region'].mode()[0]
+        for i in range(total_data - 1):
+            a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
+            b = ring_data.iloc[i+1].drop(['geometry', 'region', 'ring_name'])
 
-            ring_data = ring_data.sort_values("num").reset_index(drop=True)
-            total_data = len(ring_data)
+            # Concatenate horizontally
+            seg = pd.concat(
+                [a.add_suffix('_a'), b.add_suffix('_b')],
+                axis=0
+            ).to_frame().T
 
-            for i in range(total_data - 1):
-                a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
-                b = ring_data.iloc[i+1].drop(['geometry', 'region', 'ring_name'])
+            seg['ring_name'] = ring
+            seg['region'] = region
+            seg['sequence'] = i
 
-                # Concatenate horizontally
-                seg = pd.concat(
-                    [a.add_suffix('_a'), b.add_suffix('_b')],
-                    axis=0
-                ).to_frame().T
-
-                seg['ring_name'] = ring
-                seg['region'] = region
-                seg['sequence'] = i
-
-                mapped_fix.append(seg)
+            mapped_fix.append(seg)
 
     mapped_fix = pd.concat(mapped_fix, ignore_index=True)
     return mapped_fix
@@ -219,7 +211,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
-    site_data = topology_algo(sitelist_gdf, line_gdf, program)
+    site_data = topology_algo(sitelist_gdf, line_gdf, vendor, program)
     site_data = sanitize_header(site_data)
     # site_data = validate_fixroute(site_data)
 
@@ -243,8 +235,8 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Sitelist Topology Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Polygon Sample.kml"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Topology Template_Big Project All Site.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Topo sample.kml"
     export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export"
     program = "Trial Topology"
     boq = False
@@ -256,7 +248,7 @@ if __name__ == "__main__":
     result = main_topology(
         excel_path=excel_file,
         line_file=line_file,
-        export_loc=export_dir,
+        export_dir=export_loc,
         boq=boq,
         program=program
     )
