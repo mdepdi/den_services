@@ -921,6 +921,7 @@ def main_unsupervised(
     area_col="region",
     cluster_col="ring_name",
     max_distance=10000,
+    spof_threshold=3000,
     fo_expand=None,
     boq=False,
     **kwargs
@@ -1009,6 +1010,7 @@ def main_unsupervised(
         vendor=vendor,
         program=program,
         method=method,
+        spof_threshold=spof_threshold,
         **kwargs
     )
 

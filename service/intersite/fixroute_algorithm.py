@@ -39,6 +39,7 @@ def fixroute_algo(
     region: str,
     ring: str,
     export_loc: str = None,
+    spof_threshold: int = 3000,
 ) -> tuple:
     
     if export_loc is None:
@@ -136,7 +137,7 @@ def fixroute_algo(
     ring_paths = gpd.GeoDataFrame(segments, geometry='geometry', crs="EPSG:3857")
 
     # SPOF CHECKING
-    ring_paths = spof_detection(ring_paths, concated, G, roads, nodes, threshold_spof=3000, threshold_alt=25)
+    ring_paths = spof_detection(ring_paths, concated, G, roads, nodes, threshold_spof=spof_threshold, threshold_alt=25)
 
     # EXPORT
     if not concated.empty:
@@ -160,6 +161,7 @@ def parallel_fixroute(
     ) -> tuple:
 
     task_celery = kwargs.get("task_celery", None)
+    spof_threshold = kwargs.get("spof_threshold", None)
     ring_list = ne_data['ring_name'].dropna().unique().tolist()
     logger.info(f"🔄 Total Rings to Process: {len(ring_list):,}")
 
@@ -189,6 +191,7 @@ def parallel_fixroute(
                 region,
                 ring,
                 checkpoint_dir,
+                spof_threshold
             )
             futures[future] = ring
 
@@ -266,6 +269,7 @@ def main_fixroute(
     template_df: pd.DataFrame,
     export_dir: str,
     boq:bool = False,
+    spof_threshold: int = 3000,
     **kwargs
 ):
     if not os.path.exists(export_dir):
@@ -282,6 +286,7 @@ def main_fixroute(
     logger.info(f"ℹ️ Method  : {method}")
     logger.info(f"ℹ️ Vendor  : {vendor}")
     logger.info(f"ℹ️ Program : {program}")
+    logger.info(f"ℹ️ SPOF Tol: {spof_threshold}")
     logger.info(f"ℹ️ Design  : {design_type}")
     logger.info(f"ℹ️ Total Data  : {len(template_df):,}")
 
@@ -298,7 +303,7 @@ def main_fixroute(
         
         if task_celery:
             task_celery.update_state(state="PROGRESS", meta={"status": "Starting Parallel Fix Route"})
-        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, task_celery=task_celery)
+        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, spof_threshold=spof_threshold, task_celery=task_celery)
 
     if not updated_points.empty:
         logger.info(f"ℹ️ Total updated points: {len(updated_points):,}")
@@ -330,6 +335,7 @@ if __name__ == "__main__":
     export_dir = fr"D:\JACOBS\SERVICE\API\test\Fix Route"
     boq = False
     program ="Q1NewSite2026"
+    spof_threshold = 3000
 
 
     if not os.path.exists(export_dir):
@@ -341,7 +347,8 @@ if __name__ == "__main__":
         template_df= template_df,
         export_dir=export_dir,
         boq=boq,
-        program=program
+        program=program,
+        spof_threshold=spof_threshold
     )
     end_time = time()
     elapsed_time = end_time - start_time

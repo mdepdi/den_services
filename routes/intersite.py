@@ -297,6 +297,7 @@ async def insert_ring(
 @router.post("/supervised", tags=["Intersite"])
 async def supervised_ring(
     excel_file: UploadFile = File(None, description="Excel file containing ring data."),
+    spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
     boq:bool = Form(False, description="Output file to choose")
 ):
@@ -351,6 +352,7 @@ async def supervised_ring(
     try:
         data = {
             "site_path": temp_parquet_path,
+            "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
         }
@@ -372,6 +374,7 @@ async def unsupervised_ring(
     excel_file: UploadFile = File(None, description="Excel file containing sitelist and hubs sheet."),
     member_expectation: int = Form(10, description="Member expectation in one ring."),
     max_distance: int = Form(10000, description="Maximum distance to route."),
+    spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
     drop_existings:bool = Form(False, description="Drop ring if not conatining new site."),
     boq:bool = Form(False, description="Output file to choose")
@@ -437,6 +440,7 @@ async def unsupervised_ring(
             "max_distance": max_distance,
             "drop_existings": drop_existings,
             "program": program,
+            "spof_threshold": spof_threshold,
             "boq": boq
         }
         data = dumps(data, default=str)
@@ -455,6 +459,7 @@ async def unsupervised_ring(
 @router.post("/fixroute", tags=["Intersite"])
 async def fixroute_ring(
     excel_file: UploadFile = File(None, description="Excel file containing fix route template."),
+    spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form(None, description="Program name if not defined"),
     boq: Optional[bool] = Form(False, description="Output file to choose"),
 ):
@@ -497,6 +502,7 @@ async def fixroute_ring(
     try:
         data = {
             "template_path": excel_path,
+            "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
         }
@@ -516,6 +522,7 @@ async def fixroute_ring(
 async def polygon_intersite(
     excel_file: UploadFile = File(None, description="Excel file containing sitelist and hubs sheet."),
     polygon_file: UploadFile = File(None, description="Polygon file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
+    spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form("Fiberization", description="Program name if needed."),
     boq: Optional[bool] = Form(False, description="Output file to choose")
 ):
@@ -577,6 +584,7 @@ async def polygon_intersite(
         data = {
             "excel_path": excel_path,
             "polygon_path": polygon_path,
+            "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
         }
@@ -596,6 +604,7 @@ async def polygon_intersite(
 async def topology_intersite(
     excel_file: UploadFile = File(None, description="Excel file containing sitelist."),
     topology_file: UploadFile = File(None, description="Topology file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
+    spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form("Fiberization", description="Program name if needed."),
     boq:Optional[bool] = Form(False, description="Output file to choose")
 ):
@@ -656,6 +665,7 @@ async def topology_intersite(
         data = {
             "excel_path": excel_path,
             "topology_path": topology_path,
+            "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
         }

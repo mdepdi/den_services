@@ -173,7 +173,7 @@ def polygonize_algo(sitelist_gdf:gpd.GeoDataFrame, hubs_gdf:gpd.GeoDataFrame, po
         print(f"🔴 Ring data empty.")
         return None
 
-def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=False, **kwargs):
+def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, **kwargs):
     cable_cost = kwargs.get("cable_cost", 35000)
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
@@ -208,6 +208,7 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
         vendor=vendor,
         boq=boq,
         method=method,
+        spof_threshold=spof_threshold,
         task_celery=task_celery
     )
 

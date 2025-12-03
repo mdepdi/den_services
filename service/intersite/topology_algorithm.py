@@ -201,7 +201,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped_fix = pd.concat(mapped_fix, ignore_index=True)
     return mapped_fix
 
-def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, **kwargs):
+def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, **kwargs):
     cable_cost = kwargs.get("cable_cost", 35000)
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
@@ -235,6 +235,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
         export_dir=export_loc,
         program=program,
         vendor=vendor,
+        spof_threshold=spof_threshold,
         boq=boq,
         method=method,
         task_celery=task_celery

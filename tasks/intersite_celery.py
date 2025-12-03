@@ -93,6 +93,7 @@ def task_supervised(self, data: dict):
         print(f"🌏 Celery Intersite | Supervised Task Started | Task ID: {self.request.id}")
         parsed_data = loads(data)
         site_path = parsed_data.get("site_path")
+        spof_threshold = parsed_data.get("spof_threshold", 3000)
         program = parsed_data.get("program", 'Fiberization')
         boq = parsed_data.get("boq", False)
         method = parsed_data.get("method", "Supervised")
@@ -117,6 +118,7 @@ def task_supervised(self, data: dict):
             export_loc=export_loc,
             area_col=area_col,
             cluster_col=cluster_col,
+            spof_threshold=spof_threshold,
             method=method,
             boq=boq,
             program=program,
@@ -166,6 +168,7 @@ def task_unsupervised(self, data: dict):
         site_path = parsed_data.get("site_path")
         member_expectation = parsed_data.get("member_expectation")
         max_distance = parsed_data.get("max_distance", 10000)
+        spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
@@ -195,6 +198,7 @@ def task_unsupervised(self, data: dict):
             area_col=area_col,
             cluster_col=cluster_col,
             max_distance=max_distance,
+            spof_threshold=spof_threshold,
             drop_existings=drop_existings,
             boq=boq,
             program=program,
@@ -239,6 +243,7 @@ def task_fixroute(self, data: dict):
         print(f"🌏 Celery Fiberization | Fix Route Task Started | Task ID: {self.request.id}")
         parsed_data = loads(data)
         template_path = parsed_data.get("template_path")
+        spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
         program = parsed_data.get("program", 'Fix Route Fiberization')
         
@@ -258,6 +263,7 @@ def task_fixroute(self, data: dict):
             export_dir=export_loc,
             program=program,
             boq=boq,
+            spof_threshold=spof_threshold,
             task_celery=self
         )
 
@@ -301,6 +307,7 @@ def task_polygon_intersite(self, data: dict):
         parsed_data = loads(data)
         excel_path = parsed_data.get("excel_path")
         polygon_path = parsed_data.get("polygon_path")
+        spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
         program = parsed_data.get("program", 'Polygon Based Fiberization')
         
@@ -322,6 +329,7 @@ def task_polygon_intersite(self, data: dict):
             export_dir=export_loc,
             program=program,
             boq=boq,
+            spof_threshold=spof_threshold,
             task_celery=self
         )
 
@@ -367,6 +375,7 @@ def task_topology_intersite(self, data: dict):
         parsed_data = loads(data)
         excel_path = parsed_data.get("excel_path")
         topology_path = parsed_data.get("topology_path")
+        spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
         program = parsed_data.get("program", 'Topology Based Fiberization')
         
@@ -386,6 +395,7 @@ def task_topology_intersite(self, data: dict):
             excel_path=excel_path,
             line_file=topology_path,
             export_dir=export_loc,
+            spof_threshold=spof_threshold,
             program=program,
             boq=boq,
             task_celery=self

@@ -533,6 +533,7 @@ def ring_cluster(cluster_args):
     area_col = cluster_args.get("area_col", "region")
     ref_fo = cluster_args.get("ref_fo", None)
     cable_cost = cluster_args.get("cable_cost", 35000)
+    spof_threshold = cluster_args.get("spof_threshold", 3000)
     export_dir = cluster_args.get("export_dir", None)
 
     final_paths = []
@@ -624,7 +625,7 @@ def ring_cluster(cluster_args):
         return None, None
 
     logger.info(f"🧩 Running SPOF detection for cluster {cluster}...")
-    final_paths = spof_detection(final_paths, final_points, G, roads, nodes, threshold_spof=3000, threshold_alt=25)
+    final_paths = spof_detection(final_paths, final_points, G, roads, nodes, threshold_spof=spof_threshold, threshold_alt=25)
 
     logger.info("🧩 Reconstructing connected ring routes...")
     connected_routes = []
@@ -772,6 +773,7 @@ def ring_parallel(
     cluster_col="ring_name",
     export_dir=None,
     ref_fo=None,
+    spof_threshold=3000,
     cable_cost=35000,
     task_celery=False,
 ):
@@ -805,6 +807,7 @@ def ring_parallel(
             "area_col": area_col,
             "ref_fo": ref_fo,
             "export_dir": export_dir,
+            "spof_threshold": spof_threshold,
             "cable_cost": cable_cost,
         })
 
@@ -978,6 +981,7 @@ def ring_supervised(
     """Run supervised routing for a single area, saving parquet results."""
     logger.info(f"🧩 Running supervised ring design for area '{area}'.")
     cable_cost = kwargs.get("cable_cost", 35000)
+    spof_threshold = kwargs.get("spof_threshold", 3000)
     task_celery = kwargs.get("task_celery", False)
 
     os.makedirs(export_dir, exist_ok=True)
@@ -1051,6 +1055,7 @@ def ring_supervised(
             cluster_col=cluster_col,
             export_dir=export_dir,
             ref_fo=ref_fo,
+            spof_threshold=spof_threshold,
             cable_cost=cable_cost,
             task_celery=task_celery,
         )
@@ -1292,6 +1297,7 @@ def main_supervised(
     cluster_col="ring_name",
     fo_expand: gpd.GeoDataFrame = None,
     boq: bool = False,
+    spof_threshold: int = 3000,
     **kwargs,
 ):
     """Main supervised pipeline: per-area processing, compile, export KMZ/Excel."""
@@ -1332,6 +1338,7 @@ def main_supervised(
         logger.info(f"ℹ️ Vendor  : {vendor}")
         logger.info(f"ℹ️ Program : {program}")
         logger.info(f"ℹ️ Design  : {design_type}")
+        logger.info(f"ℹ️ SPOF Tol: {spof_threshold}")
         logger.info(f"ℹ️ Total sites: {len(site_data):,}")
 
         for area in tqdm(area_list, desc=f"Processing {area_col}"):
@@ -1348,6 +1355,7 @@ def main_supervised(
                 export_dir=checkpoint_dir,
                 fo_expand=fo_expand,
                 cable_cost=cable_cost,
+                spof_threshold=spof_threshold,
                 task_celery=task_celery
             )
 
@@ -1398,6 +1406,7 @@ if __name__ == "__main__":
     program = "Trial BOQ"
     vendor = "TBG"
     boq = True
+    spof_threshold = 3000
 
     logger.info("🧩 Running supervised ring network as standalone script.")
     site_data = pd.read_excel(excel_file)
@@ -1417,7 +1426,8 @@ if __name__ == "__main__":
         fo_expand=fo_expand,
         program=program,
         vendor=vendor,
-        boq=boq
+        boq=boq,
+        spof_threshold=spof_threshold
     )
 
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Supervised_Task.zip"
