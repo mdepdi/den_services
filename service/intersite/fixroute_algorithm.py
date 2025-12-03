@@ -127,9 +127,9 @@ def fixroute_algo(
                 ## MAXIMIZE EXISTING FIBER
                 for j in range(len(path) - 1):
                     if G.has_edge(path[j], path[j + 1]):
-                        G[path[j]][path[j + 1]]['weight'] = G[path[j]][path[j + 1]]['weight'] / 2
+                        G[path[j]][path[j + 1]]['weight'] = G[path[j]][path[j + 1]]['weight'] / 3
                     if G.has_edge(path[j + 1], path[j]):
-                        G[path[j + 1]][path[j]]['weight'] = G[path[j + 1]][path[j]]['weight'] / 2
+                        G[path[j + 1]][path[j]]['weight'] = G[path[j + 1]][path[j]]['weight'] / 3
             else:
                 logger.critical(f"⚠️ No geometry found for segment {start_id} to {end_id}, skipping.")
         except nx.NetworkXNoPath:
@@ -213,13 +213,7 @@ def parallel_fixroute(
                     
             except Exception as e:
                 logger.info(f"❌ Error processing ring {ring}: {e}")
-                if task_celery:
-                    task_celery.update_state(
-                        state="FAILURE",
-                        meta={"status": 
-                                f"Error in ring {ring}: {e}. "
-                              },
-                    )
+                continue
 
     if all_new_points:
         all_new_points = pd.concat(all_new_points, ignore_index=True)
