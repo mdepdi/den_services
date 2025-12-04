@@ -717,6 +717,9 @@ async def boq_intersite(
         case _:
             sep = "-"
     
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+    
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
