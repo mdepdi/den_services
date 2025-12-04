@@ -405,29 +405,36 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     from shapely.geometry import LineString
     import geopandas as gpd
     import numpy as np
+    import pandas as pd
 
     # =============================
     # LOAD FO REFERENCE GEOMETRY
     # =============================
-    fo_route = fr"{DATA_DIR}/FO TBG Only_01062025.parquet"
-    fo_route = gpd.read_parquet(fo_route)
+    fo_route_path = fr"{DATA_DIR}/FO TBG Only_01062025.parquet"
+    fo_route = gpd.read_parquet(fo_route_path)
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
-    fo_route = fo_route.rename(columns={'name': 'fiber'})
+    fo_route = fo_route.rename(columns={"name": "fiber"})
 
     # =============================
     # PREPARE INPUT DATA
     # =============================
     points = points.copy().to_crs(epsg=3857)
     lines = lines.copy().to_crs(epsg=3857)
-    ring_name = points['ring_name'].mode()[0]
-    logger.info(f"🌏 {ring_name} BOQ running ...")
 
     if points.empty:
         raise ValueError("Points data is empty.")
     if lines.empty:
         raise ValueError("Lines data is empty.")
-    
+
+    # safe ring name
+    if "ring_name" in points.columns and not points["ring_name"].dropna().empty:
+        ring_name = points["ring_name"].mode().iloc[0]
+    else:
+        ring_name = "Unknown Ring"
+
+    logger.info(f"🌏 {ring_name} BOQ running ...")
+
     lines["id_line"] = lines.index + 1
 
     # =============================
@@ -437,83 +444,152 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     nodes = nodes.to_crs(epsg=3857)
     edges = edges.to_crs(epsg=3857)
 
-    # nodes.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Nodes_{ring_name}.parquet")
-    # edges.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\Edges_{ring_name}.parquet")
-
     # =============================
     # IDENTIFY TURN / BRANCH POINTS
     # =============================
-    turn_data = nodes[nodes['turn_note'].str.contains('turn|branch')].copy()
-    turn_data = turn_data.rename(columns={'node_id': 'turn_id'})
-    branch = turn_data[turn_data['turn_isec'] > 2].copy()
-    branch = branch.rename(columns={'turn_id': 'branch_id'})
+    turn_data = nodes[nodes["turn_note"].str.contains("turn|branch", case=False, na=False)].copy()
+    turn_data = turn_data.rename(columns={"node_id": "turn_id"})
+    branch = turn_data[turn_data["turn_isec"] > 2].copy()
+    branch = branch.rename(columns={"turn_id": "branch_id"})
 
-    points = gpd.sjoin_nearest(points, nodes[['geometry', 'node_id', 'turn_ratio']], how='left', exclusive=True).drop(columns='index_right')
-    points = gpd.sjoin_nearest(points, turn_data[['geometry', 'turn_id']], how='left', distance_col='dist_turn', exclusive=True).drop(columns='index_right')
-    points = gpd.sjoin_nearest(points, branch[['geometry', 'branch_id']], how='left', distance_col='dist_branch', exclusive=True, max_distance=500).drop(columns='index_right')
-    points['dist_turn'] = points['dist_turn'].fillna(-1)
-    points['dist_branch'] = points['dist_branch'].fillna(-1)
+    # nearest joins
+    points = gpd.sjoin_nearest(
+        points,
+        nodes[["geometry", "node_id", "turn_ratio"]],
+        how="left",
+        exclusive=True,
+    ).drop(columns="index_right")
 
-    # Assign OTB and ODP (nearest turn / branch)
-    points['otb'] = points['node_id'].apply(lambda x: nodes.loc[nodes['node_id'] == x, 'geometry'].values[0].wkt)
-    points['odp'] = points['turn_id'].apply(lambda x: turn_data.loc[turn_data['turn_id'] == x, 'geometry'].values[0].wkt)
+    points = gpd.sjoin_nearest(
+        points,
+        turn_data[["geometry", "turn_id"]],
+        how="left",
+        distance_col="dist_turn",
+        exclusive=True,
+    ).drop(columns="index_right")
 
+    if not branch.empty:
+        points = gpd.sjoin_nearest(
+            points,
+            branch[["geometry", "branch_id"]],
+            how="left",
+            distance_col="dist_branch",
+            exclusive=True,
+            max_distance=500,
+        ).drop(columns="index_right")
+    else:
+        points["branch_id"] = np.nan
+        points["dist_branch"] = -1
+
+    points["dist_turn"] = points["dist_turn"].fillna(-1)
+    points["dist_branch"] = points["dist_branch"].fillna(-1)
+
+    # mapping dictionaries (no .values[0] anymore)
+    node_geom_map = {nid: geom.wkt for nid, geom in zip(nodes["node_id"], nodes.geometry)}
+    turn_geom_map = {tid: geom.wkt for tid, geom in zip(turn_data["turn_id"], turn_data.geometry)}
+    branch_geom_map = {bid: geom for bid, geom in zip(branch["branch_id"], branch.geometry)}
+
+    # Assign OTB and ODP using maps
+    points["otb"] = points["node_id"].map(node_geom_map)
+    points["odp"] = points["turn_id"].map(turn_geom_map)
+
+    # Fallback & branch-based ODP adjustments
     for idx, row in points.iterrows():
-        node_id = row['node_id']
-        turn_id = row['turn_id']
-        dist_turn = row['dist_turn']
-        branch_id = row['branch_id']
-        dist_branch = row['dist_branch']
-        branch_ratio = row['turn_ratio']
+        node_id = row["node_id"]
+        turn_id = row["turn_id"]
+        dist_turn = row["dist_turn"]
+        branch_id = row["branch_id"]
+        dist_branch = row["dist_branch"]
+        branch_ratio = row.get("turn_ratio", 1.0)
 
-        # -- No nearest turn --
-        if dist_turn > 500:
-            geom_branch = row['otb']
-            points.at[idx, 'odp'] = geom_branch
+        # -- No nearest turn (too far) -> use OTB as ODP if available
+        if dist_turn > 500 and pd.notna(row["otb"]):
+            points.at[idx, "odp"] = row["otb"]
 
-        # -- Nearest branch if exist --
-        if dist_branch > 0 and branch_ratio < 0.5:
-            geom_branch = branch.loc[branch['branch_id'] == branch_id, 'geometry'].values[0].wkt
-            points.at[idx, 'odp'] = geom_branch
+        # -- Nearest branch if exist and ratio < 0.5
+        if dist_branch > 0 and branch_ratio < 0.5 and pd.notna(branch_id):
+            geom_branch = branch_geom_map.get(branch_id)
+            if geom_branch is not None:
+                points.at[idx, "odp"] = geom_branch.wkt
 
     # =============================
     # IDENTIFY ROUTE (ACCESS + BACKBONE)
     # =============================
+    points_idx = points.set_index(points["site_id"].astype(str), drop=False)
+
     for idx, row in lines.iterrows():
         line_geom = row.geometry
         line_geom = linemerge(line_geom) if line_geom.geom_type == "MultiLineString" else line_geom
-        ne = str(row['near_end'])
-        fe = str(row['far_end'])
-        ne_type = str(points.loc[points['site_id'].astype(str) == ne, 'site_type'].values[0]).lower()
-        fe_type = str(points.loc[points['site_id'].astype(str) == fe, 'site_type'].values[0]).lower()
 
-        odp_ne = points.loc[points["site_id"].astype(str) == ne, 'odp']
-        odp_fe = points.loc[points["site_id"].astype(str) == fe, 'odp']
+        ne = str(row["near_end"]).strip()
+        fe = str(row["far_end"]).strip()
+
+        # --- try direct lookup ---
+        ne_row = points_idx.loc[ne] if ne in points_idx.index else None
+        fe_row = points_idx.loc[fe] if fe in points_idx.index else None
+
+        # --- CASE 1: NE missing, FE found -> assume reversed ---
+        if ne_row is None and fe_row is not None:
+            logger.warning(
+                f"⚠️ NE '{ne}' not found but FE '{fe}' found; "
+                f"treating FE as NE (possible reversed) for line idx={idx}."
+            )
+            ne, fe = fe, ne
+            ne_row, fe_row = fe_row, None   # FE becomes "ring" / non-site
+
+        # --- CASE 2: both missing -> give up for this line, but don't crash ---
+        if ne_row is None and fe_row is None:
+            logger.error(
+                f"❌ Neither NE '{ne}' nor FE '{fe}' found in points for line idx={idx}. "
+                f"Using full line as backbone."
+            )
+            lines.at[idx, "backbone"] = line_geom.wkt
+            lines.at[idx, "access_ne"] = None
+            lines.at[idx, "access_fe"] = None
+            continue
+
+        # if there are duplicates -> take first row
+        if isinstance(ne_row, gpd.GeoDataFrame):
+            ne_row = ne_row.iloc[0]
+        if isinstance(fe_row, gpd.GeoDataFrame):
+            fe_row = fe_row.iloc[0]
+
+        # types & odp
+        ne_type = str(ne_row.get("site_type", "")).lower() if ne_row is not None else ""
+        if fe_row is not None:
+            fe_type = str(fe_row.get("site_type", "")).lower()
+        else:
+            # FE is probably ring name (e.g. 'MMP NUS-NT-MME-0289') -> no access_fe
+            fe_type = "hub"   # so 'hub' logic will skip FE access
+
+        odp_ne_wkt = ne_row.get("odp") if ne_row is not None else None
+        odp_fe_wkt = fe_row.get("odp") if fe_row is not None else None
 
         access_ne = None
         access_fe = None
+        lines.at[idx, "access_ne"] = None
+        lines.at[idx, "access_fe"] = None
 
         # --- NEAR END ---
-        if not odp_ne.empty and 'hub' not in ne_type:
-            odp_ne_geom = shapely.from_wkt(odp_ne.values[0])
+        if isinstance(odp_ne_wkt, str) and "hub" not in ne_type:
+            odp_ne_geom = shapely.from_wkt(odp_ne_wkt)
             odp_ne_geom = snap(odp_ne_geom, line_geom, tolerance=1)
             splitted_ne = split(line_geom, odp_ne_geom)
-            splitted_ne = list(splitted_ne.geoms)
-            splitted_ne = sorted(splitted_ne, key=lambda seg: seg.length)
+            splitted_ne = sorted(list(splitted_ne.geoms), key=lambda seg: seg.length)
             if len(splitted_ne) > 1:
                 access_ne = splitted_ne[0]
-                lines.at[idx, 'access_ne'] = access_ne.wkt
+                lines.at[idx, "access_ne"] = access_ne.wkt
 
         # --- FAR END ---
-        if not odp_fe.empty and 'hub' not in fe_type:
-            odp_fe_geom = shapely.from_wkt(odp_fe.values[0])
+        # if FE row missing or we treated it as hub, we skip FE access
+        if isinstance(odp_fe_wkt, str) and "hub" not in fe_type:
+            odp_fe_geom = shapely.from_wkt(odp_fe_wkt)
             odp_fe_geom = snap(odp_fe_geom, line_geom, tolerance=1)
             splitted_fe = split(line_geom, odp_fe_geom)
-            splitted_fe = list(splitted_fe.geoms)
-            splitted_fe = sorted(splitted_fe, key=lambda seg: seg.length)
+            splitted_fe = sorted(list(splitted_fe.geoms), key=lambda seg: seg.length)
             if len(splitted_fe) > 1:
                 access_fe = splitted_fe[0]
-                lines.at[idx, 'access_fe'] = access_fe.wkt
+                lines.at[idx, "access_fe"] = access_fe.wkt
 
         # --- BACKBONE ---
         backbone = line_geom
@@ -521,61 +597,62 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
             backbone = shapely.difference(backbone, access_ne)
         if access_fe:
             backbone = shapely.difference(backbone, access_fe)
-        lines.at[idx, 'backbone'] = backbone.wkt
+        lines.at[idx, "backbone"] = backbone.wkt
+
 
     # =============================
     # IDENTIFY EXISTING FO ROUTES
     # =============================
     union_lines = lines.geometry.union_all().buffer(30)
-    fo_route = fo_route[fo_route.geometry.intersects(union_lines)].copy()
-    fo_route['geometry'] = fo_route.geometry.buffer(30)
+    fo_route_clip = fo_route[fo_route.geometry.intersects(union_lines)].copy()
+    fo_route_clip["geometry"] = fo_route_clip.geometry.buffer(30)
 
-    existing_route = substring_overlay(lines, fo_route)
-    existing_route = gpd.overlay(lines, fo_route, how='intersection', keep_geom_type=True)
+    _ = substring_overlay(lines, fo_route_clip)
+    existing_route = gpd.overlay(lines, fo_route_clip, how="intersection", keep_geom_type=True)
 
     if existing_route.empty:
         logger.info("⚠️ No existing FO intersections found.")
         return points, lines
 
-    existing_route = existing_route[['id_line', 'fiber', 'geometry']].reset_index(drop=True)
-    existing_route = existing_route.dissolve(['id_line', 'fiber']).reset_index()
-    existing_route["geometry"] = existing_route.geometry.apply(lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g)
-    existing_route['length'] = existing_route.geometry.length
-    existing_route = existing_route.sort_values('length', ascending=False)
+    existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(drop=True)
+    existing_route = existing_route.dissolve(["id_line", "fiber"]).reset_index()
+    existing_route["geometry"] = existing_route.geometry.apply(
+        lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g
+    )
+    existing_route["length"] = existing_route.geometry.length
+    existing_route = existing_route.sort_values("length", ascending=False)
 
     dropped = []
-    for idx, row in existing_route.iterrows():
-        if idx in dropped:
+    for i, row in existing_route.iterrows():
+        if i in dropped:
             continue
         geom = row.geometry.buffer(5)
-        within_idx = existing_route[(existing_route.index != idx) & (existing_route.within(geom))]
+        within_idx = existing_route[(existing_route.index != i) & (existing_route.within(geom))]
         if not within_idx.empty:
-            within_idx = within_idx.index.to_list()
-            dropped.extend(within_idx)
-    
-    if len(dropped) > 0:
+            dropped.extend(within_idx.index.to_list())
+
+    if dropped:
         existing_route = existing_route.drop(index=dropped)
         logger.info(f"ℹ️ Dropped {len(dropped)} overlapped lines.")
-    existing_route = existing_route.drop_duplicates('geometry').reset_index(drop=True)
-    # existing_route.to_parquet(fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 1\BoQ Intersite\Export\Trial BOQ\Existing Route_{ring_name}.parquet")
+    existing_route = existing_route.drop_duplicates("geometry").reset_index(drop=True)
 
-    lines['fo_exist'] = [{} for _ in range(len(lines))]
-    lines['pole_exist'] = [{} for _ in range(len(lines))]
-    lines['closure'] = [{} for _ in range(len(lines))]
-    
+    lines["fo_exist"] = [{} for _ in range(len(lines))]
+    lines["pole_exist"] = [{} for _ in range(len(lines))]
+    lines["closure"] = [{} for _ in range(len(lines))]
+
     # =============================
     # CLASSIFY EXISTING & POLE EXISTING
     # =============================
     for idx, row in lines.iterrows():
-        id_line = row['id_line']
-        backbone = shapely.from_wkt(row['backbone'])
-        fo_lines = existing_route[existing_route['id_line'] == id_line].copy()
+        id_line = row["id_line"]
+        backbone = shapely.from_wkt(row["backbone"])
+        fo_lines = existing_route[existing_route["id_line"] == id_line].copy()
         fo_exist_dict = {}
         pole_exist_dict = {}
         closure_dict = {}
 
         for _, fo_row in fo_lines.iterrows():
-            fiber_name = fo_row['fiber']
+            fiber_name = fo_row["fiber"]
             fo_geom = fo_row.geometry
             if fo_geom.is_empty:
                 continue
@@ -589,16 +666,16 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
                 if not closure.is_empty:
                     logger.info(closure)
                     closure_dict[fiber_name] = closure.wkt
-            elif fo_geom.length > 100 and fo_geom.length < 1000:
+            elif 100 < fo_geom.length < 1000:
                 logger.info(f"ℹ️ Pole Existing: {fiber_name} | Length: {fo_geom.length}")
                 pole_exist_dict[fiber_name] = fo_geom.wkt
             else:
                 continue
 
-        lines.at[idx, 'fo_exist'] = fo_exist_dict
-        lines.at[idx, 'closure'] = closure_dict
-        lines.at[idx, 'pole_exist'] = pole_exist_dict
-        lines.at[idx, 'backbone'] = backbone.wkt
+        lines.at[idx, "fo_exist"] = fo_exist_dict
+        lines.at[idx, "closure"] = closure_dict
+        lines.at[idx, "pole_exist"] = pole_exist_dict
+        lines.at[idx, "backbone"] = backbone.wkt
 
     # =============================
     # CLASSIFY OBSTACLE
@@ -789,7 +866,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
 
         region = next((x for x in ring_points.get('region', []) if pd.notna(x)), 'Unknown Region')
         project = next((x for x in ring_points.get('project', []) if pd.notna(x)), 'Unknown Project')
-        fo_hub_count = len(ring_points[ring_points['site_type'] == 'FO Hub'])
+        fo_hub_count = len(ring_points[ring_points['site_type'].str.lower().str.contains('hub')])
 
         for i in range(len(ring_points)):
             start_point = ring_points.iloc[i]
@@ -1363,14 +1440,18 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, **
 
 
 if __name__ == "__main__":
-    kmz_path = r"C:\Users\202412020172\Downloads\BOQ_Design_Sample.kmz"
-    points_kmz, lines_kmz = validate_kmz_design(kmz_path)
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\BOQ Algorithm\MMP Sokka Design TBG XLS.kmz"
+    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
     
-    export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\BoQ Intersite\Export\Trial BOQ\BOQ"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\BOQ Algorithm\Export"
     os.makedirs(export_dir, exist_ok=True)
     
     start_time = time.time()
     points_boq, lines_boq = parallel_boq(points_kmz, lines_kmz)
+    
+    print(points_boq.head())
+    print(lines_boq.columns)
+    print(lines_boq.head())
 
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir)

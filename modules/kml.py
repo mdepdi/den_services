@@ -341,7 +341,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route')].copy()
     
     # POINT EXISTING
-    points_existing['site_id'] = points_existing['name']
+    points_existing['site_id'] = points_existing['name'].str.strip()
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
@@ -353,7 +353,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['region'] = points_existing['folders'].str.extract(r'([A-Z]{3,6});')
 
     # LINES EXISTING
-    lines_existing['segment'] = lines_existing['name']
+    lines_existing['segment'] = lines_existing['name'].str.strip()
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
