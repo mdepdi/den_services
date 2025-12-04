@@ -402,7 +402,7 @@ def routing_insert(
     for u, v, data in G.edges(data=True):
         base_len = data.get("weight", 1.0)
         if (u in ref_prevfiber) and (v in ref_prevfiber):
-            cost = base_len * 0.125
+            cost = base_len / 9999999
         else:
             cost = base_len
         data["weight"] = cost
@@ -624,7 +624,7 @@ def parallel_insert(
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
-    ring_list = ["TBG-KLA-MOCNPhase1-DF077"]
+    # ring_list = ["TBG-KLA-MOCNPhase1-DF077"]
 
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
@@ -1305,7 +1305,7 @@ def main_insertring(
 if __name__ == "__main__":
     insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Insert Site.xlsx")
     kmz_data = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\20251119-Week47-TBG-v1.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V3_Overlap Check2"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4"
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"

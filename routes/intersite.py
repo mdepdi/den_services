@@ -2,6 +2,7 @@ import geopandas as gpd
 import pandas as pd
 import os
 import tempfile
+import zipfile
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from json import loads, dumps
@@ -9,10 +10,10 @@ from typing import List, Optional
 from fastapi import UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
+from enum import Enum
 
 from uuid import uuid4
 from datetime import datetime
-import zipfile
 
 from core.config import settings
 from modules.data import read_gdf
@@ -54,6 +55,10 @@ class InsertRingSchema(BaseModel):
         ..., description="GPKG, Parquet, or Shapefile containing previous points data."
     ),
     max_member: int = Form(12, description="Maximum number of members to consider for insertion.")
+
+class Separator(str, Enum):
+    IOH = "-"
+    XL = ";"
 
 # ========
 # ROUTER
@@ -688,6 +693,7 @@ async def topology_intersite(
 async def boq_intersite(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
     program: Optional[str] = Form("BOQ", description="Program name if 'program' column not provided."),
+    separator: Optional[Separator] = Form(Separator.IOH, description="Separator to define near end far end from 'Route' folders."),
 ):
     """
     Create Intersite Bill of Quantity .  
@@ -695,6 +701,10 @@ async def boq_intersite(
 
     **Input Design Sample**  
     [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    
+    **Note:**
+    - IOH Operator  : Separator will be '-'
+    - XL Operator   : Separator will be ';'
     """
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -708,7 +718,7 @@ async def boq_intersite(
             tmp_fiber_path = tmp_fiber.name
         
         if suffix in ['.kml', '.kmz']:
-            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path)
+            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=separator)
         else:
             return {"error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
     except Exception as e:

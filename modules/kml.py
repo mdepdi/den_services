@@ -331,7 +331,7 @@ def read_kml(file):
     return points, lines, polygons
 
 
-def validate_kmz_design(filepath:str):
+def validate_kmz_design(filepath:str, sep: str = "-"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
@@ -354,8 +354,8 @@ def validate_kmz_design(filepath:str):
 
     # LINES EXISTING
     lines_existing['segment'] = lines_existing['name']
-    lines_existing['near_end'] = lines_existing['segment'].str.split("-").str[0]
-    lines_existing['far_end'] = lines_existing['segment'].str.split("-").str[-1]
+    lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
+    lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
     lines_existing['ring_name'] = lines_existing['folders'].str.split(";").str[-2]
     lines_existing['program'] = lines_existing['folders'].str.split(";").str[-3]

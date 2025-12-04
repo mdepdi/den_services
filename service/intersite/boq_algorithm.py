@@ -433,9 +433,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame):
     # =============================
     # ROUTE PREPROCESS
     # =============================
-    print(f"Run Preprocess")
     nodes, edges = route_preprocess(lines)
-    print(f"Preprocess Done")
     nodes = nodes.to_crs(epsg=3857)
     edges = edges.to_crs(epsg=3857)
 
