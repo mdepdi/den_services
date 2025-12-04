@@ -57,8 +57,8 @@ class InsertRingSchema(BaseModel):
     max_member: int = Form(12, description="Maximum number of members to consider for insertion.")
 
 class Separator(str, Enum):
-    IOH = "-"
-    XL = ";"
+    IOH = "IOH"
+    XL = "XL"
 
 # ========
 # ROUTER
@@ -693,7 +693,7 @@ async def topology_intersite(
 async def boq_intersite(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
     program: Optional[str] = Form("BOQ", description="Program name if 'program' column not provided."),
-    separator: Optional[Separator] = Form(Separator.IOH, description="Separator to define near end far end from 'Route' folders."),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite Bill of Quantity .  
@@ -710,6 +710,12 @@ async def boq_intersite(
     date_today = datetime.now().strftime("%Y%m%d")
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
+
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
     
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -718,7 +724,7 @@ async def boq_intersite(
             tmp_fiber_path = tmp_fiber.name
         
         if suffix in ['.kml', '.kmz']:
-            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=separator)
+            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=sep)
         else:
             return {"error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."}    
     except Exception as e:
