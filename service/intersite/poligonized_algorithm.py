@@ -15,7 +15,7 @@ sys.path.append(r"D:\JACOBS\SERVICE\API")
 from service.intersite.boq_algorithm import main_boq
 from service.intersite.ring_algorithm import supervised_validation, main_supervised
 from modules.table import sanitize_header
-from modules.data import read_gdf
+from modules.data import read_gdf, validate_longlat
 from modules.utils import auto_group
 from core.logger import create_logger
 from core.config import settings
@@ -60,7 +60,9 @@ def validate_poligonize(excel_path:str):
         sitelist['site_id'] = sitelist['site_id'].astype(str) 
         hubs['site_id'] = hubs['site_id'].astype(str) 
         sitelist['site_name'] = sitelist['site_name'].astype(str) 
-        hubs['site_name'] = hubs['site_name'].astype(str) 
+        hubs['site_name'] = hubs['site_name'].astype(str)
+        sitelist = validate_longlat(sitelist)
+        hubs = validate_longlat(hubs)
         sitelist_geom = gpd.points_from_xy(sitelist['long'], sitelist['lat'], crs="EPSG:4326")
         hubs_geom = gpd.points_from_xy(hubs['long'], hubs['lat'], crs='EPSG:4326')
 
@@ -178,6 +180,7 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Poligon Based")
+    sep = kwargs.get("sep", "-")
     task_celery = kwargs.get("task_celery", None)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
@@ -208,6 +211,7 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
         vendor=vendor,
         boq=boq,
         method=method,
+        sep=sep,
         spof_threshold=spof_threshold,
         task_celery=task_celery
     )

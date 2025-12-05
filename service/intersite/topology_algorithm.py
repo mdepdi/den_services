@@ -16,7 +16,7 @@ sys.path.append(r"D:\JACOBS\SERVICE\API")
 from service.intersite.boq_algorithm import main_boq
 from service.intersite.fixroute_algorithm import main_fixroute, validate_fixroute
 from modules.table import sanitize_header
-from modules.data import read_gdf
+from modules.data import read_gdf, validate_longlat
 from modules.utils import auto_group
 from core.logger import create_logger
 from core.config import settings
@@ -47,15 +47,18 @@ def validate_topology(excel_path:str):
                 raise ValueError(f"Column {col} not found in Sitelist. Check your input.")
         
         sitelist['site_id'] = sitelist['site_id'].astype(str) 
-        sitelist['site_name'] = sitelist['site_name'].astype(str) 
+        sitelist['site_name'] = sitelist['site_name'].astype(str)
+
+        # LONG AND LAT VALIDATION
+        sitelist = validate_longlat(sitelist, lon_col="long", lat_col="lat")
         sitelist_geom = gpd.points_from_xy(sitelist['long'], sitelist['lat'], crs="EPSG:4326")
-        sitelist_gdf = gpd.GeoDataFrame(sitelist, geometry=sitelist_geom)
-        
+        sitelist_gdf = gpd.GeoDataFrame(sitelist, geometry=sitelist_geom, crs="EPSG:4326")
     return sitelist_gdf
 
 def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vendor='TBG', program='Intersite'):
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
+
     # ----------------------------------------------------------------------
     # Ensure Required Columns
     # ----------------------------------------------------------------------
@@ -188,7 +191,6 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
             seg['sequence'] = i
 
             mapped_fix.append(seg)
-
     mapped_fix = pd.concat(mapped_fix, ignore_index=True)
     return mapped_fix
 
@@ -197,6 +199,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Topology Based")
+    sep = kwargs.get("sep", "-")
     task_celery = kwargs.get("task_celery", None)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
@@ -208,9 +211,9 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
 
     sitelist_gdf = validate_topology(excel_path)
     line_gdf = read_gdf(line_file, geom_type='line')
-    
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
+
     site_data = topology_algo(sitelist_gdf, line_gdf, vendor, program)
     site_data = sanitize_header(site_data)
     # site_data = validate_fixroute(site_data)
@@ -228,6 +231,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
         vendor=vendor,
         spof_threshold=spof_threshold,
         boq=boq,
+        sep=sep,
         method=method,
         task_celery=task_celery
     )
@@ -235,9 +239,9 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Topology Template_Big Project All Site.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Topo sample.kml"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Debug Pak Royhan\Template_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Debug Pak Royhan\TBG-001FWASG25-KTSRG-002A.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Debug Pak Royhan\Export"
     program = "Trial Topology"
     boq = False
 

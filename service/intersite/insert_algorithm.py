@@ -16,7 +16,7 @@ from shapely.geometry import Point, LineString, MultiLineString, GeometryCollect
 sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from modules.table import sanitize_header, excel_styler
-from modules.data import read_gdf
+from modules.data import read_gdf, validate_longlat
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import route_path, dropwire_connection, create_topology
 from modules.kml import read_kml, export_kml, sanitize_kml
@@ -48,6 +48,7 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
         insert_sites['lat'] = insert_sites.geometry.to_crs(epsg=4326).y
     elif isinstance(insert_sites, pd.DataFrame):
         insert_sites = sanitize_header(insert_sites, lowercase=True)
+        insert_sites = validate_longlat(insert_sites)
         if 'long' not in insert_sites.columns:
             raise ValueError(f"Column long not defined in insert sites.")
         if 'lat' not in insert_sites.columns:
@@ -407,10 +408,12 @@ def routing_insert(
             cost = base_len
         data["weight"] = cost
 
-    segments = []
     # ===============================
     # MAIN LOOP
     # ===============================
+    segments = []
+    existing_data = []
+    new_data = []
     for i in range(len(new_connection) - 1):
         start_id = new_connection[i]
         end_id = new_connection[i + 1]
@@ -445,20 +448,20 @@ def routing_insert(
                 startprev_id = new_connection[i-1] if i-1 >= 0 else start_id
                 endprev_id = end_id
 
-            prev_route = target_fiber[
-                (target_fiber[start_column] == startprev_id) &
-                (target_fiber[opposite_column] == endprev_id)
-            ]
+            # prev_route = target_fiber[
+            #     (target_fiber[start_column] == startprev_id) &
+            #     (target_fiber[opposite_column] == endprev_id)
+            # ]
 
-            if prev_route.empty:
-                prev_geom = LineString()
-            else:
-                prev_geom = prev_route.geometry.union_all()
-
+            # if prev_route.empty:
+            #     prev_geom = LineString()
+            # else:
+            prev_geom = target_fiber.geometry.union_all()
+            prev_geom = linemerge(prev_geom) if prev_geom.geom_type == "MultiLineString" else prev_geom
+            
             # BOTH INSERT
             if sp["note"] == "insert" and ep["note"] == "insert" and len(segments) > 0:
                 prev_geom = target_fiber.geometry.union_all()
-                prev_geom = linemerge(prev_geom) if prev_geom.geom_type == "MultiLineString" else prev_geom
 
             try:
                 path, path_geom, _ = route_path(start_node, end_node, G, roads, merged=True)
@@ -467,7 +470,31 @@ def routing_insert(
                 continue
 
             path_geom, _ = dropwire_connection(path_geom, sp, ep, nodes, start_node, end_node)
-            existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=50)
+            prev_buff = prev_geom.buffer(20)
+            path_buff = path_geom.buffer(50)
+            new_line = path_geom.difference(prev_buff)
+            if new_line.geom_type == "MultiLineString":
+                geoms = list(new_line.geoms)
+                new_line = LineString()
+                for geom in geoms:
+                    if geom.length > 100:
+                        new_line = unary_union([new_line, geom])
+            
+            existing_line = path_geom.difference(new_line)
+            # existing_line, new_line = relative_intersection(path_geom, prev_geom, tolerance=20)
+
+            node_overlap = nodes[nodes.geometry.intersects(path_buff)]
+            rev_overlap = set(node_overlap['node_id'])
+
+            # MAXIMIZE EXISTING FIBER
+            for u, v, data in G.edges(data=True):
+                base_len = data.get("weight", 1.0)
+                if (u in rev_overlap) and (v in rev_overlap):
+                    cost = base_len * 0.001
+                else:
+                    cost = base_len
+                data["weight"] = cost
+
 
             # compute lengths
             if prev_geom.is_empty or prev_geom.length == 0:
@@ -482,7 +509,7 @@ def routing_insert(
                 remark_overlap = 'Valid' if percentage > 0.2 or overlap_length > 5000 else 'Invalid'
 
             existing_length = existing_line.length * 1.1 if existing_line.length > 0 else 50
-            new_length = new_line.length * 1.1 + 500 if new_line.length > 0 else 50
+            new_length = new_line.length * 1.1 + 250 if new_line.length > 0 else 50
             total_length = existing_length + new_length
             segment_name = f"{start_id}-{end_id}"
 
@@ -501,6 +528,22 @@ def routing_insert(
                 "geometry": path_geom,
             })
             print(f"🟢 NEW   {segment_name:<20} | {total_length:10.2f} m")
+
+            if not existing_line.is_empty:
+                row_data = {
+                    'start_id': start_id,
+                    'end_id': end_id,
+                    'geometry': existing_line
+                }
+                existing_data.append(row_data)
+
+            if not new_line.is_empty:
+                row_data = {
+                    'start_id': start_id,
+                    'end_id': end_id,
+                    'geometry': new_line
+                }
+                new_data.append(row_data)
 
         # ===========================
         # EXISTING ROUTE
@@ -534,6 +577,13 @@ def routing_insert(
                 "geometry": merged
             })
             print(f"🟢 EXIST {segment_name:<20} | {seg_length:10.2f} m")
+
+    if len(existing_data) > 0:
+        existing_data = gpd.GeoDataFrame(existing_data, geometry='geometry', crs="EPSG:3857")
+        existing_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251204\Debug\Existing_{ring}.parquet")
+    if len(new_data) > 0:
+        new_data = gpd.GeoDataFrame(new_data, geometry='geometry', crs="EPSG:3857")
+        new_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251204\Debug\New_{ring}.parquet")
 
     if len(segments) == 0:
         return gpd.GeoDataFrame(columns=target_fiber.columns, geometry="geometry", crs=3857)
@@ -621,10 +671,11 @@ def parallel_insert(
     **kwargs
     ) -> tuple:
 
+    sep = kwargs.get("sep", "-")
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
-    # ring_list = ["TBG-KLA-MOCNPhase1-DF077"]
+    # ring_list = ["TBG-KLA-MOCNPhase1-DF077", "TBG-TGN-MOCNPhase1-DF033"]
 
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
@@ -643,8 +694,8 @@ def parallel_insert(
     if "name" in prev_point.columns:
         prev_point = prev_point.rename(columns={"name": "site_id"})
     if "near_end" not in prev_fiber.columns or "far_end" not in prev_fiber.columns:
-        prev_fiber["near_end"] = prev_fiber["name"].str.split("-").str[0].str.strip()
-        prev_fiber["far_end"] = prev_fiber["name"].str.split("-").str[-1].str.strip()
+        prev_fiber["near_end"] = prev_fiber["name"].str.split(sep).str[0].str.strip()
+        prev_fiber["far_end"] = prev_fiber["name"].str.split(sep).str[-1].str.strip()
 
     all_new_points = []
     all_new_segments = []
@@ -1243,7 +1294,8 @@ def main_insertring(
     export_dir: str,
     max_member: int = 12,
     max_distance: int = 3000,
-    sep_segment: str = "-",
+    operator: str = "IOH",
+    sep: str = "-",
     method: str = "Insert",
     **kwargs
 ): 
@@ -1256,11 +1308,12 @@ def main_insertring(
     if isinstance(insert_data, str):
         insert_data = read_gdf(insert_data)
 
-    insert_sites, points_existing, lines_existing = validate_insert(insert_sites=insert_data, kmz_data=kmz_data, sep=sep_segment)
+    insert_sites, points_existing, lines_existing = validate_insert(insert_sites=insert_data, kmz_data=kmz_data, sep=sep)
     insert_reached, insert_not_reached = identify_insert(insert_sites, lines_existing, max_distance=max_distance)
 
     logger.info(f"ℹ️ Potential sites to insert: {len(insert_reached):,}")
     logger.info(f"ℹ️ Potential sites to new design: {len(insert_not_reached):,}")
+
     if not insert_reached.empty:
         insert_reached.to_parquet(os.path.join(export_dir, f"Reached_Points.parquet"))
     if not insert_not_reached.empty:
@@ -1278,15 +1331,15 @@ def main_insertring(
     # PROCESS INSERT RING
     points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
     paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
-    if os.path.exists(points_path) and os.path.exists(paths_path):
-        updated_points = gpd.read_parquet(points_path)
-        updated_paths = gpd.read_parquet(paths_path)
-        print(f"✅ Loaded existing processed data from {export_dir}.")
-    else:
-        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, task_celery=task_celery)
+    # if os.path.exists(points_path) and os.path.exists(paths_path):
+    #     updated_points = gpd.read_parquet(points_path)
+    #     updated_paths = gpd.read_parquet(paths_path)
+    #     print(f"✅ Loaded existing processed data from {export_dir}.")
+    # else:
+    updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, sep=sep, task_celery=task_celery)
 
     if not updated_points.empty:
-        updated_points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Points.parquet"), index=False)
+        updated_points.to_crs(epsg=4326).to_parquet(points_path, index=False)
         print(f"✅ Exported Updated Point Ring with {len(updated_points):,} records.")
     if not updated_paths.empty:
         updated_paths.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Lines.parquet"), index=False)
@@ -1298,8 +1351,9 @@ def main_insertring(
     logger.info("🧩 Save Design Information")
     save_intersite(updated_points, updated_paths, export_dir, method)
 
-    logger.info("🧩 Save Excel IOH Format")
-    ioh_report(updated_points, updated_paths, export_dir, program=program, vendor=vendor)
+    if operator == "IOH":
+        logger.info("🧩 Save Excel IOH Format")
+        ioh_report(updated_points, updated_paths, export_dir, program=program, vendor=vendor)
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":

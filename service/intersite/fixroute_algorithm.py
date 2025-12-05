@@ -13,6 +13,7 @@ sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from service.intersite.boq_algorithm import main_boq
 from service.intersite.ring_algorithm import save_intersite
+from modules.data import validate_longlat
 from modules.table import sanitize_header
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import route_path, spof_detection, dropwire_connection
@@ -40,6 +41,7 @@ def fixroute_algo(
     ring: str,
     export_loc: str = None,
     spof_threshold: int = 3000,
+    sep:str = "-"
 ) -> tuple:
     
     if export_loc is None:
@@ -99,7 +101,7 @@ def fixroute_algo(
             path_geom, path_length = dropwire_connection(path_geom, ne_point, fe_point, nodes, node_start, node_end)
 
             if not path_geom.is_empty:
-                segment_name = f"{start_id}-{end_id}"
+                segment_name = f"{start_id}{sep}{end_id}"
 
                 segment_record = {
                     'name': segment_name,
@@ -161,7 +163,9 @@ def parallel_fixroute(
     ) -> tuple:
 
     task_celery = kwargs.get("task_celery", False)
+    sep = kwargs.get("sep", "-")
     spof_threshold = kwargs.get("spof_threshold", 3000)
+
     ring_list = ne_data['ring_name'].dropna().unique().tolist()
     logger.info(f"🔄 Total Rings to Process: {len(ring_list):,}")
 
@@ -191,7 +195,8 @@ def parallel_fixroute(
                 region,
                 ring,
                 checkpoint_dir,
-                spof_threshold
+                spof_threshold,
+                sep=sep,
             )
             futures[future] = ring
 
@@ -241,11 +246,14 @@ def validate_fixroute(df: pd.DataFrame):
     df_fe.columns = [col.replace("_b", "") for col in df_fe.columns]
     logger.info(f"ℹ️ Validating NE and FE data...")
     try:
+        df_ne = validate_longlat(df_ne, lon_col="longitude", lat_col="latitude")
+        df_fe = validate_longlat(df_fe, lon_col="longitude", lat_col="latitude")
         geom_ne = gpd.points_from_xy(df_ne["longitude"], df_ne["latitude"])
         geom_fe = gpd.points_from_xy(df_fe["longitude"], df_fe["latitude"])
     except:
-        print(df.head())
         try:
+            df_ne = validate_longlat(df_ne)
+            df_fe = validate_longlat(df_fe)
             geom_ne = gpd.points_from_xy(df_ne["long"], df_ne["lat"])
             geom_fe = gpd.points_from_xy(df_fe["long"], df_fe["lat"])
         except Exception as e:
@@ -263,6 +271,7 @@ def main_fixroute(
     template_df: pd.DataFrame,
     export_dir: str,
     boq:bool = False,
+    sep:str = "-",
     spof_threshold: int = 3000,
     **kwargs
 ):
@@ -297,7 +306,7 @@ def main_fixroute(
         
         if task_celery:
             task_celery.update_state(state="PROGRESS", meta={"status": "Starting Parallel Fix Route"})
-        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, spof_threshold=spof_threshold, task_celery=task_celery)
+        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, spof_threshold=spof_threshold, task_celery=task_celery, sep=sep)
 
     if not updated_points.empty:
         logger.info(f"ℹ️ Total updated points: {len(updated_points):,}")
@@ -315,7 +324,7 @@ def main_fixroute(
     # EXPORT
     if boq:
         logger.info("🧩 Running BOQ Calculation...")
-        main_boq(updated_points, updated_routes, export_dir=export_dir)
+        main_boq(updated_points, updated_routes, export_dir=export_dir, sep=sep)
     else:
         # TOPOLOGY CHECK
         logger.info("🧩 Save Design Information")

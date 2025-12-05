@@ -230,32 +230,39 @@ def parse_geom(coords, geom_type):
 
     return None
 
+def parse_placemark(pm, folder_name, full_path):
+    rows = []
+    name = pm.find("name").text if pm.find("name") else "Unnamed"
+    desc = pm.find("description").text if pm.find("description") else ""
+    data = parse_extdata(pm)
+
+    for geom_type in ["Point", "LineString", "Polygon"]:
+        geom_tag = pm.find(geom_type)
+        if geom_tag and geom_tag.find("coordinates"):
+            coords = geom_tag.find("coordinates").text.strip()
+            geometry = parse_geom(coords, geom_type)
+            if geometry:
+                row_data = {
+                    "name": name,
+                    "folders": full_path,
+                    "folder_name": folder_name,
+                    "description": desc,
+                    **data,
+                    "geometry": geometry,
+                }
+                rows.append(row_data)
+    return rows
+
+
 
 def parse_folder(folder, parent_name=None):
     results = []
     folder_name = folder.find("name").text if folder.find("name") else "Unnamed Folder"
     full_path = f"{parent_name};{folder_name}" if parent_name else folder_name
 
+    # Parse Placemark
     for pm in folder.find_all("Placemark", recursive=False):
-        name = pm.find("name").text if pm.find("name") else "Unnamed"
-        desc = pm.find("description").text if pm.find("description") else ""
-        data = parse_extdata(pm)
-
-        for geom in ["Point", "LineString", "Polygon"]:
-            geom_tag = pm.find(geom)
-            if geom_tag and geom_tag.find("coordinates"):
-                coords = geom_tag.find("coordinates").text.strip()
-                geometry = parse_geom(coords, geom_type=geom)
-                if geometry:
-                    row_data = {
-                        "name": name,
-                        "folders": full_path,
-                        "folder_name": folder_name,
-                        "description": desc,
-                        **data,
-                        "geometry": geometry
-                    }
-                    results.append(row_data)
+        results.extend(parse_placemark(pm, folder_name, full_path))
 
     # Recursive folders
     for sub in folder.find_all("Folder", recursive=False):
@@ -269,10 +276,16 @@ def parse_doc(doc, parent=None):
     full_doc = f"{parent};{doc_name}" if parent else doc_name
     print(f"ℹ️ Parsing {full_doc}")
 
+    # Direct Placemark
+    for pm in doc.find_all("Placemark", recursive=False):
+        result.extend(parse_placemark(pm, folder_name=doc_name, full_path=full_doc))
+
+    # Folder
     all_folders = doc.find_all("Folder", recursive=False)
     for f in all_folders:
         result.extend(parse_folder(f))
 
+    # Docs
     for sub_doc in doc.find_all("Document", recursive=False):
         result.extend(parse_doc(sub_doc, parent=full_doc))
     return result
@@ -281,6 +294,10 @@ def parse_doc(doc, parent=None):
 def parse_kml(kml_file):
     soup = BeautifulSoup(kml_file.read(), "xml")
     doc = soup.find("Document")
+
+    if doc is None:
+        doc = soup.find("kml") or soup
+
     parsed = parse_doc(doc)
     return pd.DataFrame(parsed) if parsed else pd.DataFrame()
 

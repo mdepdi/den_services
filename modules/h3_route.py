@@ -177,7 +177,6 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
         if graph_type != "route":
             if "ref_fo" not in roads_gdf:
                 raise ValueError("Reference FO column ('ref_fo') is required.")
-            # REF FO
             ref_fo = set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_start']) | set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_end'])
             
     # BASE WEIGHT
@@ -207,13 +206,12 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
                 weight = row.length
 
         # Collect edge
-        edges.append(
-            (row.node_start, row.node_end, {"weight": weight, "length": row.length})
-        )
+        edges.append((row.node_start, row.node_end, {"weight": weight, "length": row.length}))
 
     # Build graph
     G = nx.Graph()
     G.add_edges_from(edges)
+    G = G.to_undirected()
 
     return G
 

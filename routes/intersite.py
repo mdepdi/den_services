@@ -237,7 +237,8 @@ async def insert_ring(
     insert_list: UploadFile = File(..., description="Excel file containing potential sitelist to insert."),
     kmz_design: UploadFile = File(..., description="KMZ file containing existing design plan."),
     max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
-    max_distance: int = Form(3000, description="Maximum distance consider for insertion.")
+    max_distance: int = Form(3000, description="Maximum distance consider for insertion."),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite design based on **Insert Alghorithm**.  
@@ -248,6 +249,10 @@ async def insert_ring(
     **Note:**
     - KMZ Data should be formatted as DEN intersite design rules.
     - Make sure the latitude and longitude is not reversed.
+
+    Separator:
+        - IOH Operator  : Separator will be '-'
+        - XL Operator   : Separator will be ';'
     """
     date_today = datetime.now().strftime("%Y%m%d")
     upload_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
@@ -279,15 +284,28 @@ async def insert_ring(
     print(f"📥 Saved Insert List → {insert_path}")
     _, _, _ = validate_insert(insert_path, kmz_path)
 
+    # Operator
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
+    # Params
     params = dumps({
         "insert_list_path": insert_path,
         "kmz_path": kmz_path,
         "max_member": max_member,
         "max_distance": max_distance,
+        "operator": operator,
+        "sep": sep
     })
 
-    print("🚀 Sending Insert job to Celery...")
     celery_task = task_insertring.apply_async(args=[params])
+    print(f"✅ Insert Task submitted with ID: {celery_task.id}")
 
     return {
         "message": "Insert ring task started!",
@@ -304,7 +322,8 @@ async def supervised_ring(
     excel_file: UploadFile = File(None, description="Excel file containing ring data."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
-    boq:bool = Form(False, description="Output file to choose")
+    boq:bool = Form(False, description="Output file to choose"),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite design based on **Supervised Alghorithm**, you need to define the cluster first.  
@@ -326,6 +345,10 @@ async def supervised_ring(
     - Each ring name must be on the same region.
     - Flag define the start hub or end hub.
     - Make sure the latitude and longitude is not reversed.
+
+    Separator:
+        - IOH Operator  : Separator will be '-'
+        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
@@ -354,12 +377,22 @@ async def supervised_ring(
     print(f"📥 Temporary site data saved to: {temp_parquet_path}")
 
     # Process data
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
         data = {
             "site_path": temp_parquet_path,
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
+            "sep": sep
         }
         data = dumps(data, default=str)
         celery_task = task_supervised.apply_async(args=[data])
@@ -382,7 +415,8 @@ async def unsupervised_ring(
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
     drop_existings:bool = Form(False, description="Drop ring if not conatining new site."),
-    boq:bool = Form(False, description="Output file to choose")
+    boq:bool = Form(False, description="Output file to choose"),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite design based on **Unsupervised Alghorithm**, the clustering based on our service.  
@@ -395,6 +429,10 @@ async def unsupervised_ring(
     - Hubs should containing 'FO Hub' for interconnection source.
     - Each ring name must be on the same region.
     - Make sure the latitude and longitude is not reversed.
+
+    Separator:
+        - IOH Operator  : Separator will be '-'
+        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
@@ -437,6 +475,15 @@ async def unsupervised_ring(
     print(f"📥 Temporary hub data saved to  : {temp_hub_path}")
 
     # Process data
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
         data = {
             "site_path": temp_parquet_path,
@@ -446,7 +493,8 @@ async def unsupervised_ring(
             "drop_existings": drop_existings,
             "program": program,
             "spof_threshold": spof_threshold,
-            "boq": boq
+            "boq": boq,
+            "sep": sep
         }
         data = dumps(data, default=str)
         celery_task = task_unsupervised.apply_async(args=[data])
@@ -467,6 +515,7 @@ async def fixroute_ring(
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form(None, description="Program name if not defined"),
     boq: Optional[bool] = Form(False, description="Output file to choose"),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite design based on **Fix Route Alghorithm**.  
@@ -497,19 +546,30 @@ async def fixroute_ring(
             gdf_ne, gdf_fe = validate_fixroute(fixroute_input)            
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
-    
+
+
     # SAVE DATA
     excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
     fixroute_input.to_excel(excel_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
 
     # Process data
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
         data = {
             "template_path": excel_path,
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
+            "sep": sep
         }
         data = dumps(data, default=str)
         celery_task = task_fixroute.apply_async(args=[data])
@@ -529,7 +589,8 @@ async def polygon_intersite(
     polygon_file: UploadFile = File(None, description="Polygon file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form("Fiberization", description="Program name if needed."),
-    boq: Optional[bool] = Form(False, description="Output file to choose")
+    boq: Optional[bool] = Form(False, description="Output file to choose"),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite design **Polygon Based**.  
@@ -543,6 +604,10 @@ async def polygon_intersite(
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
+
+    Separator:
+        - IOH Operator  : Separator will be '-'
+        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
@@ -557,6 +622,7 @@ async def polygon_intersite(
         sitelist, hubs = validate_poligonize(excel_file.file)
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
+    
     
     try:
         suffix = os.path.splitext(polygon_file.filename)[1].lower()
@@ -585,6 +651,15 @@ async def polygon_intersite(
     print(f"📥 Temporary Polygon data saved to: {polygon_path}")
 
     # Process data
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
         data = {
             "excel_path": excel_path,
@@ -592,6 +667,7 @@ async def polygon_intersite(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
+            "sep": sep
         }
         data = dumps(data, default=str)
         celery_task = task_polygon_intersite.apply_async(args=[data])
@@ -611,7 +687,8 @@ async def topology_intersite(
     topology_file: UploadFile = File(None, description="Topology file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form("Fiberization", description="Program name if needed."),
-    boq:Optional[bool] = Form(False, description="Output file to choose")
+    boq:Optional[bool] = Form(False, description="Output file to choose"),
+    operator: Optional[Separator] = Form(Separator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
 ):
     """
     Create Intersite design **Topology Based**.  
@@ -625,6 +702,10 @@ async def topology_intersite(
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
+    
+    Separator:
+        - IOH Operator  : Separator will be '-'
+        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
@@ -639,6 +720,7 @@ async def topology_intersite(
         sitelist = validate_topology(excel_file.file)
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
+    
     
     try:
         suffix = os.path.splitext(topology_file.filename)[1].lower()
@@ -666,6 +748,15 @@ async def topology_intersite(
     print(f"📥 Temporary Topology data saved to: {topology_path}")
 
     # Process data
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
         data = {
             "excel_path": excel_path,
@@ -673,6 +764,7 @@ async def topology_intersite(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
+            "sep": sep
         }
         data = dumps(data, default=str)
         celery_task = task_topology_intersite.apply_async(args=[data])
@@ -711,14 +803,6 @@ async def boq_intersite(
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
-    match operator:
-        case "XL":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
     
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -742,11 +826,21 @@ async def boq_intersite(
     print(f"📥 Temporary Points data saved to   : {points_path}")
     print(f"📥 Temporary Lines data saved to    : {lines_path}")
 
+    match operator:
+        case "XL":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
         data = {
             "points_path": points_path,
             "lines_path": lines_path,
-            "program": program
+            "program": program,
+            "sep": sep
         }
         data = dumps(data, default=str)
         celery_task = task_boq.apply_async(args=[data])

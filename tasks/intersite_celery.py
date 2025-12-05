@@ -32,7 +32,8 @@ def task_insertring(self, data: dict):
         kmz_path = data.get("kmz_path")
         max_member = data.get("max_member", 12)
         max_distance = data.get("max_distance", 3000)
-        program = data.get("program", 'Insert Ring')
+        operator = data.get("operator", 'IOH')
+        sep = data.get("sep", '-')
 
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Insert_Ring/{date_today}/{self.request.id}"
@@ -54,6 +55,8 @@ def task_insertring(self, data: dict):
             export_dir = export_loc,
             max_member = max_member,
             max_distance = max_distance,
+            operator=operator,
+            sep = sep,
             task_celery = self
         )
         end_time = time()
@@ -99,7 +102,7 @@ def task_supervised(self, data: dict):
         method = parsed_data.get("method", "Supervised")
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
-
+        sep = parsed_data.get("sep", '-')
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -121,6 +124,7 @@ def task_supervised(self, data: dict):
             spof_threshold=spof_threshold,
             method=method,
             boq=boq,
+            sep=sep,
             program=program,
             task_celery=self
         )
@@ -173,7 +177,8 @@ def task_unsupervised(self, data: dict):
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
         drop_existings = parsed_data.get("drop_existings", False)
-        program = parsed_data.get("program", 'N/A')
+        program = parsed_data.get("program", 'Supervised Intersite')
+        sep = parsed_data.get("sep", '-')
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -201,6 +206,7 @@ def task_unsupervised(self, data: dict):
             spof_threshold=spof_threshold,
             drop_existings=drop_existings,
             boq=boq,
+            sep=sep,
             program=program,
             task_celery=self
         )
@@ -245,6 +251,7 @@ def task_fixroute(self, data: dict):
         template_path = parsed_data.get("template_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
+        sep = parsed_data.get("sep", False)
         program = parsed_data.get("program", 'Fix Route Fiberization')
         
         if DOCKER:
@@ -263,6 +270,7 @@ def task_fixroute(self, data: dict):
             export_dir=export_loc,
             program=program,
             boq=boq,
+            sep=sep,
             spof_threshold=spof_threshold,
             task_celery=self
         )
@@ -309,6 +317,7 @@ def task_polygon_intersite(self, data: dict):
         polygon_path = parsed_data.get("polygon_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
+        sep = parsed_data.get("sep", "-")
         program = parsed_data.get("program", 'Polygon Based Fiberization')
         
         if DOCKER:
@@ -329,6 +338,7 @@ def task_polygon_intersite(self, data: dict):
             export_dir=export_loc,
             program=program,
             boq=boq,
+            sep=sep,
             spof_threshold=spof_threshold,
             task_celery=self
         )
@@ -377,6 +387,7 @@ def task_topology_intersite(self, data: dict):
         topology_path = parsed_data.get("topology_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
+        sep = parsed_data.get("sep", "-")
         program = parsed_data.get("program", 'Topology Based Fiberization')
         
         if DOCKER:
@@ -398,6 +409,7 @@ def task_topology_intersite(self, data: dict):
             spof_threshold=spof_threshold,
             program=program,
             boq=boq,
+            sep=sep,
             task_celery=self
         )
 
@@ -445,6 +457,7 @@ def task_boq(self, data: dict):
         lines_path = parsed_data.get("lines_path")
         program = parsed_data.get("program", "BOQ")
         vendor = parsed_data.get("vendor", "TBG")
+        sep = parsed_data.get("sep", "-")
 
         if DOCKER:
             if "/mnt/" not in points_path:
@@ -465,6 +478,7 @@ def task_boq(self, data: dict):
             points=points,
             lines=lines,
             export_dir=export_loc,
+            sep=sep,
             program=program,
             vendor=vendor,
             task_celery=self

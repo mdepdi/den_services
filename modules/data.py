@@ -131,6 +131,56 @@ def retrieve_building(
 
     return city_building
 
+def validate_longlat(df, lon_col="long", lat_col="lat"):
+    # INDONESIA
+    LON_MIN, LON_MAX = 94, 142
+    LAT_MIN, LAT_MAX = -12, 8
+
+    lon = df[lon_col].astype(float)
+    lat = df[lat_col].astype(float)
+
+    # VALID GEOM
+    valid_mask = (
+        (lon.between(LON_MIN, LON_MAX)) &
+        (lat.between(LAT_MIN, LAT_MAX))
+    )
+
+    # REVERSED GEOM
+    swapped_mask = (
+        (~valid_mask) &  # tidak valid dalam bbox normal
+        (lat.between(LON_MIN, LON_MAX)) &
+        (lon.between(LAT_MIN, LAT_MAX))
+    )
+
+    # INVALID
+    invalid_mask = (
+        (~valid_mask) &
+        (~swapped_mask)
+    )
+
+    n_valid = valid_mask.sum()
+    n_swapped = swapped_mask.sum()
+    n_invalid = invalid_mask.sum()
+
+    print(f"✅ Coord Valid      : {n_valid:,}")
+    print(f"⚠️ Coord Swapped    : {n_swapped:,}")
+    print(f"❌ Coord Invalid    : {n_invalid:,}")
+
+    if n_swapped > 0:
+        print("🔁 Fix Swapped")
+        tmp_lon = df.loc[swapped_mask, lon_col].copy()
+        df.loc[swapped_mask, lon_col] = df.loc[swapped_mask, lat_col]
+        df.loc[swapped_mask, lat_col] = tmp_lon
+
+    # kalau ada yang invalid, raise error biar dicek manual
+    if n_invalid > 0:
+        bad_rows = df[invalid_mask].head()
+        raise ValueError(
+            f"Found {n_invalid} invalid coordinate rows (outside Indonesia bbox). "
+            f"Sample:\n{bad_rows[[lon_col, lat_col]].to_string(index=False)}"
+        )
+
+    return df
 
 def read_gdf(file: str = None, **kwargs):
     if isinstance(file, str):
@@ -157,6 +207,7 @@ def read_gdf(file: str = None, **kwargs):
                 if long_col and lat_col:
                     long_col = long_col[0]
                     lat_col = lat_col[0]
+                    df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
                     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                     print(f"Identified longitude column: {long_col}, latitude column: {lat_col}")
                 else:

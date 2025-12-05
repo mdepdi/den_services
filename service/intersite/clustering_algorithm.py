@@ -25,6 +25,7 @@ from sklearn import metrics
 from sklearn.cluster import DBSCAN, AgglomerativeClustering
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from itertools import permutations
+from modules.data import validate_longlat
 
 sys.path.append(r"D:\JACOBS\SERVICE\API")
 
@@ -776,7 +777,6 @@ def unsupervised_clustering(
     area,
     export_dir,
     member_expectation=10,
-    area_col="region",
     max_distance=10000,
     **kwargs,
 ):
@@ -851,6 +851,7 @@ def unsupervised_validation(sitelist, hubs):
         sitelist_df = sitelist
     elif isinstance(sitelist, str):
         sitelist_df = pd.read_excel(sitelist)
+        sitelist_df = validate_longlat(sitelist_df)
         logger.info(f"📥 Read sitelist: {sitelist}")
     elif isinstance(sitelist, gpd.GeoDataFrame):
         if 'lat' not in sitelist.columns or 'long' not in sitelist.columns:
@@ -868,6 +869,7 @@ def unsupervised_validation(sitelist, hubs):
         hubs_df = hubs
     elif isinstance(hubs, str):
         hubs_df = pd.read_excel(hubs)
+        hubs_df = validate_longlat(hubs_df)
         logger.info(f"📥 Read hubs: {hubs}")
     elif isinstance(hubs, gpd.GeoDataFrame):
         if 'lat' not in hubs.columns or 'long' not in hubs.columns:
@@ -928,14 +930,11 @@ def main_unsupervised(
 ):
 
     vendor = kwargs.get("vendor", "TBG")
-    program = kwargs.get("program", "Fiberization")
     method = "Unsupervised"
 
     logger.info("🌏 Starting Unsupervised Intersite")
-
     site_data = sanitize_header(site_data)
     hubs_data = sanitize_header(hubs_data)
-
     site_data, hubs_data = unsupervised_validation(site_data, hubs_data)
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -963,7 +962,6 @@ def main_unsupervised(
         logger.info("🔥 Executing clustering for all areas")
 
         clustered_points = []
-
         for area in tqdm(area_list, desc=f"Processing {area_col}"):
             site_area = site_data[site_data[area_col] == area].copy()
 
@@ -1007,10 +1005,9 @@ def main_unsupervised(
         export_loc=export_loc,
         fo_expand=fo_expand,
         boq=boq,
-        vendor=vendor,
-        program=program,
         method=method,
         spof_threshold=spof_threshold,
+        vendor=vendor,
         **kwargs
     )
 

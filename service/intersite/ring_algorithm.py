@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import permutations
 
 from core.logger import create_logger
-from modules.data import fiber_utilization
+from modules.data import validate_longlat
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection
 from modules.table import sanitize_header, detect_week, excel_styler
@@ -273,6 +273,7 @@ def route_single(
     G,
     area="area",
     area_col="region",
+    sep="-"
 ):
     """Route generation for clusters with a single FO hub."""
     from modules.scoring import duplicate_scores
@@ -333,7 +334,7 @@ def route_single(
                         )
 
                         if not path_geom.is_empty:
-                            segment_name = f"{start_site['site_id']}-{end_site['site_id']}"
+                            segment_name = f"{start_site['site_id']}{sep}{end_site['site_id']}"
                             paths_data.append({
                                 "name": segment_name,
                                 "near_end": start_site["site_id"],
@@ -371,9 +372,7 @@ def route_single(
                             "geometry": site["geometry"],
                         })
             else:
-                logger.warning(
-                    f"⚠️ No valid path returned by '{algo_name}' in cluster {cluster}. Skipping."
-                )
+                logger.warning(f"⚠️ No valid path returned by '{algo_name}' in cluster {cluster}. Skipping.")
                 continue
         except Exception as e:
             logger.error(f"❌ Error running '{algo_name}' for cluster {cluster}: {e}")
@@ -428,6 +427,7 @@ def route_multi(
     weight="weight",
     area="area",
     area_col="region",
+    sep="-"
 ):
     """Route generation for clusters with multiple FO hubs."""
     logger.info(
@@ -474,7 +474,7 @@ def route_multi(
             path_geom, path_length = dropwire_connection(path_geom, start_site, end_site, nodes, start_node, end_node)
 
             if not path_geom.is_empty:
-                segment_name = f"{start_site['site_id']}-{end_site['site_id']}"
+                segment_name = f"{start_site['site_id']}{sep}{end_site['site_id']}"
                 paths_data.append({
                     "name": segment_name,
                     "near_end": start_site["site_id"],
@@ -534,6 +534,7 @@ def ring_cluster(cluster_args):
     ref_fo = cluster_args.get("ref_fo", None)
     cable_cost = cluster_args.get("cable_cost", 35000)
     spof_threshold = cluster_args.get("spof_threshold", 3000)
+    sep = cluster_args.get("sep", "-")
     export_dir = cluster_args.get("export_dir", None)
 
     final_paths = []
@@ -592,24 +593,20 @@ def ring_cluster(cluster_args):
 
     logger.info(f"ℹ️ Cluster: {cluster}")
     logger.info(f"ℹ️ Total sites: {total_sites}")
-    logger.info(
-        f"ℹ️ FO hubs: {num_hub:<2} | Start hub={start_hub} | End hub={end_hub}"
-    )
-    logger.info(
-        f"ℹ️ Sitelist (non-hub): {num_sitelist:<2} | Total sitelist={num_sitelist}"
-    )
+    logger.info(f"ℹ️ FO hubs: {num_hub:<2} | Start hub={start_hub} | End hub={end_hub}")
+    logger.info(f"ℹ️ Sitelist (non-hub): {num_sitelist:<2} | Total sitelist={num_sitelist}")
 
     match num_hub:
         case 1:
             final_paths, final_points = route_single(
-                cluster_site, cluster, fo_hub, roads, nodes, G, area=area, area_col=area_col
+                cluster_site, cluster, fo_hub, roads, nodes, G, area=area, area_col=area_col, sep=sep
             )
             if final_paths is None or final_points is None:
                 logger.error(f"❌ No valid path result for cluster {cluster}.")
                 return None, None
         case 2:
             final_paths, final_points = route_multi(
-                cluster_site, cluster, roads, nodes, G, area=area, area_col=area_col
+                cluster_site, cluster, roads, nodes, G, area=area, area_col=area_col, sep=sep
             )
         case _:
             logger.warning(
@@ -775,6 +772,7 @@ def ring_parallel(
     ref_fo=None,
     spof_threshold=3000,
     cable_cost=35000,
+    sep="-",
     task_celery=False,
 ):
     """Process multiple clusters in parallel and merge results."""
@@ -808,6 +806,7 @@ def ring_parallel(
             "ref_fo": ref_fo,
             "export_dir": export_dir,
             "spof_threshold": spof_threshold,
+            "sep": sep,
             "cable_cost": cable_cost,
         })
 
@@ -878,9 +877,11 @@ def supervised_validation(excel_file: str | pd.DataFrame | gpd.GeoDataFrame) -> 
     elif isinstance(excel_file, gpd.GeoDataFrame):
         logger.info("ℹ️ Input type: GeoDataFrame.")
         if 'lat' in excel_file.columns or 'long' in excel_file.columns:
+            excel_file = validate_longlat(excel_file, lon_col="long", lat_col="lat")
             excel_file['lat'] = excel_file.geometry.to_crs(epsg=4326).y
             excel_file['long'] = excel_file.geometry.to_crs(epsg=4326).x
         elif 'latitude' in excel_file.columns or 'longitude' in excel_file.columns:
+            excel_file = validate_longlat(excel_file, lon_col="longitude", lat_col="latitude")
             excel_file['latitude'] = excel_file.geometry.to_crs(epsg=4326).y
             excel_file['longitude'] = excel_file.geometry.to_crs(epsg=4326).x
         df = pd.DataFrame(excel_file.drop(columns='geometry'))
@@ -965,6 +966,7 @@ def ring_supervised(
     export_dir: str,
     area_col: str = "region",
     cluster_col: str = "ring_name",
+    sep: str = "-",
     fo_expand: gpd.GeoDataFrame = None,
     **kwargs,
 ):
@@ -1047,6 +1049,7 @@ def ring_supervised(
             ref_fo=ref_fo,
             spof_threshold=spof_threshold,
             cable_cost=cable_cost,
+            sep=sep,
             task_celery=task_celery,
         )
         return paths, points
@@ -1168,8 +1171,8 @@ def save_kml(
             topology_ring = topology_ring[['name', 'ring_name', 'region', 'geometry']]
 
             # FO HUB & SITELIST
-            fo_hub = ring_points[ring_points['site_type'] == 'FO Hub'].copy().reset_index(drop=True)
-            site_list = ring_points[ring_points['site_type'] != 'FO Hub'].copy().reset_index(drop=True)
+            fo_hub = ring_points[ring_points['site_type'].str.lower().str.contains("hub")].copy().reset_index(drop=True)
+            site_list = ring_points[~(ring_points['site_type'].str.lower().str.contains("hub"))].copy().reset_index(drop=True)
             fo_hub = fo_hub[available_col]
             site_list = site_list[available_col]
             fo_hub = fo_hub.rename(columns=used_columns)
@@ -1296,6 +1299,7 @@ def main_supervised(
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Supervised")
     task_celery = kwargs.get("task_celery", None)
+    sep = kwargs.get("sep", "-")
     design_type = 'Bill of Quantity' if boq else 'Design'
 
     if "site_id" in site_data.columns:
@@ -1345,6 +1349,7 @@ def main_supervised(
                 export_dir=checkpoint_dir,
                 fo_expand=fo_expand,
                 cable_cost=cable_cost,
+                sep=sep,
                 spof_threshold=spof_threshold,
                 task_celery=task_celery
             )
@@ -1377,7 +1382,7 @@ def main_supervised(
     # EXPORT
     if boq:
         logger.info("🧩 Running BOQ calculation...")
-        main_boq(all_points, all_paths, export_dir=export_dir)
+        main_boq(all_points, all_paths, export_dir=export_dir, sep=sep)
     else:
         logger.info("🧩 Save Design Information")
         save_intersite(all_points, all_paths, export_dir, method)
