@@ -110,103 +110,7 @@ def identify_centerline(line_data, tolerance=0.5):
 
     print(f"\nℹ️ Total lines dropped: {len(dropped_idx)}")
     line_data = line_data.drop(index=dropped_idx).reset_index(drop=True)
-
     return line_data, point_coords
-
-def detect_turn(nodes_gdf: gpd.GeoDataFrame,
-                     edges_gdf: gpd.GeoDataFrame,
-                     angle_thresh_deg: float = 150.0):
-    """
-    Faster turn detection using only topology and angles.
-
-    - No buffers
-    - No gpd.overlay
-    - Classification:
-        * turn_isec >= 3  -> 'branch'
-        * turn_isec == 2 & angle < angle_thresh -> 'turn'
-        * else -> 'straight'
-    """
-    nodes = nodes_gdf.copy().reset_index(drop=True)
-    nodes["turn_note"] = "straight"
-    nodes["turn_isec"] = 0
-    nodes["turn_ratio"] = 1.0    # not really used anymore
-    nodes["area_count"] = 1
-
-    # build map: node_id -> list of direction vectors (dx, dy)
-    node_dirs = {nid: [] for nid in nodes["node_id"]}
-
-    def edge_dirs_at_node(edge_geom, node_point: Point):
-        coords = list(edge_geom.coords)
-        d0 = node_point.distance(Point(coords[0]))
-        d1 = node_point.distance(Point(coords[-1]))
-        if d0 <= d1:
-            # direction from node to next coord
-            if len(coords) >= 2:
-                dx = coords[1][0] - coords[0][0]
-                dy = coords[1][1] - coords[0][1]
-            else:
-                dx = dy = 0.0
-        else:
-            # direction from node to previous coord
-            if len(coords) >= 2:
-                dx = coords[-2][0] - coords[-1][0]
-                dy = coords[-2][1] - coords[-1][1]
-            else:
-                dx = dy = 0.0
-        return (dx, dy)
-
-    # build a quick lookup for node geometries
-    node_geom_map = dict(zip(nodes["node_id"], nodes.geometry))
-
-    # iterate edges, add direction vectors to node_dirs
-    for _, e in edges_gdf.iterrows():
-        for side in ("node_start", "node_end"):
-            nid = e[side]
-            if nid not in node_dirs:
-                continue
-            node_pt = node_geom_map.get(nid)
-            if node_pt is None:
-                continue
-            dx, dy = edge_dirs_at_node(e.geometry, node_pt)
-            norm = np.hypot(dx, dy)
-            if norm == 0:
-                continue
-            node_dirs[nid].append((dx / norm, dy / norm))
-
-    # classify each node
-    for idx, row in nodes.iterrows():
-        nid = row["node_id"]
-        dirs = node_dirs.get(nid, [])
-        k = len(dirs)
-
-        if k == 0 or k == 1:
-            # isolated or dead-end
-            nodes.at[idx, "turn_isec"] = k
-            nodes.at[idx, "turn_note"] = "straight"
-            continue
-
-        if k >= 3:
-            nodes.at[idx, "turn_isec"] = k
-            nodes.at[idx, "turn_note"] = "branch"
-            continue
-
-        # k == 2 -> check angle between two vectors
-        (dx1, dy1), (dx2, dy2) = dirs[:2]
-        dot = dx1 * dx2 + dy1 * dy2
-        dot = max(-1.0, min(1.0, dot))
-        angle_rad = np.arccos(dot)
-        angle_deg = np.degrees(angle_rad)
-
-        # if angle close to 180° => straight, else turn
-        # angle here is the "inside" angle; 180 ~ straight, 90 ~ corner
-        if angle_deg >= angle_thresh_deg:
-            nodes.at[idx, "turn_isec"] = 0
-            nodes.at[idx, "turn_note"] = "straight"
-        else:
-            nodes.at[idx, "turn_isec"] = 2
-            nodes.at[idx, "turn_note"] = "turn"
-
-    return nodes
 
 def relative_intersection(line_a: LineString | MultiLineString, line_b: LineString | MultiLineString, tolerance=0.0):
     """
@@ -293,12 +197,108 @@ def relative_intersection(line_a: LineString | MultiLineString, line_b: LineStri
     return overlap_geom, new_geom
 
 
-def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12):
+def detect_turn(nodes_gdf: gpd.GeoDataFrame,
+                     edges_gdf: gpd.GeoDataFrame,
+                     angle_thresh_deg: float = 150.0):
     """
-    Generate nodes and edges (u, v) from LineString/MultiLineString geometries.
-    Each vertex is treated as a node.
-    Automatically snaps close endpoints (within `tol`) across different lines.
+    Faster turn detection using only topology and angles.
+
+    - No buffers
+    - No gpd.overlay
+    - Classification:
+        * turn_isec >= 3  -> 'branch'
+        * turn_isec == 2 & angle < angle_thresh -> 'turn'
+        * else -> 'straight'
     """
+    nodes = nodes_gdf.copy().reset_index(drop=True)
+    nodes["turn_note"] = "straight"
+    nodes["turn_isec"] = 0
+    nodes["turn_ratio"] = 1.0    # not really used anymore
+    nodes["area_count"] = 1
+
+    # build map: node_id -> list of direction vectors (dx, dy)
+    node_dirs = {nid: [] for nid in nodes["node_id"]}
+
+    def edge_dirs_at_node(edge_geom, node_point: Point):
+        coords = list(edge_geom.coords)
+        d0 = node_point.distance(Point(coords[0]))
+        d1 = node_point.distance(Point(coords[-1]))
+        if d0 <= d1:
+            # direction from node to next coord
+            if len(coords) >= 2:
+                dx = coords[1][0] - coords[0][0]
+                dy = coords[1][1] - coords[0][1]
+            else:
+                dx = dy = 0.0
+        else:
+            # direction from node to previous coord
+            if len(coords) >= 2:
+                dx = coords[-2][0] - coords[-1][0]
+                dy = coords[-2][1] - coords[-1][1]
+            else:
+                dx = dy = 0.0
+        return (dx, dy)
+
+    # Lookup
+    node_geom_map = dict(zip(nodes["node_id"], nodes.geometry))
+
+    # iterate edges, add direction vectors to node_dirs
+    for e in edges_gdf.itertuples():
+        for side, nid in (("node_start", e.node_start), ("node_end", e.node_end)):
+            if nid not in node_dirs:
+                continue
+            node_pt = node_geom_map.get(nid)
+            if node_pt is None:
+                continue
+            dx, dy = edge_dirs_at_node(e.geometry, node_pt)
+            norm = np.hypot(dx, dy)
+            if norm == 0:
+                continue
+            node_dirs[nid].append((dx / norm, dy / norm))
+
+    # classify each node
+    for idx, row in nodes.iterrows():
+        nid = row["node_id"]
+        dirs = node_dirs.get(nid, [])
+        k = len(dirs)
+
+        if k == 0 or k == 1:
+            # isolated or dead-end
+            nodes.at[idx, "turn_isec"] = k
+            nodes.at[idx, "turn_note"] = "straight"
+            continue
+
+        if k >= 3:
+            nodes.at[idx, "turn_isec"] = k
+            nodes.at[idx, "turn_note"] = "branch"
+            continue
+
+        # k == 2 -> check angle between two vectors
+        (dx1, dy1), (dx2, dy2) = dirs[:2]
+        dot = dx1 * dx2 + dy1 * dy2
+        dot = max(-1.0, min(1.0, dot))
+        angle_rad = np.arccos(dot)
+        angle_deg = np.degrees(angle_rad)
+
+        # if angle close to 180° => straight, else turn
+        # angle here is the "inside" angle; 180 ~ straight, 90 ~ corner
+        if angle_deg >= angle_thresh_deg:
+            nodes.at[idx, "turn_isec"] = 0
+            nodes.at[idx, "turn_note"] = "straight"
+        else:
+            nodes.at[idx, "turn_isec"] = 2
+            nodes.at[idx, "turn_note"] = "turn"
+
+    return nodes
+
+def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
+    """
+    Faster version, attribute-aware:
+    - Avoids per-row DataFrame scans to find nodes
+    - Uses coord_key on edges to build nodes + mapping
+    - Preserves all non-geometry columns from the input gdf on edges
+    """
+
     # --- VALIDATE GEOMETRY ---
     geom_types = gdf.geom_type.unique().tolist()
     invalid = [gt for gt in geom_types if gt not in ["LineString", "MultiLineString"]]
@@ -307,64 +307,102 @@ def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12
 
     # --- PREPARE DATA ---
     crs_input = gdf.crs
-    gdf["id_line"] = gdf.index + 1
+    gdf = gdf.copy()
+
+    geom_col = gdf.geometry.name          # usually "geometry"
+    # kalau belum ada id_line, buat
+    if "id_line" not in gdf.columns:
+        gdf["id_line"] = np.arange(1, len(gdf) + 1)
+
+    # kolom yang mau diwariskan ke edges (semua kecuali geometry)
+    non_geom_cols = [c for c in gdf.columns if c != geom_col]
+
+    # explode MultiLineString → LineString
     gdf = gdf.explode(ignore_index=True)
-    gdf = gdf.drop_duplicates(subset="geometry").reset_index(drop=True)
+    # HATI-HATI: kalau kamu butuh duplicate geometry beda atribut, jangan drop di sini
+    gdf = gdf.drop_duplicates(subset=[geom_col]).reset_index(drop=True)
 
     # --- EXTRACT EDGES ---
-    edges = []
-    for _, row in gdf.iterrows():
-        geom = row.geometry
+    print("Extract Edges")
+    edge_records = []
+
+    for row in gdf.itertuples():
+        geom = getattr(row, geom_col)
         if geom.is_empty:
             continue
+
         lines = [geom] if geom.geom_type == "LineString" else geom.geoms
+        base_attrs = {col: getattr(row, col) for col in non_geom_cols}
+
         for line in lines:
             coords = list(line.coords)
+            if len(coords) < 2:
+                continue
+
             for i in range(len(coords) - 1):
-                u = Point(round(coords[i][0], decimals), round(coords[i][1], decimals))
-                v = Point(round(coords[i + 1][0], decimals), round(coords[i + 1][1], decimals))
-                edges.append({
-                    "id_line": row["id_line"],
-                    "geometry": LineString([u, v]),
-                    "u": u,
-                    "v": v,
-                    **{k: v for k, v in row.items()}
-                })
-    edges_gdf = gpd.GeoDataFrame(edges, geometry="geometry", crs=gdf.crs)
+                x1, y1 = coords[i]
+                x2, y2 = coords[i + 1]
+
+                x1r, y1r = round(x1, decimals), round(y1, decimals)
+                x2r, y2r = round(x2, decimals), round(y2, decimals)
+
+                u_pt = Point(x1r, y1r)
+                v_pt = Point(x2r, y2r)
+
+                record = {
+                    **base_attrs,
+                    "geometry": LineString([u_pt, v_pt]),
+                    "u_x": x1r,
+                    "u_y": y1r,
+                    "v_x": x2r,
+                    "v_y": y2r,
+                }
+                edge_records.append(record)
+
+    edges_gdf = gpd.GeoDataFrame(edge_records, geometry="geometry", crs=gdf.crs)
 
     # --- BUILD NODES ---
-    nodes = []
-    for _, e in edges_gdf.iterrows():
-        nodes.append({"id_line": e["id_line"], "geometry": e["u"]})
-        nodes.append({"id_line": e["id_line"], "geometry": e["v"]})
-    nodes_gdf = gpd.GeoDataFrame(nodes, geometry="geometry", crs=gdf.crs)
+    print("Extract Nodes")
+    edges_gdf["u_key"] = list(zip(edges_gdf["u_x"], edges_gdf["u_y"]))
+    edges_gdf["v_key"] = list(zip(edges_gdf["v_x"], edges_gdf["v_y"]))
 
-    nodes_gdf["x"] = nodes_gdf.geometry.x.round(decimals)
-    nodes_gdf["y"] = nodes_gdf.geometry.y.round(decimals)
-    nodes_gdf["coord_key"] = list(zip(nodes_gdf["x"], nodes_gdf["y"]))
-    node_counts = nodes_gdf.groupby("coord_key").size().rename("count")
-    nodes_gdf = nodes_gdf.drop_duplicates("coord_key").merge(node_counts, left_on="coord_key", right_index=True, how="left").reset_index(drop=True)
+    stacked = edges_gdf[["u_key", "v_key"]].stack()
+    node_counts = stacked.value_counts().rename("count")
 
-    # --- MAP NODE IDs ---
+    unique_keys = node_counts.index.to_list()
+    node_x = [k[0] for k in unique_keys]
+    node_y = [k[1] for k in unique_keys]
+
+    nodes_gdf = gpd.GeoDataFrame(
+        {
+            "coord_key": unique_keys,
+            "x": node_x,
+            "y": node_y,
+            "count": node_counts.values,
+        },
+        geometry=gpd.points_from_xy(node_x, node_y),
+        crs=gdf.crs,
+    ).reset_index(drop=True)
+
     nodes_gdf["node_id"] = [f"N{i+1:07d}" for i in range(len(nodes_gdf))]
-    def find_node(pt):
-        key = (round(pt.x, decimals), round(pt.y, decimals))
-        match = nodes_gdf[nodes_gdf["coord_key"] == key]
-        return match["node_id"].values[0] if not match.empty else None
-
-    edges_gdf["node_start"] = edges_gdf["u"].apply(find_node)
-    edges_gdf["node_end"] = edges_gdf["v"].apply(find_node)
+    key_to_id = dict(zip(nodes_gdf["coord_key"], nodes_gdf["node_id"]))
+    edges_gdf["node_start"] = edges_gdf["u_key"].map(key_to_id)
+    edges_gdf["node_end"]   = edges_gdf["v_key"].map(key_to_id)
     edges_gdf["length"] = edges_gdf.geometry.length
 
-
-    # --- TURN ---
+    # --- TURN DETECTION ---
     nodes_gdf = detect_turn(nodes_gdf, edges_gdf, angle_thresh_deg=150)
 
     # --- CLEAN OUTPUT ---
-    edges_gdf = edges_gdf.drop(columns=["u", "v"])
-    nodes_gdf = nodes_gdf[["node_id", "x", "y", "count", "turn_isec","turn_ratio", "turn_note", "geometry"]]
+    edges_gdf = edges_gdf.drop(columns=["u_x", "u_y", "v_x", "v_y", "u_key", "v_key"])
+    nodes_gdf = nodes_gdf[[
+        "node_id", "x", "y", "count",
+        "turn_isec", "turn_ratio", "turn_note", "geometry"
+    ]]
 
     # CRS
-    nodes_gdf = nodes_gdf.to_crs(crs_input)
-    edges_gdf = edges_gdf.to_crs(crs_input)
+    if crs_input is not None:
+        nodes_gdf = nodes_gdf.to_crs(crs_input)
+        edges_gdf = edges_gdf.to_crs(crs_input)
+
     return nodes_gdf, edges_gdf

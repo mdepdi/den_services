@@ -69,7 +69,7 @@ def fixroute_algo(
     if gdf_ne_ring.empty or gdf_fe_ring.empty:
         logger.info(f"⚠️ No NE or FE data for ring: {ring}. Skipping...")
     
-    hex_list = identify_hexagon(concated, type="convex")
+    hex_list = identify_hexagon(concated, type="convex", buffer=1000)
     logger.info(f"ℹ️ Total {len(hex_list)} hexagons for ring: {ring}")
     roads = retrieve_roads(hex_list, type="roads")
     nodes = retrieve_roads(hex_list, type="nodes")
@@ -87,6 +87,7 @@ def fixroute_algo(
     gdf_fe_ring = gdf_fe_ring.rename(columns={'node_id': 'nearest_node'})
 
     segments = []
+    points = []
     for i in range(total_range):
         ne_point = gdf_ne_ring.iloc[i]
         fe_point = gdf_fe_ring.iloc[i]
@@ -98,11 +99,9 @@ def fixroute_algo(
         logger.info(f"🔄 Routing Near End {start_id} -> Far End {end_id}")
         try:
             path, path_geom, path_length = route_path(node_start, node_end, G, roads, merged=True)
-            path_geom, path_length = dropwire_connection(path_geom, ne_point, fe_point, nodes, node_start, node_end)
-
             if not path_geom.is_empty:
+                path_geom, path_length = dropwire_connection(path_geom, ne_point, fe_point, nodes, node_start, node_end)
                 segment_name = f"{start_id}{sep}{end_id}"
-
                 segment_record = {
                     'name': segment_name,
                     'near_end': start_id,
@@ -117,6 +116,9 @@ def fixroute_algo(
 
                 segments.append(segment_record)
                 logger.info(f"🟢 Length: {path_length:10,.2f} m  | Routed segment    : {segment_name}")
+
+                points.append(ne_point)
+                points.append(fe_point)
 
                 ## UPDATE GRAPH
                 # # PENALTY EXISTING FIBER
@@ -136,15 +138,17 @@ def fixroute_algo(
                 logger.critical(f"⚠️ No geometry found for segment {start_id} to {end_id}, skipping.")
         except nx.NetworkXNoPath:
             logger.critical(f"⚠️ No path found between {start_id} and {end_id}, skipping segment.")
+    
+    ring_points = gpd.GeoDataFrame(points, geometry='geometry', crs="EPSG:3857")
     ring_paths = gpd.GeoDataFrame(segments, geometry='geometry', crs="EPSG:3857")
-
+    
     # SPOF CHECKING
-    ring_paths = spof_detection(ring_paths, concated, G, roads, nodes, threshold_spof=spof_threshold, threshold_alt=25)
+    ring_paths = spof_detection(ring_paths, ring_points, G, roads, nodes, threshold_spof=spof_threshold, threshold_alt=25)
 
     # EXPORT
-    if not concated.empty:
+    if not ring_points.empty:
         result_point = os.path.join(export_loc, f"Points Ring_{region}_{ring}.parquet")
-        concated.to_parquet(result_point)
+        ring_points.to_parquet(result_point)
     if not ring_paths.empty:
         result_route = os.path.join(export_loc, f"Route Ring_{region}_{ring}.parquet")
         ring_paths.to_parquet(result_route)
@@ -153,7 +157,7 @@ def fixroute_algo(
     end_time = time()
     elapsed_time = end_time - start_time
     logger.info(f"⏱️ {ring} processed in {elapsed_time:,.2f} seconds")
-    return concated, ring_paths
+    return ring_points, ring_paths
 
 def parallel_fixroute(
     ne_data: gpd.GeoDataFrame,
@@ -334,8 +338,8 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\SERVICE\API\data\template\Template_Fixed_Route.xlsx"
-    export_dir = fr"D:\JACOBS\SERVICE\API\test\Fix Route"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\055013_fixroute_2f9453ea728c4b59973dff7cadbb64e8.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export\Debug Star"
     boq = False
     program ="Q1NewSite2026"
     spof_threshold = 3000

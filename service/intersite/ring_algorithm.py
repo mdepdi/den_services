@@ -471,9 +471,8 @@ def route_multi(
         end_node = cluster_site.loc[cluster_site["site_id"] == best_route[idx + 1], "nearest_node"].values[0]
         try:
             path, path_geom, path_length = route_path(start_node, end_node, G, roads, merged=True)
-            path_geom, path_length = dropwire_connection(path_geom, start_site, end_site, nodes, start_node, end_node)
-
             if not path_geom.is_empty:
+                path_geom, path_length = dropwire_connection(path_geom, start_site, end_site, nodes, start_node, end_node)
                 segment_name = f"{start_site['site_id']}{sep}{end_site['site_id']}"
                 paths_data.append({
                     "name": segment_name,

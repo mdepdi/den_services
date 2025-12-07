@@ -19,6 +19,7 @@ from modules.table import sanitize_header, excel_styler
 from modules.data import read_gdf, validate_longlat
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import route_path, dropwire_connection, create_topology
+from modules.geometry import route_preprocess
 from modules.kml import read_kml, export_kml, sanitize_kml
 from core.logger import create_logger
 from core.config import settings
@@ -145,8 +146,8 @@ def build_connection(ring: str, to_insert:gpd.GeoDataFrame, target_fiber:gpd.Geo
         raise ValueError("max_member must be at least 4 to form a valid ring.")
     
     # FO HUB AND SITELIST
-    fo_hub = target_point[target_point['site_type'] == 'FO Hub'].reset_index(drop=True)
-    site_list = target_point[target_point['site_type'] == 'Site List'].reset_index(drop=True)
+    fo_hub = target_point[target_point['site_type'].str.lower().str.contains("hub")].reset_index(drop=True)
+    site_list = target_point[~(target_point['site_type'].str.lower().str.contains("hub"))].reset_index(drop=True)
     total_point = len(fo_hub) + len(site_list)
 
     # CHECK PREV CONNECTION
@@ -359,6 +360,93 @@ def relative_intersection(line_a: LineString | MultiLineString, line_b: LineStri
         new_geom = MultiLineString([s for s in new_segments if not s.is_empty])
     return overlap_geom, new_geom
 
+def integrate_roads(
+    roads: gpd.GeoDataFrame,
+    new_data: gpd.GeoDataFrame,
+    buf: float = 3.0,
+    min_length: float = 100,
+):
+    # CRS
+    orig_crs = roads.crs
+    roads = roads.to_crs(epsg=3857)
+    new_data = new_data.to_crs(epsg=3857)
+
+    # BUFFER
+    roads_buff = roads.copy()
+    roads_buff["geometry"] = roads_buff.geometry.buffer(buf)
+
+    # CLEAN OVERLAPPED
+    diff = gpd.overlay(new_data, roads_buff[["geometry"]], how="difference")
+    diff = diff.explode(ignore_index=True)
+    diff["length"] = diff.geometry.length
+    diff = diff[diff["length"] > min_length].reset_index(drop=True)
+
+    if diff.empty:
+        return roads if orig_crs is None else roads.to_crs(orig_crs)
+
+    # ENDPOINTS
+    endpoints = diff.geometry.boundary
+    diff_endpoints = gpd.GeoDataFrame(
+        diff[[]].copy(),
+        geometry=endpoints,
+        crs=new_data.crs,
+    )
+
+    diff_endpoints = diff_endpoints.explode(ignore_index=False)
+
+    nearest = gpd.sjoin_nearest(
+        diff_endpoints[["geometry"]],
+        roads,
+        how="left",
+        distance_col="dist",
+    )
+
+    nearest = nearest.dropna(subset=["index_right"])
+    if nearest.empty:
+        joined_raw = pd.concat([roads, diff], ignore_index=True)
+        joined_raw = gpd.GeoDataFrame(joined_raw, geometry="geometry", crs=roads.crs)
+        return joined_raw if orig_crs is None else joined_raw.to_crs(orig_crs)
+
+    nearest_reset = nearest.reset_index().rename(columns={"index": "diff_idx"})
+
+    # SHORTEST LINE
+    end_pts = nearest_reset["geometry"].reset_index(drop=True)
+    road_geoms = roads.loc[nearest_reset["index_right"]].geometry.reset_index(drop=True)
+
+    connectors = end_pts.shortest_line(road_geoms, align=False)
+    nearest_reset["connector_geom"] = connectors
+
+    # ==========================
+    # KNIT
+    # ==========================
+    knit_map = {}
+    for diff_idx, group in nearest_reset.groupby("diff_idx"):
+        base_geom = diff.loc[diff_idx].geometry
+        conn_list = list(group["connector_geom"])
+        knit_geom = linemerge(unary_union([base_geom] + conn_list))
+        knit_map[diff_idx] = knit_geom
+
+    diff_sub = diff.loc[list(knit_map.keys())].copy()
+    diff_sub["geometry"] = diff_sub.index.map(knit_map.get)
+
+    # METADATA
+    nearest_reset = nearest_reset.drop_duplicates(subset="diff_idx")
+    nearest_meta = nearest_reset.drop(columns=["geometry", "connector_geom", 'length'])
+    nearest_meta['ref_fo'] = 1
+    diff_sub = diff_sub.merge(nearest_meta, left_index=True, right_on="diff_idx", how="left")
+
+    # JOIN TO ROADS
+    joined = pd.concat([roads, diff_sub], ignore_index=True)
+    joined = gpd.GeoDataFrame(joined, geometry="geometry", crs=roads.crs)
+    joined = joined[~joined.geometry.isna() & ~joined.geometry.is_empty]
+
+    if orig_crs is not None:
+        joined = joined.to_crs(orig_crs)
+
+    return joined
+
+
+
 def routing_insert(
     ring: str,
     new_connection: list,
@@ -380,15 +468,18 @@ def routing_insert(
     # ===============================
     # BUILD GRAPH NETWORK
     # ===============================
-    hex_list = identify_hexagon(new_points, type="convex")
+    hex_list = identify_hexagon(new_points, type="convex", buffer=1000)
     roads = retrieve_roads(hex_list, type="roads").to_crs(3857)
-    nodes = retrieve_roads(hex_list, type="nodes").to_crs(3857)
+    # nodes = retrieve_roads(hex_list, type="nodes").to_crs(3857)
+    integrated = integrate_roads(roads, target_fiber, buf=3, min_length=10)
+    nodes, roads = route_preprocess(integrated)
+    roads.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251206\Debug\Integrated_{ring}.parquet")
     G = build_graph(roads, graph_type="fiber")
 
     if "nearest_node" not in new_points.columns:
         new_points = gpd.sjoin_nearest(
             new_points, 
-            nodes[["node_id", "geometry"]], 
+            nodes[["node_id", "geometry"]],
             how="left", 
             distance_col="dist_to_node"
         ).rename(columns={"node_id": "nearest_node"})
@@ -414,6 +505,8 @@ def routing_insert(
     segments = []
     existing_data = []
     new_data = []
+    insert_points = new_points[new_points["note"].str.lower().str.contains('insert')]
+    insert_geom = insert_points.geometry.union_all().buffer(3)
     for i in range(len(new_connection) - 1):
         start_id = new_connection[i]
         end_id = new_connection[i + 1]
@@ -462,14 +555,13 @@ def routing_insert(
             # BOTH INSERT
             if sp["note"] == "insert" and ep["note"] == "insert" and len(segments) > 0:
                 prev_geom = target_fiber.geometry.union_all()
-
             try:
                 path, path_geom, _ = route_path(start_node, end_node, G, roads, merged=True)
+                path_geom, _ = dropwire_connection(path_geom, sp, ep, nodes, start_node, end_node)
             except Exception:
                 print(f"⚠️ No path between {start_id} → {end_id}")
                 continue
 
-            path_geom, _ = dropwire_connection(path_geom, sp, ep, nodes, start_node, end_node)
             prev_buff = prev_geom.buffer(20)
             path_buff = path_geom.buffer(50)
             new_line = path_geom.difference(prev_buff)
@@ -477,6 +569,9 @@ def routing_insert(
                 geoms = list(new_line.geoms)
                 new_line = LineString()
                 for geom in geoms:
+                    if not geom.intersects(insert_geom):
+                        continue
+                    
                     if geom.length > 100:
                         new_line = unary_union([new_line, geom])
             
@@ -503,7 +598,7 @@ def routing_insert(
                 percentage = 0.0
                 remark_overlap = 'Invalid'
             else:
-                overlap_prev = existing_line.intersection(prev_geom.buffer(50))
+                overlap_prev = existing_line.intersection(prev_geom.buffer(20))
                 overlap_length = overlap_prev.length
                 percentage = overlap_prev.length / prev_geom.length if prev_geom.length > 0 else 0.0
                 remark_overlap = 'Valid' if percentage > 0.2 or overlap_length > 5000 else 'Invalid'
@@ -580,10 +675,10 @@ def routing_insert(
 
     if len(existing_data) > 0:
         existing_data = gpd.GeoDataFrame(existing_data, geometry='geometry', crs="EPSG:3857")
-        existing_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251204\Debug\Existing_{ring}.parquet")
+        existing_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251206\Debug\Existing_{ring}.parquet")
     if len(new_data) > 0:
         new_data = gpd.GeoDataFrame(new_data, geometry='geometry', crs="EPSG:3857")
-        new_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251204\Debug\New_{ring}.parquet")
+        new_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251206\Debug\New_{ring}.parquet")
 
     if len(segments) == 0:
         return gpd.GeoDataFrame(columns=target_fiber.columns, geometry="geometry", crs=3857)
@@ -675,7 +770,7 @@ def parallel_insert(
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
-    # ring_list = ["TBG-KLA-MOCNPhase1-DF077", "TBG-TGN-MOCNPhase1-DF033"]
+    ring_list = ["TBG-KLA-MOCNPhase1-DF077", "TBG-PAT-Phase4a-DF054", "TBG-KDS-Phase4a-DF084"]
 
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)

@@ -123,7 +123,7 @@ def detect_turn(nodes_gdf: gpd.GeoDataFrame,
 
     return nodes
 
-def route_preprocess(gdf: gpd.GeoDataFrame, tol: float = 5.0, decimals: int = 12):
+def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     """
     Generate nodes and edges (u, v) from LineString/MultiLineString geometries.
     Each vertex is treated as a node.

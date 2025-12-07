@@ -380,14 +380,17 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
 
                 # handle FO hub cases
                 match fo_hub_count:
+                    case 0:
+                        raise ValueError(f"Ring {ring} not containing FO Hubs, check manual input data.")
                     case 1:
                         pass
                     case 2:
                         if (i + 1) % len(ring_points) == 0:
                             continue
                     case _:
-                        print(fo_hub)
-                        raise ValueError(f"Ring {ring} has {fo_hub_count} FO Hubs, which is not supported.")
+                        print(f"Ring {ring} has {fo_hub_count} FO Hubs, potentially star method.")
+                        if i % 2 != 0:
+                            continue
 
                 try:
                     start_coords = list(start_point.geometry.coords)[0][:2]
@@ -409,6 +412,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
                     'fo_note': 'topology',
                     'geometry': line_geom
                 }
+
                 topology_records.append(record)
         except Exception as e:
             print(f"Error in ring {ring}: {e}")
@@ -437,9 +441,10 @@ def route_path(start_node, end_node, G, roads, merged=False):
             union_line = path_geom.geometry.union_all()
             merged_line = linemerge(union_line) if union_line.geom_type == 'MultiLineString' else union_line
             return path, merged_line, path_length
-        return path, path_geom, path_length
+        else:
+            return None, LineString(), 0
     except nx.NetworkXNoPath:
-        return None, gpd.GeoSeries(), 0
+        return None, LineString(), 0
 
 def dropwire_connection(path_geom, ne_point, fe_point, nodes, node_start, node_end):
     from shapely.geometry import LineString
