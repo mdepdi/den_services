@@ -71,9 +71,8 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
     if 'region' not in sitelist_gdf.columns:
         group = auto_group(sitelist_gdf)
-        sitelist_gdf = gpd.sjoin(
-            sitelist_gdf, group[['region', 'geometry']], how='left'
-        ).drop(columns='index_right')
+        sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']], how='left').drop(columns='index_right')
+        sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
 
     # ----------------------------------------------------------------------
     # Validate line geometries
@@ -106,7 +105,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
                         point_topology.append({
                             'ring_id': idx,
-                            'ring_name': f"{vendor}-{program}-{idx}",
+                            'ring_name': f"{vendor}-{program}-{idx + 1}",
                             'num': num,
                             'site_type': site_type,
                             'flag': flag,
@@ -129,7 +128,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
             point_topology.append({
                 'ring_id': idx,
-                'ring_name': f"{vendor}-{program}-{idx}",
+                'ring_name': f"{vendor}-{program}-{idx + 1}",
                 'num': num,
                 'site_type': site_type,
                 'flag': flag,
@@ -242,9 +241,9 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Debug Pak Royhan\Template_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Debug Pak Royhan\TBG-001FWASG25-KTSRG-002A.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Debug Pak Royhan\Export"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Sample\Template_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Sample\TBG-001FWASG25-KTSRG-002A.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Sample\Export"
     program = "Trial Topology"
     boq = False
 
