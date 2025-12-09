@@ -302,7 +302,7 @@ def parse_kml(kml_file):
     return pd.DataFrame(parsed) if parsed else pd.DataFrame()
 
 
-def read_kml(file):
+def read_kml(file:str):
     ext = os.path.splitext(file)[1].lower()
     basename = os.path.basename(file)
     print(f"🌏 Extracting KMZ File: {basename}")

@@ -141,6 +141,8 @@ def fixroute_algo(
     
     ring_points = gpd.GeoDataFrame(points, geometry='geometry', crs="EPSG:3857")
     ring_paths = gpd.GeoDataFrame(segments, geometry='geometry', crs="EPSG:3857")
+    ring_points = ring_points.drop_duplicates(subset=['ring_name', 'site_id', 'geometry'])
+    ring_paths = ring_paths.drop_duplicates(subset=['ring_name', 'name', 'geometry'])
     
     # SPOF CHECKING
     ring_paths = spof_detection(ring_paths, ring_points, G, roads, nodes, threshold_spof=spof_threshold, threshold_alt=25)
@@ -338,7 +340,7 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\055013_fixroute_2f9453ea728c4b59973dff7cadbb64e8.xlsx"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\20251208_173611_Topology_Task\20251208\Summary Report_Intersite_Topology Based.xlsx"
     export_dir = fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export\Debug Star"
     boq = False
     program ="Q1NewSite2026"

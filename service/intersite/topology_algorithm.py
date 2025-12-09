@@ -192,6 +192,9 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
             mapped_fix.append(seg)
     mapped_fix = pd.concat(mapped_fix, ignore_index=True)
+    mapped = mapped.drop_duplicates(['ring_name', 'site_id'])
+    mapped = mapped.drop_duplicates(['ring_name', 'geometry'])
+    mapped = mapped.reset_index(drop=True)
     return mapped_fix
 
 def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, **kwargs):
