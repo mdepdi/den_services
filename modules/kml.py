@@ -374,7 +374,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['geometry'] = points_existing.geometry.force_2d()
     points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
     points_existing['region'] = points_existing['region'] if "region" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
-    points_existing = points_existing.fillna('N/A')
+    points_existing = points_existing.fillna('NA')
 
     # LINES EXISTING
     lines_existing['segment'] = lines_existing['name'].str.strip()
@@ -386,7 +386,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
     lines_existing['region'] = lines_existing['region'] if "region" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
     lines_existing['fo_note'] = 'merged'
-    lines_existing = lines_existing.fillna('N/A')
+    lines_existing = lines_existing.fillna('NA')
     
     # COMPILE
     existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
