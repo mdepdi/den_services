@@ -48,6 +48,9 @@ def identify_hexagon(data_gdf, resolution=5, buffer=10000, type="bound"):
         case "convex":
             convex_hull = data_gdf.geometry.union_all().convex_hull.buffer(buffer)
             hex_gdf = hex_gdf[hex_gdf.intersects(convex_hull)]
+        case "single":
+            convex_hull = data_gdf.geometry.union_all()
+            hex_gdf = hex_gdf[hex_gdf.intersects(convex_hull)]
         case _:
             raise ValueError("Invalid type specified. Use 'bound' or 'convex'.")
     if hex_gdf.empty:
@@ -358,7 +361,7 @@ def retrieve_building(hex_list, centroid=True, hex_dir=None, **kwargs):
     # print(f"Aspect ratio    : {aspect_ratio}\n")
 
     if hex_dir is None:
-        hex_dir = f"{MAINDATA_DIR}/02. Building/Hexed Building 2024"
+        hex_dir = f"{MAINDATA_DIR}/02. Building/Adm 2024/Hexed Building 2024"
 
     all_data = []
     def load_hex_file(hex_id):
@@ -398,7 +401,7 @@ def retrieve_building(hex_list, centroid=True, hex_dir=None, **kwargs):
             executor.submit(load_hex_file, hex_id): hex_id for hex_id in hex_list
         }
 
-        for future in as_completed(future_to_hex):
+        for future in tqdm(as_completed(future_to_hex), total=len(future_to_hex), desc="Get Homepass Hex"):
             id = future_to_hex[future]
             result = future.result()
             if result is not None:

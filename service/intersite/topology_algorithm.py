@@ -100,7 +100,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
                         point = Point(coord)
                         last_idx = len(coords) - 1
 
-                        flag = 'Start' if num == 0 else 'End' if num == last_idx else 'Middle'
+                        flag = 'Start' if num == 0 else 'End' if num == last_idx and len(coords) > 2  else 'Middle'
                         site_type = "FO Hub" if flag in ['Start', 'End'] else "Site List"
 
                         point_topology.append({
@@ -123,7 +123,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
         for num, coord in enumerate(coords):
             point = Point(coord)
-            flag = 'Start' if num == 0 else 'End' if num == last_idx else 'Middle'
+            flag = 'Start' if num == 0 else 'End' if num == last_idx and len(coords) > 2 else 'Middle'
             site_type = "FO Hub" if flag in ['Start', 'End'] else "Site List"
 
             point_topology.append({

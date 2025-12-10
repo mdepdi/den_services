@@ -365,9 +365,9 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['long'] = points_existing.geometry.to_crs(epsg=4326).x
     points_existing['lat'] = points_existing.geometry.to_crs(epsg=4326).y
     points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
-    points_existing['program'] = points_existing['folders'].str.split(";").str[-3]
     points_existing['geometry'] = points_existing.geometry.force_2d()
-    points_existing['region'] = points_existing['folders'].str.extract(r'([A-Z]{3,6});')
+    points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
+    points_existing['region'] = points_existing['region'] if "region" in points_existing.columns else points_existing['folders'].str.extract(r'([A-Z0-9]{3,6});')
 
     # LINES EXISTING
     lines_existing['segment'] = lines_existing['name'].str.strip()
@@ -375,16 +375,16 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
     lines_existing['ring_name'] = lines_existing['folders'].str.split(";").str[-2]
-    lines_existing['program'] = lines_existing['folders'].str.split(";").str[-3]
-    lines_existing['region'] = lines_existing['folders'].str.extract(r'([A-Z]{3,6});')
-
+    lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{6,})')
+    lines_existing['region'] = lines_existing['region'] if "region" in lines_existing.columns else lines_existing['folders'].str.extract(r'([A-Z0-9]{3,6});')
+    lines_existing['fo_note'] = 'merged'
     existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
     for col in existing_col:
         if col not in points_existing.columns:
             raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
     points_existing = points_existing[existing_col]
 
-    existing_col = ['segment', 'near_end', 'far_end', 'ring_name', 'program', 'region','geometry']
+    existing_col = ['segment', 'name', 'near_end', 'far_end', 'fo_note', 'ring_name', 'program', 'region','geometry']
     for col in existing_col:
         if col not in lines_existing.columns:
             raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")

@@ -790,8 +790,7 @@ def identify_connection(
     if len(start_hub) == 0:
         start_hub = target_fiber[target_fiber[opposite_column].astype(str).isin(hub_ids)][opposite_column].values
     if len(start_hub) == 0:
-        logger.info(f"❌ No FO Hub found in ring {ring}")
-        return None, None
+        raise ValueError(f"❌ No FO Hub found in ring {ring}")
 
     start_hub = start_hub[0]
 
@@ -1273,11 +1272,13 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
     # -- Topology --
     try:
         logger.info(f"ℹ️ Total Point {len(points_boq)}")
-        point_conn, connection = identify_connection(ring=folder, target_fiber=lines_boq, target_point=points_boq)
-        points_boq = point_conn.copy()
-    except:
-        logger.info(f"Failed debug.")
+        ring = folder.split("/")[0]
+        point_conn, connection = identify_connection(ring=ring, target_fiber=lines_boq, target_point=points_boq)
+    except Exception as e:
+        logger.error(f"Failed identify connection: {e}")
+        return main_kml
 
+    points_boq = point_conn.copy()
     ring_topology = create_topology(points_boq)
     ring_topology = ring_topology.to_crs(epsg=4326)
     ring_topology["connection"] = "Connection"
@@ -1398,7 +1399,6 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
     start_time = time.time()
     points_boq, lines_boq = parallel_boq(points, lines, sep=sep, task_celery=task_celery)
-
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir, sep=sep)
     end_time = time.time()
@@ -1412,24 +1412,29 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
     # KMZ
     start_time = time.time()
-    ring_names = points_boq['ring_name'].dropna().unique().tolist()
+    ring_names = sorted(points_boq['ring_name'].dropna().unique().tolist())
     output_kmz = os.path.join(export_dir, "BOQ KMZ Design.kmz")
     main_kmz = simplekml.Kml()
     for num, ring in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process KMZ BOQ'):
-        try:
-            ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
-            ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
-            main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor=vendor, program=program, sep=sep)
-            logger.info(f"🟢 {ring} BOQ KMZ inserted.")
+        ring_points = points_boq[points_boq['ring_name'] == ring].copy()
+        ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
+        if 'region' in ring_points.columns:
+            region = ring_points['region'].mode()[0]
+            folder = f"{region}/{ring}"
+        else:
+            folder = ring
 
+        try:
+            main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=folder, vendor=vendor, program=program, sep=sep)
             if task_celery:
                 task_celery.update_state(
                     state="PROGRESS",
                     meta={ "status": (f"Compile KMz for {num}/{len(ring_names):,} rings")},
                 )
+            logger.info(f"🟢 {ring} BOQ KMZ inserted.")
         except Exception as e:
-            print(f"Error in ring {ring}: {e}")
-
+            logger.error(f"Error in ring {ring}: {e}")
+        
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)
     end_time = time.time()
@@ -1443,18 +1448,14 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\BOQ Algorithm\MMP Sokka Design TBG XLS.kmz"
-    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\BOQ Algorithm\Export"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\KMZ Adjustment Folderisation\Export\Intersite Design_Supervised_20251209.kmz"
+    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
+
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\KMZ Adjustment Folderisation\Export\BOQ"
     os.makedirs(export_dir, exist_ok=True)
     
     start_time = time.time()
     points_boq, lines_boq = parallel_boq(points_kmz, lines_kmz)
-    
-    print(points_boq.head())
-    print(lines_boq.columns)
-    print(lines_boq.head())
 
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir)
@@ -1476,7 +1477,12 @@ if __name__ == "__main__":
     for ring in tqdm(ring_names, total=len(ring_names), desc='Process KMZ BOQ'):
         ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
         ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
-        main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=ring, vendor='TBG', program="BOQ Method")
+        if 'region' in ring_points.columns:
+            region = ring_points['region'].mode()[0]
+            folder = f"{region}/{ring}"
+        else:
+            folder = ring
+        main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=folder, vendor='TBG', program="BOQ Method")
         logger.info(f"🟢 {ring} BOQ KMZ inserted.")
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)
