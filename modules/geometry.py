@@ -40,7 +40,7 @@ def point_coordinates(gdf):
             coords = [(x, y) for x, y, *_ in geom.coords]
             point_coords.extend([{'x': x, 'y': y, **data, 'geometry': Point(x,y)} for x, y in coords])
         elif isinstance(geom, MultiLineString):
-            for line in geom:
+            for line in geom.geoms:
                 coords = [(x, y) for x, y, *_ in line.coords]
                 point_coords.extend([{'x': x, 'y': y, **data, 'geometry': Point(x,y)} for x, y in coords])
         elif isinstance(geom, Polygon):
@@ -50,7 +50,7 @@ def point_coordinates(gdf):
                 interior_coords = [(x, y) for x, y, *_ in interior.coords]
                 point_coords.extend([{'x': x, 'y': y, **data, 'geometry': Point(x,y)} for x, y in interior_coords])
         elif isinstance(geom, MultiPolygon):
-            for poly in geom:
+            for poly in geom.geoms:
                 exterior_coords = [(x, y) for x, y, *_ in poly.exterior.coords]
                 point_coords.extend([{'x': x, 'y': y, **data, 'geometry': Point(x,y)} for x, y in exterior_coords])
                 for interior in poly.interiors:
