@@ -356,7 +356,6 @@ def read_kml(file:str):
 
 def validate_kmz_design(filepath:str, sep: str = "-"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
-    print(points_kmz.head())
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
