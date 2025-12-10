@@ -34,7 +34,7 @@ def find_best_match(word, candidates, threshold=0.85):
             best_match = candidate
     return best_match, best_score
 
-def sanitize_header(df, preview_row = 5, lowercase=False):
+def sanitize_header(df:pd.DataFrame, preview_row = 5, lowercase=False):
     if df.columns[0].startswith('Unnamed'):
         for idx, row in df.head(preview_row).iterrows():
             if pd.isna(row.values[0]) or row.values[0] == '':

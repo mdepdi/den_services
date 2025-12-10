@@ -191,15 +191,22 @@ def parse_extdata(placemark):
         return attributes
 
     # <Data> format
+    skip_col = ['name', 'folders', 'folder_name', 'description']
     for d in ext.find_all("Data"):
         key = d.get("name")
         val = d.find("value").text.strip() if d.find("value") else None
+        if key in skip_col:
+            continue
+
         attributes[key] = val
 
     # <SimpleData> format
     for d in ext.find_all("SimpleData"):
         key = d.get("name")
         val = d.text.strip()
+        if key in skip_col:
+            continue
+
         attributes[key] = val
 
     return attributes
@@ -332,7 +339,6 @@ def read_kml(file:str):
     # CONVERT TO GDF
     try:
         data_df = pd.concat(result)
-        print(data_df.head())
         data_gdf = gpd.GeoDataFrame(data_df, geometry='geometry', crs="EPSG:4326")
         points = data_gdf[data_gdf.geometry.type == "Point"]
         lines = data_gdf[data_gdf.geometry.type.isin(["LineString", "MultiLineString"])]
@@ -356,35 +362,40 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_kmz = sanitize_header(lines_kmz)
     points_existing = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
     lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route')].copy()
-    
+
     # POINT EXISTING
     points_existing['site_id'] = points_existing['name'].str.strip()
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
-    points_existing['long'] = points_existing.geometry.to_crs(epsg=4326).x
-    points_existing['lat'] = points_existing.geometry.to_crs(epsg=4326).y
+    points_existing['long'] = round(points_existing.geometry.to_crs(epsg=4326).x, 8)
+    points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 8)
     points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
     points_existing['geometry'] = points_existing.geometry.force_2d()
     points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
-    points_existing['region'] = points_existing['region'] if "region" in points_existing.columns else points_existing['folders'].str.extract(r'([A-Z0-9]{3,6});')
+    points_existing['region'] = points_existing['region'] if "region" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    points_existing = points_existing.fillna('N/A')
 
     # LINES EXISTING
     lines_existing['segment'] = lines_existing['name'].str.strip()
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
+    lines_existing['length'] = lines_existing.geometry.to_crs(epsg=3857).length
     lines_existing['ring_name'] = lines_existing['folders'].str.split(";").str[-2]
-    lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{6,})')
-    lines_existing['region'] = lines_existing['region'] if "region" in lines_existing.columns else lines_existing['folders'].str.extract(r'([A-Z0-9]{3,6});')
+    lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
+    lines_existing['region'] = lines_existing['region'] if "region" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
     lines_existing['fo_note'] = 'merged'
+    lines_existing = lines_existing.fillna('N/A')
+    
+    # COMPILE
     existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
     for col in existing_col:
         if col not in points_existing.columns:
             raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
     points_existing = points_existing[existing_col]
 
-    existing_col = ['segment', 'name', 'near_end', 'far_end', 'fo_note', 'ring_name', 'program', 'region','geometry']
+    existing_col = ['segment', 'name', 'near_end', 'far_end', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
     for col in existing_col:
         if col not in lines_existing.columns:
             raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")
@@ -395,4 +406,8 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
 
     if lines_existing.empty:
         raise ValueError(f"Lines data in existing kmz is empty")
+    
+    print(f"ℹ️ Summary Validated Ring:")
+    print(f"ℹ️ Total Points      : {len(points_existing):,}")
+    print(f"ℹ️ Total LineString  : {len(points_existing):,}")
     return points_existing, lines_existing
