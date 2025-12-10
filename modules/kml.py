@@ -356,6 +356,7 @@ def read_kml(file:str):
 
 def validate_kmz_design(filepath:str, sep: str = "-"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
+    print(points_kmz.head())
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
@@ -374,10 +375,11 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['geometry'] = points_existing.geometry.force_2d()
     points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
     points_existing['region'] = points_existing['region'] if "region" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
-    points_existing = points_existing.fillna('NA')
+    points_existing['program'] = points_existing['program'].fillna("NA")
+    points_existing = points_existing.dropna(how='all', axis=1)
 
     # LINES EXISTING
-    lines_existing['segment'] = lines_existing['name'].str.strip()
+    lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(" ", "")
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
@@ -386,18 +388,25 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
     lines_existing['region'] = lines_existing['region'] if "region" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
     lines_existing['fo_note'] = 'merged'
-    lines_existing = lines_existing.fillna('NA')
+    lines_existing['program'] = lines_existing['program'].fillna("NA")
+    lines_existing = lines_existing.dropna(how='all', axis=1)
     
     # COMPILE
     existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
     for col in existing_col:
         if col not in points_existing.columns:
+            if col == "region":
+                existing_col.pop(existing_col.index('region'))
+                continue
             raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
     points_existing = points_existing[existing_col]
 
     existing_col = ['segment', 'name', 'near_end', 'far_end', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
     for col in existing_col:
         if col not in lines_existing.columns:
+            if col == "region":
+                existing_col.pop(existing_col.index('region'))
+                continue
             raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")
     lines_existing = lines_existing[existing_col]
 

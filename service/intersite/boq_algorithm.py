@@ -790,6 +790,9 @@ def identify_connection(
     if len(start_hub) == 0:
         start_hub = target_fiber[target_fiber[opposite_column].astype(str).isin(hub_ids)][opposite_column].values
     if len(start_hub) == 0:
+        print(fo_hub['site_id'].tolist())
+        print(site_list['site_id'].tolist())
+        print(hub_ids)
         raise ValueError(f"❌ No FO Hub found in ring {ring}")
 
     start_hub = start_hub[0]
@@ -1234,15 +1237,15 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
     points_boq = points_boq.copy()
 
     def safe_get_geometry(site_id):
-        match = points_boq.loc[points_boq["site_id"].astype(str) == str(site_id), "geometry"]
+        match = points_boq.loc[points_boq["site_id"].astype(str).str.strip() == str(site_id), "geometry"]
         if not match.empty:
             return match.iloc[0]
         else:
             logger.info(f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}.")
             return None
 
-    lines_boq["start"] = lines_boq["near_end"].astype(str).apply(safe_get_geometry)
-    lines_boq["end"]   = lines_boq["far_end"].astype(str).apply(safe_get_geometry)
+    lines_boq["start"] = lines_boq["near_end"].astype(str).str.strip().apply(safe_get_geometry)
+    lines_boq["end"]   = lines_boq["far_end"].astype(str).str.strip().apply(safe_get_geometry)
 
     lines_boq = lines_boq.reset_index(drop=True)
     filename = folder.replace("/", "-")
@@ -1450,7 +1453,8 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 if __name__ == "__main__":
     kmz_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\KMZ Adjustment Folderisation\KMZ PLAN FWA SURGE 27 SITE V7 - 20251210 (chindra).kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
-
+    print(points_kmz[points_kmz['ring_name'] == 'TBG-001FWASG25-KTBDG-007'].head())
+    print(lines_kmz[lines_kmz['ring_name'] == 'TBG-001FWASG25-KTBDG-007'].head())
     export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\KMZ Adjustment Folderisation\Export\BOQ V7 Chindra"
     os.makedirs(export_dir, exist_ok=True)
     
