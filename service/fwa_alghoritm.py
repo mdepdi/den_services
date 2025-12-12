@@ -1125,21 +1125,14 @@ if __name__ == "__main__":
     print(f"ℹ️ Using 7k Data.")
     sitelist = r"D:\JACOBS\TASK\OKTOBER\Week 3\FWA SURGE\Sitelist_7160.xlsx"
     output_path = os.path.join(export_dir, f"Sitelist FWA 7k_to_Process.parquet")
-    # output_path = os.path.join(export_dir, f"TBG Sitelist_Identify Nearest GeoDashboard {distance}m Indonesia.parquet")
+
     if os.path.exists(output_path):
         print(f"🟢 Compiled data already exist. Load data.")
         sitelist = gpd.read_parquet(output_path)
     else:
         print(f"🟡 Compiled data not exist. Process compiling...")
-        # geodata = compile_geodashboard(directory)
-        # sitelist = identify_nearest(geodata, distance=distance)
-        # sitelist = sitelist[sitelist['site_id'].astype(str).isin(data_v7)]
-        # print(f"ℹ️ Sitelist in V7: {len(sitelist):,}")
-        # sitelist.to_parquet(os.path.join(export_dir, f"TBG Sitelist_Identify Nearest GeoDashboard {distance}m Indonesia.parquet"))
-
         sitelist = read_gdf(sitelist)
         sitelist.columns = sitelist.columns.str.lower()
-        # sitelist = sitelist[sitelist['island'].str.contains('JAWA|BALI|PUMA')]
         if 'sitename' in sitelist.columns:
             sitelist['sitename'] = sitelist['sitename'].astype(str)
         if 'tower height' in sitelist.columns:

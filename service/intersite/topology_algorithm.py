@@ -241,9 +241,9 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Sample\Template_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Sample\TBG-001FWASG25-KTSRG-002A.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Sample\Export"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Topology\Banten_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Topology\Banten Topology 12122025.kml"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Export"
     program = "Trial Topology"
     boq = False
 

@@ -202,8 +202,8 @@ def read_gdf(file: str = None, **kwargs):
                 crs = kwargs.get("crs", "EPSG:4326")
                 sheet_name = kwargs.get("sheet_name", 0)
                 df = pd.read_excel(filename, sheet_name=sheet_name)
-                long_col = find_best_match("long", df.columns.tolist(), 0.6)
-                lat_col = find_best_match("lat", df.columns.tolist(), 0.6)
+                long_col = find_best_match("longitude", df.columns.tolist(), 0.6)
+                lat_col = find_best_match("latitude", df.columns.tolist(), 0.6)
                 if long_col and lat_col:
                     long_col = long_col[0]
                     lat_col = lat_col[0]
@@ -211,18 +211,18 @@ def read_gdf(file: str = None, **kwargs):
                     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                     print(f"Identified longitude column: {long_col}, latitude column: {lat_col}")
                 else:
-                    raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
+                    raise ValueError("DataFrame must contain 'longitude' and 'latitude' columns.")
             elif extension == "csv":
                 crs = kwargs.get("crs", "EPSG:4326")
                 df = pd.read_csv(filename)
-                long_col = find_best_match("long", df.columns.tolist())
-                lat_col = find_best_match("lat", df.columns.tolist())
+                long_col = find_best_match("longitude", df.columns.tolist())
+                lat_col = find_best_match("latitude", df.columns.tolist())
                 if long_col and lat_col:
                     long_col = long_col[0]
                     lat_col = lat_col[0]
                     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                 else:
-                    raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
+                    raise ValueError("DataFrame must contain 'longitude' and 'latitude' columns.")
             elif extension in ["kmz", "kml"]:
                 geom_type = kwargs.get("geom_type", None)
                 if geom_type is None:

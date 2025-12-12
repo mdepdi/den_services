@@ -9,7 +9,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from datetime import datetime
 from time import time
-from tbg_modules.geometry import point_coordinates
+from modules.geometry import point_coordinates
+from modules.utils import auto_group
+from modules.data import read_gdf
 
 def graphhopper_routing(start: Point, end: Point, endpoint="http://10.83.10.16:8989", profile='car'):
     url = f"{endpoint}/route"
@@ -41,11 +43,11 @@ def graphhopper_routing(start: Point, end: Point, endpoint="http://10.83.10.16:8
             return LineString(coords)
 
         except Exception as e:
-            print(f"🔴 GraphHopper Routing Error (retry {retry+1}/{max_retry}): {e}")
+            # print(f"🔴 GraphHopper Routing Error (retry {retry+1}/{max_retry}): {e}")
             retry += 1
 
     print("❌ Failed after maximum retries")
-    return None
+    return LineString()
 
 def nearest_candidates(source_gdf, target_gdf, k_candidates=10):
     """
@@ -83,12 +85,24 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
             source_geom = row['src_geom']
             target_geom = row['tgt_geom']
             task = ex.submit(graphhopper_routing, source_geom, target_geom, profile=profile)
-            tasks[task] = idx
+            tasks[task] = {
+                "id": idx,
+                "src_geom": source_geom,
+                "tgt_geom": target_geom,
+            }
 
         for f in tqdm(as_completed(tasks), total=len(tasks), desc="Routing"):
             result = f.result()
-            id = tasks[f]
+            if result is None or result.empty:
+                continue
+
+            meta = tasks[f]
+            id = meta["id"]
+            src_geom = meta["src_geom"]
+            tgt_geom = meta["tgt_geom"]
             pairs_df.at[id, 'geometry'] = result
+            print(f"🟢 Success. ID {id} from {src_geom} -> {tgt_geom}")
+
     route_gdf = gpd.GeoDataFrame(pairs_df, geometry="geometry", crs="EPSG:4326")
     route_gdf['distance'] = route_gdf.geometry.to_crs(epsg=3857).length
     if 'src_geom' in route_gdf.columns:
@@ -169,34 +183,50 @@ def verify_input(excel_file:str):
     print(f"✅ Input Data {basename} valid.")
     return source_gdf, target_gdf
 
-def distance_fiber_tbg(source_gdf:gpd.GeoDataFrame, max_distance=10000):
-    fiber = r"D:\JACOBS\DATA\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
-    dirname = os.path.dirname(fiber)
-    basename = os.path.basename(fiber).split(".")[0]
-    point_path = os.path.join(dirname, f"Points_{basename}.parquet")
-
-    print(f"🌏 Checking Route to Fiber TBG")
-    if os.path.exists(point_path):
-        print(f"ℹ️ FO Points already exist. Load exist.")
-        points_fiber = gpd.read_parquet(point_path)
-    else:
-        print(f"ℹ️ FO Points didn't exist. Process point coordinates.")
-        fiber = gpd.read_parquet(fiber)
-        points_fiber = point_coordinates(fiber)
+def distance_fiber(source_gdf:gpd.GeoDataFrame, export_dir:str, max_distance=10000, fiber_route:gpd.GeoDataFrame|None=None):
+    if fiber_route is not None:
+        points_fiber = point_coordinates(fiber_route)
+        group = auto_group(points_fiber, distance=100)
+        points_fiber = gpd.sjoin(points_fiber, group[['geometry', 'region']]).drop(columns='index_right')
+        points_fiber = points_fiber.drop_duplicates(subset='region')
         points_fiber.columns = points_fiber.columns.str.lower()
-        points_fiber = points_fiber.drop_duplicates(subset=['name', 'operator', 'geometry']).reset_index(drop=True)
         points_fiber = points_fiber.to_crs(epsg=4326)
-        points_fiber['site_id'] = points_fiber['name'] + points_fiber['operator']
+        
+        if 'name' in fiber_route.columns:
+            points_fiber['site_id'] = points_fiber['name']
+        else:
+            points_fiber['site_id'] = str(points_fiber.index + 1)
+            
         points_fiber['long'] = points_fiber.geometry.x
         points_fiber['lat'] = points_fiber.geometry.y
-        points_fiber.to_parquet(point_path)
+    else:
+        fiber = r"D:\JACOBS\DATA\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
+        dirname = os.path.dirname(fiber)
+        basename = os.path.basename(fiber).split(".")[0]
+        point_path = os.path.join(dirname, f"Points_{basename}.parquet")
+
+        print(f"🌏 Checking Route to Fiber TBG")
+        if os.path.exists(point_path):
+            print(f"ℹ️ FO Points already exist. Load exist.")
+            points_fiber = gpd.read_parquet(point_path)
+        else:
+            print(f"ℹ️ FO Points didn't exist. Process point coordinates.")
+            fiber = gpd.read_parquet(fiber)
+            points_fiber = point_coordinates(fiber)
+            points_fiber.columns = points_fiber.columns.str.lower()
+            points_fiber = points_fiber.drop_duplicates(subset=['name', 'operator', 'geometry']).reset_index(drop=True)
+            points_fiber = points_fiber.to_crs(epsg=4326)
+            points_fiber['site_id'] = points_fiber['name'] + points_fiber['operator']
+            points_fiber['long'] = points_fiber.geometry.x
+            points_fiber['lat'] = points_fiber.geometry.y
+            points_fiber.to_parquet(point_path)
 
     source_gdf = source_gdf.to_crs(epsg=3857)
     points_fiber = points_fiber.to_crs(epsg=3857)
 
     k_final = 1
     source_buff = source_gdf.copy()
-    source_buff['geometry'] = source_buff.geometry.buffer(max_distance*1.5)
+    source_buff['geometry'] = source_buff.geometry.buffer(max_distance)
     points_fiber = gpd.sjoin(points_fiber, source_buff[['geometry']]).drop(columns='index_right')
     points_fiber = points_fiber.reset_index(drop=True)
     
@@ -204,9 +234,6 @@ def distance_fiber_tbg(source_gdf:gpd.GeoDataFrame, max_distance=10000):
     routing_gdf = grapphopper_knn(source_gdf, points_fiber, k_final=k_final, profile='pure_shortest')
 
     # EXPORT DATA
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\Grapphopper Routing\Distance to Fiber"
-    date_today = datetime.today().strftime("%Y-%m-%d")
-    export_dir = os.path.join(export_dir, date_today)
     os.makedirs(export_dir, exist_ok=True)
 
     route_path = save_routing(routing_gdf, export_dir)
@@ -232,20 +259,30 @@ if __name__ == "__main__":
     # target_gdf.to_parquet(os.path.join(export_dir, "Target GDF.parquet"))
 
     # PROCESS DATA OPERASIONAL AKSES INTERNET
-    source_path = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 2\Grapphopper Routing\BLENDED DATA OPERASIONAL AKSES INTERNET TO FIBER TBG.xlsx"
-    source_df = pd.read_excel(source_path, sheet_name='Total Lokasi')
-    print(source_df.head())
-    with pd.ExcelFile(source_path) as excel:
-        print(excel.sheet_names)
-    source_df.columns = source_df.columns.str.lower()
-    source_df = source_df.rename(columns={'longitude':'long', 'latitude':'lat', 'site id':'site_id'})
+    source_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\POI Makassar\POI Classified.parquet"
+    route_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Transnet.kmz"
+    source_gdf = read_gdf(source_path)
+    route_gdf = read_gdf(route_path, geom_type='line')
+    source_gdf['site_id'] = source_gdf['name']
+    source_gdf['long'] = source_gdf.geometry.to_crs(epsg=4326).x
+    source_gdf['lat'] = source_gdf.geometry.to_crs(epsg=4326).y
+    source_gdf = source_gdf.to_crs(epsg=3857)
+    route_gdf = route_gdf.to_crs(epsg=3857)
+    route_existing = route_gdf[route_gdf['folders'].str.lower().str.contains('existing')].copy()
+    route_new = route_gdf[~route_gdf.index.isin(route_existing.index)].copy()
+    source_gdf = gpd.sjoin_nearest(source_gdf, route_existing, max_distance=2000, distance_col='dist_existing', how='left').drop(columns='index_right')
+    source_gdf = gpd.sjoin_nearest(source_gdf, route_new, max_distance=2000, distance_col='dist_new', how='left').drop(columns='index_right')
+    source_gdf = source_gdf.dropna(subset=['dist_existing', 'dist_new'], how='all')
+    source_gdf = source_gdf.sort_values('dist_existing')
+    source_gdf = source_gdf.drop_duplicates('site_id')
+    route_gdf.to_parquet(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export\Route Transnet.parquet")
+    source_gdf.to_parquet(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export\POI Classified Mapped Transnet.parquet")
+    source_gdf.to_excel(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export\POI Classified Mapped Transnet.xlsx")
+
     used_col = ['site_id', 'lat', 'long']
     for col in used_col:
-        if col not in source_df.columns:
+        if col not in source_gdf.columns:
             raise ValueError(f"Column {col} not found for Source GDF")
 
-    for col in source_df.select_dtypes(include=["object"]).columns:
-        source_df[col] = source_df[col].astype(str)
-    source_geom = gpd.points_from_xy(source_df['long'], source_df['lat'], crs='EPSG:4326')
-    source_gdf = gpd.GeoDataFrame(source_df, geometry=source_geom)
-    route_path = distance_fiber_tbg(source_gdf, max_distance=10000)
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export"
+    route_path = distance_fiber(source_gdf, export_dir=export_dir, max_distance=2000, fiber_route=route_new)

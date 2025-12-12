@@ -353,7 +353,6 @@ def clean_sectors_overlaps(
                 print(f"⚠️ Removed {len(to_drop)} overlapping sectors inside new batch (kept higher homepass).")
                 new_acc = new_acc[~new_acc["sector_id"].isin(to_drop)].reset_index(drop=True)
 
-        # 3️⃣ Building association for new accepted
         building_new = gpd.sjoin(
             building_remain, new_acc[["geometry", "sector_id"]],
             predicate="intersects"
@@ -367,11 +366,9 @@ def clean_sectors_overlaps(
             used_geom = pd.concat([used_geom, building_new.geometry], ignore_index=True)
             building_remain = building.loc[~building.geometry.isin(used_geom)].reset_index(drop=True)
 
-            # 4️⃣ Merge into accepted
             accepted = pd.concat([accepted, new_acc], ignore_index=True)
             accepted_union = accepted_union.union(new_acc.geometry.unary_union.buffer(0))
 
-            # 5️⃣ Post-merge cleanup (cross-batch overlap)
             if len(accepted) > 1:
                 joined = gpd.sjoin(accepted, accepted, predicate="intersects", how="inner", lsuffix="l", rsuffix="r")
                 joined = joined[joined["sector_id_l"] != joined["sector_id_r"]]
