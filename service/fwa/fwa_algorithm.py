@@ -848,7 +848,8 @@ def parallel_region(
             "Accepted",
             "Dropped",
         )
-
+        region_calc['hp_site'] = region_calc['total_homepass']
+        
         # 4) Sectorize
         sectors = parallel_sectorize(
             sites_gdf=region_calc,
@@ -866,7 +867,6 @@ def parallel_region(
 
         # 5) Sector overlap cleaning + building assignment
         if clean_overlap:
-            region_calc['hp_site'] = region_calc['total_homepass']
             sectors_accept, sectors_dropped, building_join = clean_sectors_overlaps(
                 site_data=region_calc,
                 sectors=sectors,
