@@ -860,6 +860,7 @@ def parallel_region(
             threshold=threshold_sector,
             max_workers=max_workers,
         )
+        sectors = sectors.merge(region_calc[['site_id', 'hp_site']], how='left', on='site_id')
 
         if sectors.empty:
             print(f"⚠️ Region {region}: no sectors generated.")
