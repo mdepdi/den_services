@@ -734,6 +734,7 @@ def clean_sectors_overlaps(
         return (
             int(row["__protected"]),
             int(row["__sector_index"]),  # 3 > 2 > 1 (higher index wins)
+            float(row["hp_site"]),
             float(row["total_homepass"]),
         )
 
@@ -820,7 +821,6 @@ def parallel_region(
 
         # 3) Count homepass per site & clean sites
         region_calc = count_homepass(region_data, buildings, distance=distance_fwa)
-
         if accepted_ids is not None:
             site_keep, site_drop = clean_sites_overlaps(
                 region_calc,
@@ -866,6 +866,7 @@ def parallel_region(
 
         # 5) Sector overlap cleaning + building assignment
         if clean_overlap:
+            region_calc['hp_site'] = region_calc['total_homepass']
             sectors_accept, sectors_dropped, building_join = clean_sectors_overlaps(
                 site_data=region_calc,
                 sectors=sectors,
