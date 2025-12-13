@@ -896,12 +896,7 @@ def parallel_region(
         sectors["total_homepass"] = (sectors["sector_id"].map(total_hp_sector).fillna(0).astype(int))
 
         # 7) Aggregate sector stats to site level
-        hp_cols = [c for c in sectors.columns if c.startswith("hp_")]
-
         agg_dict = {"sector_id": "count", "total_homepass": "sum"}
-        for col in hp_cols:
-            agg_dict[col] = "sum"
-
         sector_summary = (
             sectors[sectors['sector_note'] == 'Accepted Sector'].groupby("site_id")
             .agg(agg_dict)
@@ -1112,19 +1107,23 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Handover Surge\Export"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA v3 19k"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Handover Surge\site list 37k.xlsx"
-    sitelist = read_gdf(sitelist_path)
+    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\TBG Sitelist_Compile_FWA_Dec 2025_v3.xlsx"
+    sitelist = read_gdf(sitelist_path, sheet_name="Sitelist")
     sitelist = sanitize_header(sitelist, lowercase=True)
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
     sitelist["site_type"] = sitelist["site_type"].fillna("unknown").str.lower()
+    sitelist['remark_streetview'] = sitelist['remark_streetview'].fillna('Space Available')
+    sitelist['competitor_company'] = sitelist['competitor_company'].astype(str)
+    sitelist['competitor_ids'] = sitelist['competitor_ids'].astype(str)
     # sitelist = sitelist[["site_id", "long", "lat", "site_type",  "geometry"]]
+    
+    sitelist = sitelist[(sitelist['batch_list'].str.lower().str.contains('ongoing')) & (~(sitelist['remark_streetview'].str.lower().str.contains("no space")))].copy()
     sitelist = sitelist.drop_duplicates("site_id").reset_index(drop=True)
-    sitelist = sitelist[sitelist['company'].str.lower().str.contains("tbg|pkp|gihon")].copy().reset_index(drop=True)
     print(f"ℹ️ Total Sitelist to Process: {len(sitelist):,}")
 
     accepted_ids = None
