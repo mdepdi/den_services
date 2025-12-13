@@ -886,9 +886,9 @@ def parallel_region(
             ).drop(columns="index_right", errors="ignore")
 
         # 6) Aggregate homepass class to sector level
-        accepted = set(sectors_accept['site_id'].astype(str))
+        accepted = set(sectors_accept['sector_id'].astype(str))
         sectors['sector_note'] = np.where(
-            sectors["site_id"].astype(str).isin(accepted),
+            sectors["sector_id"].astype(str).isin(accepted),
             "Accepted Sector",
             "Dropped Sector",
         )
