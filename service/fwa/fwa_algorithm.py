@@ -628,6 +628,7 @@ def clean_sectors_overlaps(
         raise ValueError("clean_sectors_overlaps requires 'site_id' in sectors")
 
     sectors["__protected"] = sectors["site_id"].astype(str).isin(accepted_set)
+    sectors["__sst"] = np.where(sectors["tower_type"].str.lower().str.contains("sst"), 1, 0)
 
     # -------------------------
     # 2) Ensure total_homepass exists
@@ -735,8 +736,8 @@ def clean_sectors_overlaps(
     def sector_row_score(row: pd.Series) -> tuple:
         return (
             int(row["__protected"]),
+            int(row["__sst"]),
             int(row["__sector_index"]),  # 3 > 2 > 1 (higher index wins)
-            int(row.get("tower_type", None)),
             float(row["hp_site"]),
             float(row["total_homepass"]),
         )
