@@ -446,6 +446,7 @@ def generate_sector(center, buffer_distance: float,
         sectors.append(
             {
                 "geometry": full_buffer.intersection(poly),
+                "azimuth": (start + end) / 2,
                 "azimuth_start": start,
                 "azimuth_end": end,
             }
@@ -461,6 +462,7 @@ def sectorize_site(args):
     site_data, homepass, dist, angle, threshold = args
     site_id = site_data["site_id"]
     geom = site_data["geometry"]
+    tower_type = site_data.get("tower_type", "NA")
 
     best_score = -np.inf
     best_sectors = None
@@ -468,6 +470,7 @@ def sectorize_site(args):
     for offset in range(0, angle, 1):
         sectors = generate_sector(geom, dist, angle, offset)
         sectors["site_id"] = site_id
+        sectors["tower_type"] = tower_type
         sectors["sector_id"] = [f"{site_id}_{i+1}" for i in range(len(sectors))]
 
         if not homepass.empty:
@@ -522,7 +525,7 @@ def parallel_sectorize(
         idx = sindex.query(buff, predicate="intersects")
         hp = homepass.iloc[idx].reset_index(drop=True)
         site_args.append(
-            ({"site_id": s["site_id"], "geometry": s.geometry}, hp, distance, angle, threshold)
+            (s, hp, distance, angle, threshold)
         )
 
     results = []
@@ -652,13 +655,12 @@ def clean_sectors_overlaps(
 
     # -------------------------
     # 3) Extract sector index (1/2/3) from sector_id
-    #    Example sector_id: "SITE123_1", "SITE123_2", "SITE123_3"
     # -------------------------
     def _parse_sector_index(s):
         try:
             return int(str(s).split("_")[-1])
         except Exception:
-            return 1  # fallback if weird name
+            return 1
 
     sectors["__sector_index"] = sectors["sector_id"].map(_parse_sector_index)
 
@@ -734,6 +736,7 @@ def clean_sectors_overlaps(
         return (
             int(row["__protected"]),
             int(row["__sector_index"]),  # 3 > 2 > 1 (higher index wins)
+            int(row.get("tower_type", None)),
             float(row["hp_site"]),
             float(row["total_homepass"]),
         )
@@ -744,6 +747,8 @@ def clean_sectors_overlaps(
 
         row_i = sectors.loc[i]
         row_j = sectors.loc[j]
+        if row_i["__protected"] == 1 and row_j["__protected"] == 1:
+            continue
 
         score_i = sector_row_score(row_i)
         score_j = sector_row_score(row_j)
@@ -874,7 +879,7 @@ def parallel_region(
                 buildings=buildings,
                 accepted_list=list(accepted_list),
                 sector_total=360 // sector_group,
-                tolerance=10.0,
+                tolerance=50.0,
                 score_map=score_map
             )
         else:
@@ -1083,14 +1088,15 @@ if __name__ == "__main__":
             "PKP (Alfa)": 2,
             "GIHON": 2,
         },
-        "site_type": {
-            "GREEN FIELD": 3,
-            "ROOF TOP": 1,
-        },
         "tower_type": {
             "SST": 3,
             "MONO_POLE": 1,
             "MONOPOLE": 1,
+            "POLE":1
+        },
+        "site_type": {
+            "GREEN FIELD": 3,
+            "ROOF TOP": 1,
         },
     }
 
@@ -1116,7 +1122,7 @@ if __name__ == "__main__":
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
-    sitelist["site_type"] = sitelist["site_type"].fillna("unknown").str.lower()
+    sitelist["site_type"] = sitelist["site_type"].fillna("unknown")
     sitelist['remark_streetview'] = sitelist['remark_streetview'].fillna('Space Available')
     sitelist['competitor_company'] = sitelist['competitor_company'].astype(str)
     sitelist['competitor_ids'] = sitelist['competitor_ids'].astype(str)
