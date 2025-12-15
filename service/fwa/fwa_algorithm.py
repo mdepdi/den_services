@@ -1113,7 +1113,7 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA v3 19k"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA v4 14k"
     os.makedirs(export_dir, exist_ok=True)
 
     sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\TBG Sitelist_Compile_FWA_Dec 2025_v3.xlsx"
