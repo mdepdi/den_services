@@ -842,6 +842,7 @@ def parallel_region(
             site_keep, site_drop = clean_sites_overlaps(
                 region_calc,
                 max_distance=distance_fwa,
+                score_map=score_map
             )
             print(
                 f"🌏 Region {region} | Accepted Sites: {len(site_keep):,}, "
@@ -1080,17 +1081,18 @@ if __name__ == "__main__":
     distance_fwa = 500
     threshold = 800
     threshold_sector = 250
-    max_workers = 8
+    max_workers = 16
 
     score_map = {
         "company": {
             "TBG":5,
             "PKP": 2,
-            "PKP (Alfa)": 2,
+            "PKP (ALFA)": 2,
             "GIHON": 2,
+            "__default__":1
         },
         "tower_type": {
-            "SST": 3,
+            "SST": 5,
             "MONO_POLE": 1,
             "MONOPOLE": 1,
             "POLE":1
@@ -1114,22 +1116,26 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA v4 14k"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA 39k"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\TBG Sitelist_Compile_FWA_Dec 2025_v3.xlsx"
+    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\Sitelist 39k.xlsx"
     sitelist = read_gdf(sitelist_path, sheet_name="Sitelist")
     sitelist = sanitize_header(sitelist, lowercase=True)
+    sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
+    sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
     sitelist["site_type"] = sitelist["site_type"].fillna("unknown")
-    sitelist['remark_streetview'] = sitelist['remark_streetview'].fillna('Space Available')
-    sitelist['competitor_company'] = sitelist['competitor_company'].astype(str)
-    sitelist['competitor_ids'] = sitelist['competitor_ids'].astype(str)
+
+    # FILTER
+    # sitelist['remark_streetview'] = sitelist['remark_streetview'].fillna('Space Available')
+    # sitelist['competitor_company'] = sitelist['competitor_company'].astype(str)
+    # sitelist['competitor_ids'] = sitelist['competitor_ids'].astype(str)
     # sitelist = sitelist[["site_id", "long", "lat", "site_type",  "geometry"]]
+    # sitelist = sitelist[(sitelist['batch_list'].str.lower().str.contains('ongoing')) & (~(sitelist['remark_streetview'].str.lower().str.contains("no space")))].copy()
     
-    sitelist = sitelist[(sitelist['batch_list'].str.lower().str.contains('ongoing')) & (~(sitelist['remark_streetview'].str.lower().str.contains("no space")))].copy()
     sitelist = sitelist.drop_duplicates("site_id").reset_index(drop=True)
     print(f"ℹ️ Total Sitelist to Process: {len(sitelist):,}")
 
