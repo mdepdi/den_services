@@ -148,7 +148,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped = gpd.sjoin_nearest(
         point_topology,
         sitelist_gdf[['site_id', 'site_name', 'region', 'centroid', 'geometry']],
-        max_distance=2000,
+        max_distance=500,
         distance_col='dist_to_site'
     ).drop(columns='index_right')
 
@@ -218,6 +218,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
 
     site_data = topology_algo(sitelist_gdf, line_gdf, vendor, program)
     site_data = sanitize_header(site_data)
+    print(f"ℹ️ Total Sitelist Mapped Topology: {len(site_data):,} points")
     # site_data = validate_fixroute(site_data)
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -241,10 +242,10 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Topology\Banten_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Topology\Banten Topology 12122025.kml"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\Export"
-    program = "Trial Topology"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\FWA 14k Design\Sitelist 10k.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\FWA 14k Design\Topology 37k.parquet"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\FWA 14k Design\Export\500m"
+    program = "Design 14k Surge"
     boq = False
 
     date_today = datetime.now().strftime("%Y%m%d")
