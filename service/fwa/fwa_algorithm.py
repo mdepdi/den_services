@@ -591,7 +591,7 @@ def clean_sectors_overlaps(
     sectors: gpd.GeoDataFrame,
     buildings: gpd.GeoDataFrame,
     accepted_list: list,
-    sector_total: int = 3,
+    score_map: dict,
     tolerance: float = 10.0,
     **_,
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -619,6 +619,8 @@ def clean_sectors_overlaps(
     sectors = sectors.to_crs(3857).reset_index(drop=True)
     buildings = buildings.to_crs(3857).reset_index(drop=True)
     site_data = site_data.to_crs(3857).reset_index(drop=True)
+    score_keys = ["site_id"] + [key for key in list(score_map.keys()) if key not in sectors.columns]
+    sectors = sectors.merge(site_data[score_keys], on="site_id", how="inner")
 
     # -------------------------
     # 1) Protected flag
@@ -734,13 +736,13 @@ def clean_sectors_overlaps(
     dropped_idx: set[int] = set()
 
     def sector_row_score(row: pd.Series) -> tuple:
-        return (
-            int(row["__protected"]),
-            int(row["__sst"]),
-            int(row["__sector_index"]),  # 3 > 2 > 1 (higher index wins)
-            float(row["hp_site"]),
-            float(row["total_homepass"]),
+        site_score = compute_priority_score(
+            row,
+            score_map=score_map,
+            numeric_cols={"hp_site": 1, "total_homepass" : 1},
         )
+        sector_score = (int(row['__protected']), *site_score)
+        return sector_score
 
     for i, j in conflict_pairs:
         if i in dropped_idx or j in dropped_idx:
@@ -766,8 +768,8 @@ def clean_sectors_overlaps(
     dropped = dropped.reset_index(drop=True)
 
     # clean up helper column not needed outside
-    accepted = accepted.drop(columns="__sector_index", errors="ignore")
-    dropped = dropped.drop(columns="__sector_index", errors="ignore")
+    # accepted = accepted.drop(columns="__sector_index", errors="ignore")
+    # dropped = dropped.drop(columns="__sector_index", errors="ignore")
 
     # -------------------------
     # 6) Unique building assignment
@@ -1087,7 +1089,7 @@ if __name__ == "__main__":
     distance_fwa = 500
     threshold = 800
     threshold_sector = 250
-    max_workers = 16
+    max_workers = 8
 
     score_map = {
         "company": {
@@ -1125,27 +1127,20 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA 39k V2\Alfamart Added"
+    export_dir = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\PKP Alfamart\Alfamart Infill Outside Competitor and TBG\FWA Potential"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"Z:\04. FWA NOP\Surge\Assessment\Asessment 39k Sites\FWA 39k v2\Alfamart Added\Alfamart Added.xlsx"
+    sitelist_path = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\PKP Alfamart\Alfamart Infill Outside Competitor and TBG\Potential Add PKP Alfamart.xlsx"
     sitelist = read_gdf(sitelist_path)
     sitelist = sanitize_header(sitelist, lowercase=True)
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
-    sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
+    # sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
     sitelist["site_type"] = sitelist["site_type"].fillna("unknown")
-    sitelist["tower_type"] = sitelist["tower_type"].fillna("unknown")
+    # sitelist["tower_type"] = sitelist["tower_type"].fillna("unknown")
 
-    # FILTER
-    # sitelist['remark_streetview'] = sitelist['remark_streetview'].fillna('Space Available')
-    # sitelist['competitor_company'] = sitelist['competitor_company'].astype(str)
-    # sitelist['competitor_ids'] = sitelist['competitor_ids'].astype(str)
-    # sitelist = sitelist[["site_id", "long", "lat", "site_type",  "geometry"]]
-    # sitelist = sitelist[(sitelist['batch_list'].str.lower().str.contains('ongoing')) & (~(sitelist['remark_streetview'].str.lower().str.contains("no space")))].copy()
-    
     sitelist = sitelist.drop_duplicates("site_id").reset_index(drop=True)
     print(f"ℹ️ Total Sitelist to Process: {len(sitelist):,}")
 
