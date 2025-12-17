@@ -446,9 +446,9 @@ def generate_sector(center, buffer_distance: float,
         sectors.append(
             {
                 "geometry": full_buffer.intersection(poly),
-                "azimuth": (start + end) / 2,
+                "azimuth": ((start + end) / 2) - 360 if ((start + end) / 2) >=360 else ((start + end) / 2),
                 "azimuth_start": start,
-                "azimuth_end": end,
+                "azimuth_end": end - 360 if end >=360 else end,
             }
         )
 
@@ -881,7 +881,7 @@ def parallel_region(
                 buildings=buildings,
                 accepted_list=list(accepted_list),
                 sector_total=360 // sector_group,
-                tolerance=50.0,
+                tolerance=10.0,
                 score_map=score_map
             )
         else:
@@ -894,10 +894,16 @@ def parallel_region(
 
         # 6) Aggregate homepass class to sector level
         accepted = set(sectors_accept['sector_id'].astype(str))
+        accepted_ids = set(sectors_accept['site_id'].astype(str))
         sectors['sector_note'] = np.where(
             sectors["sector_id"].astype(str).isin(accepted),
             "Accepted Sector",
             "Dropped Sector",
+        )
+        region_calc['note'] = np.where(
+            region_calc["site_id"].astype(str).isin(accepted_ids),
+            "Accepted",
+            "Dropped",
         )
         total_hp_sector = (building_join.groupby("sector_id").size().rename("total_homepass"))
         sectors["total_homepass"] = (sectors["sector_id"].map(total_hp_sector).fillna(0).astype(int))
@@ -1095,11 +1101,14 @@ if __name__ == "__main__":
             "SST": 5,
             "MONO_POLE": 1,
             "MONOPOLE": 1,
-            "POLE":1
+            "POLE":1,
+            "__default__":1
+
         },
         "site_type": {
             "GREEN FIELD": 3,
             "ROOF TOP": 1,
+            "__default__":1
         },
     }
 
@@ -1116,11 +1125,11 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA 39k"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\FWA 39k V2\Alfamart Added"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 2\Alfa Store Identification\Sitelist 39k.xlsx"
-    sitelist = read_gdf(sitelist_path, sheet_name="Sitelist")
+    sitelist_path = r"Z:\04. FWA NOP\Surge\Assessment\Asessment 39k Sites\FWA 39k v2\Alfamart Added\Alfamart Added.xlsx"
+    sitelist = read_gdf(sitelist_path)
     sitelist = sanitize_header(sitelist, lowercase=True)
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
     sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
@@ -1128,6 +1137,7 @@ if __name__ == "__main__":
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
     sitelist["site_type"] = sitelist["site_type"].fillna("unknown")
+    sitelist["tower_type"] = sitelist["tower_type"].fillna("unknown")
 
     # FILTER
     # sitelist['remark_streetview'] = sitelist['remark_streetview'].fillna('Space Available')
