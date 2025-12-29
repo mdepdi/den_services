@@ -63,7 +63,53 @@ def point_coordinates(gdf):
     else:
         # Return empty GeoDataFrame with same structure
         return gpd.GeoDataFrame(columns=['x', 'y', 'geometry'], geometry='geometry', crs=gdf.crs)
+
+def explode_polygons(polygons_gdf: gpd.GeoDataFrame):
+    from shapely.geometry import Point, LineString
+
+    for geom_type in polygons_gdf.geom_type:
+        if geom_type not in ['Polygon', 'MultiPolygon']:
+            raise ValueError(f"Invalid file format {geom_type}")
     
+    segment = []
+    for idx, row in polygons_gdf.iterrows():
+        pol = row.geometry
+        metadata = {k:v for k, v in row.items() if k != 'geometry'}
+        bound = pol.boundary
+        geom_type = bound.geom_type
+
+        if geom_type == "MultiLineString":
+            geoms = list(bound.geoms)
+            for line in geoms:
+                coords = [(x, y) for x, y, *_ in line.coords]
+                for i in range(len(coords) - 1):
+                    start = coords[i]
+                    end = coords[i + 1]
+                    line = LineString([start, end])
+                    row_segment = {
+                        **metadata,
+                        'geometry': line
+                    }
+                    segment.append(row_segment)
+        elif geom_type == "LineString":
+            coords = [(x, y) for x, y, *_ in bound.coords]
+            for i in range(len(coords) - 1):
+                start = coords[i]
+                end = coords[i + 1]
+                line = LineString([start, end])
+                row_segment = {
+                    **metadata,
+                    'geometry': line
+                }
+                segment.append(row_segment)
+        else:
+            continue
+    segment = pd.DataFrame(segment)
+    segment_gdf = gpd.GeoDataFrame(segment, geometry='geometry', crs=polygons_gdf.crs)
+    segment_gdf['length'] = segment_gdf.geometry.to_crs(epsg=3857).length
+    print(f"✅ Polygons exploded from {len(polygons_gdf):,} rows to {len(segment_gdf):,} rows.")
+    return segment_gdf
+
 def identify_centerline(line_data, tolerance=0.5):
     line_data = line_data.explode(ignore_index=True)
     line_data = line_data.to_crs(epsg=3857)

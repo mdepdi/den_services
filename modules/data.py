@@ -131,7 +131,7 @@ def retrieve_building(
 
     return city_building
 
-def validate_longlat(df, lon_col="long", lat_col="lat"):
+def validate_longlat(df:pd.DataFrame, lon_col="long", lat_col="lat"):
     # INDONESIA
     LON_MIN, LON_MAX = 94, 142
     LAT_MIN, LAT_MAX = -12, 8
@@ -161,12 +161,10 @@ def validate_longlat(df, lon_col="long", lat_col="lat"):
     n_valid = valid_mask.sum()
     n_swapped = swapped_mask.sum()
     n_invalid = invalid_mask.sum()
-
     print(f"✅ Coord Valid      : {n_valid:,}")
-    print(f"⚠️ Coord Swapped    : {n_swapped:,}")
-    print(f"❌ Coord Invalid    : {n_invalid:,}")
 
     if n_swapped > 0:
+        print(f"⚠️ Coord Swapped    : {n_swapped:,}")
         print("🔁 Fix Swapped")
         tmp_lon = df.loc[swapped_mask, lon_col].copy()
         df.loc[swapped_mask, lon_col] = df.loc[swapped_mask, lat_col]
@@ -175,11 +173,13 @@ def validate_longlat(df, lon_col="long", lat_col="lat"):
     # kalau ada yang invalid, raise error biar dicek manual
     if n_invalid > 0:
         bad_rows = df[invalid_mask].head()
-        raise ValueError(
+        print(f"❌ Coord Invalid    : {n_invalid:,}")
+        print(
             f"Found {n_invalid} invalid coordinate rows (outside Indonesia bbox). "
             f"Sample:\n{bad_rows[[lon_col, lat_col]].to_string(index=False)}"
         )
-
+        df = df[~invalid_mask]
+        df = df.reset_index(drop=True)
     return df
 
 def read_gdf(file: str = None, **kwargs):
@@ -200,10 +200,13 @@ def read_gdf(file: str = None, **kwargs):
                     gdf = gpd.read_file(filename, driver="MapInfo File")
             elif extension == "xlsx":
                 crs = kwargs.get("crs", "EPSG:4326")
+                long_col = kwargs.get("long_col", "long")
+                lat_col = kwargs.get("lat_col", "lat")
                 sheet_name = kwargs.get("sheet_name", 0)
-                df = pd.read_excel(filename, sheet_name=sheet_name)
-                long_col = find_best_match("long", df.columns.tolist(), 0.6)
-                lat_col = find_best_match("lat", df.columns.tolist(), 0.6)
+                header = kwargs.get("header", 0)
+                df = pd.read_excel(filename, sheet_name=sheet_name, header=header)
+                long_col = find_best_match(long_col, df.columns.tolist(), 0.6)
+                lat_col = find_best_match(lat_col, df.columns.tolist(), 0.6)
                 try:
                     long_col = long_col[0]
                     lat_col = lat_col[0]
@@ -223,9 +226,13 @@ def read_gdf(file: str = None, **kwargs):
                         raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
             elif extension == "csv":
                 crs = kwargs.get("crs", "EPSG:4326")
+                long_col = kwargs.get("long_col", "long")
+                lat_col = kwargs.get("lat_col", "lat")
+                header = kwargs.get("header", 0)
+
                 df = pd.read_csv(filename)
-                long_col = find_best_match("long", df.columns.tolist())
-                lat_col = find_best_match("lat", df.columns.tolist())
+                long_col = find_best_match(long_col, df.columns.tolist())
+                lat_col = find_best_match(lat_col, df.columns.tolist())
                 try:
                     long_col = long_col[0]
                     lat_col = lat_col[0]

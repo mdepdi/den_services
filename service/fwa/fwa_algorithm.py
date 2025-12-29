@@ -854,8 +854,8 @@ def parallel_region(
         accepted_list = set(site_keep["site_id"].astype(str))
         region_calc["note"] = np.where(
             region_calc["site_id"].astype(str).isin(accepted_list),
-            "Accepted",
-            "Dropped",
+            "Main Selected",
+            "Overlap with Others",
         )
         region_calc['hp_site'] = region_calc['total_homepass']
         
@@ -904,8 +904,8 @@ def parallel_region(
         )
         region_calc['note'] = np.where(
             region_calc["site_id"].astype(str).isin(accepted_ids),
-            "Accepted",
-            "Dropped",
+            "Main Selected",
+            "Overlap with Others",
         )
         total_hp_sector = (building_join.groupby("sector_id").size().rename("total_homepass"))
         sectors["total_homepass"] = (sectors["sector_id"].map(total_hp_sector).fillna(0).astype(int))
