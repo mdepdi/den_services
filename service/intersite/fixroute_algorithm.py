@@ -313,7 +313,8 @@ def main_fixroute(
         if task_celery:
             task_celery.update_state(state="PROGRESS", meta={"status": "Starting Parallel Fix Route"})
         updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, spof_threshold=spof_threshold, task_celery=task_celery, sep=sep)
-
+        updated_routes['name'] = updated_routes['near_end'] + sep + updated_routes['far_end']
+        
     if not updated_points.empty:
         logger.info(f"ℹ️ Total updated points: {len(updated_points):,}")
         updated_points.to_parquet(points_path)

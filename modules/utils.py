@@ -1,8 +1,18 @@
+import sys
 import pandas as pd
 import geopandas as gpd
 import networkx as nx
 from shapely.geometry import MultiLineString, LineString
 from shapely.ops import linemerge
+from tqdm import tqdm
+
+sys.path.append(r"D:\JACOBS\SERVICE\API")
+
+from core.config import settings
+
+MAINDATA_DIR = settings.MAINDATA_DIR
+DATA_DIR = settings.DATA_DIR
+EXPORT_DIR = settings.EXPORT_DIR
 
 def spof_detection(
     paths_gdf: gpd.GeoDataFrame,
@@ -474,3 +484,56 @@ def auto_group(data_gdf:gpd.GeoDataFrame, distance=25000):
     print(f"ℹ️ Total Group generated: {len(groups)}")
 
     return groups
+
+def fiber_utilization(data_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    target_fiber = gpd.read_parquet(f"{MAINDATA_DIR}/06. FO TBG/Compile FO Route Only June 2025/FO TBG Only_01062025.parquet")
+    target_fiber = target_fiber.to_crs(epsg=3857)
+    data_gdf = data_gdf.to_crs(epsg=3857)
+
+    target_fiber.columns = target_fiber.columns.str.lower()
+    target_fiber = target_fiber[['name', 'remark', 'operator', 'geometry']]
+    target_fiber = target_fiber.rename(columns={'name':'fiber'})
+    target_fiber['geometry']  = target_fiber['geometry'].buffer(20)
+    
+    data_gdf = data_gdf.reset_index(drop=True)
+    data_gdf['num'] = data_gdf.index + 1
+
+    existing = []
+    new = []
+    ringlist = data_gdf['ring_name'].unique().tolist()
+    for num, ring in tqdm(enumerate(ringlist), total=len(ringlist), desc=f'Fiber Utilization Analysis'):
+        ring_data = data_gdf[data_gdf['ring_name'] == ring].reset_index(drop=True)
+        if 'fo_note' in ring_data.columns:
+            ring_data.drop(columns='fo_note')
+
+        fo_intersects = gpd.overlay(ring_data, target_fiber[['fiber', 'geometry']], how='intersection')
+        fo_not_intersects = gpd.overlay(ring_data, target_fiber[['fiber', 'geometry']], how='difference')
+
+        if not fo_intersects.empty:
+            fo_intersects['length'] = fo_intersects.geometry.to_crs(epsg=3857).length
+            fo_intersects = fo_intersects.sort_values('length', ascending=False)
+            fo_intersects = fo_intersects.dissolve(by='name').reset_index()
+            fo_intersects['length'] = fo_intersects.geometry.to_crs(epsg=3857).length
+
+        if not fo_not_intersects.empty:
+            fo_not_intersects['length'] = fo_not_intersects.geometry.to_crs(epsg=3857).length
+            fo_not_intersects = fo_not_intersects.sort_values('length', ascending=False)
+            fo_not_intersects = fo_not_intersects.dissolve(by='name').reset_index()
+            fo_not_intersects['length'] = fo_not_intersects.geometry.to_crs(epsg=3857).length
+
+        existing.append(fo_intersects)
+        new.append(fo_not_intersects)
+
+    existing = pd.concat(existing, ignore_index=True)
+    existing_gdf = gpd.GeoDataFrame(existing, geometry='geometry')
+    existing_gdf['fo_note'] = "cable_existing"
+
+    new = pd.concat(new, ignore_index=True)
+    new_gdf = gpd.GeoDataFrame(new, geometry='geometry')
+    new_gdf['fo_note'] = "cable_new"
+
+    compiled = pd.concat([existing_gdf, new_gdf])
+    compiled = gpd.GeoDataFrame(compiled, geometry='geometry')
+    compiled = compiled.sort_values('ring_name')
+
+    return compiled
