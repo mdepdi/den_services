@@ -877,7 +877,7 @@ def parallel_region(
 
         # 5) Sector overlap cleaning + building assignment
         if clean_overlap:
-            sectors_accept, sectors_dropped, building_join = clean_sectors_overlaps(
+            sectors_accept, sectors_dropped, _ = clean_sectors_overlaps(
                 site_data=region_calc,
                 sectors=sectors,
                 buildings=buildings,
@@ -886,6 +886,12 @@ def parallel_region(
                 tolerance=10.0,
                 score_map=score_map
             )
+            building_join = gpd.sjoin(
+                buildings,
+                sectors[["geometry", "site_id", "sector_id"]],
+                how="inner",
+                predicate="intersects",
+            ).drop(columns="index_right", errors="ignore")
         else:
             building_join = gpd.sjoin(
                 buildings,
@@ -1088,8 +1094,8 @@ if __name__ == "__main__":
     sector_group = 120
     distance_fwa = 500
     threshold = 800
-    threshold_sector = 250
-    max_workers = 8
+    threshold_sector = 300
+    max_workers = 16
 
     score_map = {
         "company": {
@@ -1098,6 +1104,10 @@ if __name__ == "__main__":
             "PKP (ALFA)": 2,
             "GIHON": 2,
             "__default__":1
+        },
+        "remark_sitelist": {
+            "Main Selected": 10,
+            "Overlaping with Others": 1,
         },
         "tower_type": {
             "SST": 5,
@@ -1109,9 +1119,17 @@ if __name__ == "__main__":
         },
         "site_type": {
             "GREEN FIELD": 3,
+            "GREENFIELD": 3,
             "ROOF TOP": 1,
             "__default__":1
         },
+        "remark_data": {
+            "Sitelist 37k": 3,
+            "STIP TBG 2025": 2,
+            "STIP PKP 2025": 2,
+            "Plan B2S (FWA)": 2,
+            "__default__":1
+        }
     }
 
     # SECTOR_SCORE_MAP = {
@@ -1127,14 +1145,14 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\PKP Alfamart\Alfamart Infill Outside Competitor and TBG\FWA Potential"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 3\Surge SItelist 40k\FWA_40k_v10"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\PKP Alfamart\Alfamart Infill Outside Competitor and TBG\Potential Add PKP Alfamart.xlsx"
-    sitelist = read_gdf(sitelist_path)
+    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 3\Surge SItelist 40k\Sitelist FWA_40k_v10_Site Only.xlsx"
+    sitelist = read_gdf(sitelist_path, sheet_name='Sitelist')
     sitelist = sanitize_header(sitelist, lowercase=True)
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
-    # sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
+    sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
