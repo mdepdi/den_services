@@ -490,7 +490,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
     branch_geom_map = {bid: geom for bid, geom in zip(branch["branch_id"], branch.geometry)}
 
     # Assign OTB and ODP using maps
-    points["otb"] = points["geometry"]
+    points["otb"] = points.geometry.to_wkt()
     points["odp"] = points["turn_id"].map(turn_geom_map)
 
     # Fallback & branch-based ODP adjustments
