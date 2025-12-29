@@ -490,7 +490,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
     branch_geom_map = {bid: geom for bid, geom in zip(branch["branch_id"], branch.geometry)}
 
     # Assign OTB and ODP using maps
-    points["otb"] = points["node_id"].map(node_geom_map)
+    points["otb"] = points["geometry"]
     points["odp"] = points["turn_id"].map(turn_geom_map)
 
     # Fallback & branch-based ODP adjustments
@@ -503,8 +503,8 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
         branch_ratio = row.get("turn_ratio", 1.0)
 
         # -- No nearest turn (too far) -> use OTB as ODP if available
-        if dist_turn > 500 and pd.notna(row["otb"]):
-            points.at[idx, "odp"] = row["otb"]
+        if dist_turn > 500 and pd.notna(node_id):
+            points.at[idx, "odp"] = node_geom_map[node_id]
 
         # -- Nearest branch if exist and ratio < 0.5
         if dist_branch > 0 and branch_ratio < 0.5 and pd.notna(branch_id):

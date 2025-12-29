@@ -90,7 +90,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
     for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
-
+        ring_name = row.get("ring_name", None)
         if geom.geom_type == 'MultiLineString':
             merged = linemerge(geom)
             if merged.geom_type == "MultiLineString":
@@ -105,7 +105,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
                         point_topology.append({
                             'ring_id': idx,
-                            'ring_name': f"{vendor}-{program}-{idx + 1}",
+                            'ring_name': ring_name if ring_name is not None else f"{vendor}-{program}-{idx + 1}",
                             'num': num,
                             'site_type': site_type,
                             'flag': flag,
@@ -128,7 +128,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
             point_topology.append({
                 'ring_id': idx,
-                'ring_name': f"{vendor}-{program}-{idx + 1}",
+                'ring_name': ring_name if ring_name is not None else f"{vendor}-{program}-{idx + 1}",
                 'num': num,
                 'site_type': site_type,
                 'flag': flag,
@@ -213,6 +213,11 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
 
     sitelist_gdf = validate_topology(excel_path)
     line_gdf = read_gdf(line_file, geom_type='line')
+    if "name" in line_gdf.columns:
+        connection = line_gdf[line_gdf['name'].str.lower().str.contains('connection')]
+        if not connection.empty and "folders" in connection.columns:
+            line_gdf['ring_name'] = line_gdf['folders'].str.split(";").str[-1]
+
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
 
@@ -242,10 +247,11 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\FWA 14k Design\Sitelist 10k.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\FWA 14k Design\Topology 37k.parquet"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\FWA 14k Design\Export\500m"
-    program = "Design 14k Surge"
+    excel_file = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\Sitelist 40k Choosen.xlsx"
+    # excel_file = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 37k\Sitelist 39k Prioritize Alfamart.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 37k\Topology 37k.parquet"
+    export_dir = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\40k Sitelist Choosen Topology V3"
+    program = "FWA Site v2 40k"
     boq = False
 
     date_today = datetime.now().strftime("%Y%m%d")
