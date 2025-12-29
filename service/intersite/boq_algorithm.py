@@ -687,6 +687,12 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
 
 def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, **kwargs):
     from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    if "index_right" in points_gdf.columns:
+        points_gdf = points_gdf.drop(columns="index_right")
+    if "index_right" in lines_gdf.columns:
+        lines_gdf = lines_gdf.drop(columns="index_right")
+        
     ringlist = set(points_gdf['ring_name'])
     task_celery = kwargs.get("task_celery", False)
     sep = kwargs.get("sep", "-")
@@ -1402,6 +1408,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
     start_time = time.time()
     points_boq, lines_boq = parallel_boq(points, lines, sep=sep, task_celery=task_celery)
+
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir, sep=sep)
     end_time = time.time()
