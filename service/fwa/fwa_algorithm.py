@@ -123,19 +123,18 @@ def retrieve_building(hex_list: list[str],
                 data["geometry"] = data.geometry.centroid
 
             if aspect_ratio and "asp_ratio" in data.columns:
-                data = data[data["asp_ratio"] > parameters["aspect_ratio_value"]]
+                data = data[data["asp_ratio"] >= parameters["aspect_ratio_value"]]
 
             if area_building and "area_in_meters" in data.columns:
                 amin = parameters["area_building_value"]["min"]
                 amax = parameters["area_building_value"]["max"]
                 data = data[
-                    (data["area_in_meters"] > amin) &
-                    (data["area_in_meters"] < amax)
+                    (data["area_in_meters"] >= amin) &
+                    (data["area_in_meters"] <= amax)
                 ]
 
             if one_unit and "one_unit" in data.columns:
                 data = data[data["one_unit"] == 1]
-
             return data if not data.empty else None
 
         except Exception:

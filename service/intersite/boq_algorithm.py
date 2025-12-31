@@ -13,6 +13,8 @@ from shapely.strtree import STRtree
 from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points
 from shapely.ops import linemerge
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 from modules.kml import export_kml, sanitize_kml, validate_kmz_design
 from modules.table import excel_styler
 from modules.utils import auto_group
@@ -399,7 +401,7 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):
     return lines_gdf
 
 
-def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-"):
+def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-", operator:str=None):
     import shapely
     from shapely.ops import split, snap, linemerge
     from shapely.geometry import LineString
@@ -415,6 +417,12 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
     fo_route = fo_route.rename(columns={"name": "fiber"})
+
+    # NORMALIZE OPERATOR
+    operator = operator.lower().strip()
+    valid_operator = ['ioh', 'tsel', 'xl', 'surge']
+    if operator not in valid_operator:
+        raise ValueError(f"Invalid operator value. Should be {(",").join(valid_operator)} instead of '{operator}'.")
 
     # =============================
     # PREPARE INPUT DATA
@@ -434,7 +442,6 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
         ring_name = "Unknown Ring"
 
     logger.info(f"🌏 {ring_name} BOQ running ...")
-
     lines["id_line"] = lines.index + 1
 
     # =============================
@@ -484,25 +491,26 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
     points["dist_turn"] = points["dist_turn"].fillna(-1)
     points["dist_branch"] = points["dist_branch"].fillna(-1)
 
-    # mapping dictionaries (no .values[0] anymore)
     node_geom_map = {nid: geom.wkt for nid, geom in zip(nodes["node_id"], nodes.geometry)}
     turn_geom_map = {tid: geom.wkt for tid, geom in zip(turn_data["turn_id"], turn_data.geometry)}
     branch_geom_map = {bid: geom for bid, geom in zip(branch["branch_id"], branch.geometry)}
 
-    # Assign OTB and ODP using maps
+    # Assign OTB and ODP
     points["otb"] = points.geometry.to_wkt()
     points["odp"] = points["turn_id"].map(turn_geom_map)
+    points["otb_type"] = 24
+    points["odp_type"] = 24
 
-    # Fallback & branch-based ODP adjustments
     for idx, row in points.iterrows():
         node_id = row["node_id"]
         turn_id = row["turn_id"]
+        site_type = row['site_type']
         dist_turn = row["dist_turn"]
         branch_id = row["branch_id"]
         dist_branch = row["dist_branch"]
         branch_ratio = row.get("turn_ratio", 1.0)
 
-        # -- No nearest turn (too far) -> use OTB as ODP if available
+        # -- No nearest turn
         if dist_turn > 500 and pd.notna(node_id):
             points.at[idx, "odp"] = node_geom_map[node_id]
 
@@ -512,10 +520,15 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
             if geom_branch is not None:
                 points.at[idx, "odp"] = geom_branch.wkt
 
+        # IOH Hub Core 48
+        if operator == 'ioh'and ('hub' in str(site_type).lower()):
+            points.at[idx, "odp_type"] = 48
+
     # =============================
     # IDENTIFY ROUTE (ACCESS + BACKBONE)
     # =============================
     points_idx = points.set_index(points["site_id"].astype(str), drop=False)
+    lines["cable_type"] = 24
 
     for idx, row in lines.iterrows():
         line_geom = row.geometry
@@ -559,8 +572,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
         if fe_row is not None:
             fe_type = str(fe_row.get("site_type", "")).lower()
         else:
-            # FE is probably ring name (e.g. 'MMP NUS-NT-MME-0289') -> no access_fe
-            fe_type = "hub"   # so 'hub' logic will skip FE access
+            fe_type = "hub"
 
         odp_ne_wkt = ne_row.get("odp") if ne_row is not None else None
         odp_fe_wkt = fe_row.get("odp") if fe_row is not None else None
@@ -598,7 +610,6 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
         if access_fe:
             backbone = shapely.difference(backbone, access_fe)
         lines.at[idx, "backbone"] = backbone.wkt
-
 
     # =============================
     # IDENTIFY EXISTING FO ROUTES
@@ -681,28 +692,39 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-")
     # CLASSIFY OBSTACLE
     # =============================
     lines = obstacle_detection(lines, sep=sep)
+
+    # Surge Preference: Cross KAI use Core 96
+    if operator == 'surge':
+        points_idx = points.set_index(points["site_id"].astype(str), drop=False)
+        lines_intersected = lines[(lines['obstacle_railway'].notna())].copy()
+        lines.loc[lines.index.isin(lines_intersected.index), 'cable_type'] = 96
+        for idx, row in lines_intersected.iterrows():
+            ne = str(row['near_end'])
+            fe = str(row['far_end'])
+            mask_odp = points['site_id'].astype(str).isin([ne, fe])
+            points.loc[mask_odp, 'odp_type'] = 96
+            
     logger.info(f"🟢 {ring_name} BOQ Processing complete.\n")
     return points, lines
 
 
-def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, **kwargs):
-    from concurrent.futures import ProcessPoolExecutor, as_completed
+def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, operator:str, **kwargs):
+    ringlist = set(points_gdf['ring_name'])
+    task_celery = kwargs.get("task_celery", False)
+    sep = kwargs.get("sep", "-")
 
     if "index_right" in points_gdf.columns:
         points_gdf = points_gdf.drop(columns="index_right")
     if "index_right" in lines_gdf.columns:
         lines_gdf = lines_gdf.drop(columns="index_right")
         
-    ringlist = set(points_gdf['ring_name'])
-    task_celery = kwargs.get("task_celery", False)
-    sep = kwargs.get("sep", "-")
 
     with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {}
         for ring in ringlist:
             points_ring = points_gdf[points_gdf['ring_name'] == ring].copy()
             lines_ring = lines_gdf[lines_gdf['ring_name'] == ring].copy()
-            future = executor.submit(bill_of_quantity, points_ring, lines_ring, sep=sep)
+            future = executor.submit(bill_of_quantity, points_ring, lines_ring, sep=sep, operator=operator)
             futures[future] = ring
         
         points_compiled = []
@@ -939,11 +961,13 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
     device_in_branch = kwargs.get("device_in_branch", "ODP")
 
     # BILL OF QUANTITY
-    backbone = lines_boq[['near_end', 'far_end', 'ring_name', 'backbone', 'geometry']].copy()
+    backbone = lines_boq[['near_end', 'far_end', 'ring_name', 'backbone', 'cable_type', 'geometry']].copy()
     backbone = backbone.dropna(subset=['backbone'])
+    backbone['note'] = backbone
     if not backbone.empty:
         backbone['geometry'] = backbone['backbone'].apply(lambda geom:shapely.from_wkt(geom))
         backbone['name'] = "BB " + backbone['near_end'] + sep + backbone['far_end']
+        backbone['name'] = np.where(backbone['cable_type'] == 96, backbone['name'] + "_FO" + backbone["cable_type"].astype(str) + "C", backbone['name'])
         backbone['geometry'] = backbone['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
         backbone = backbone.drop(columns='backbone')
         backbone = backbone.to_crs(epsg=4326)
@@ -966,21 +990,22 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
         access_fe = access_fe.drop(columns='access_fe')
         access_fe = access_fe.to_crs(epsg=4326)
 
-    odp = points_boq[['site_id', 'ring_name','geometry', 'odp']].copy()
+    odp = points_boq[['site_id', 'ring_name','odp', 'odp_type', 'geometry']].copy()
     odp = odp.dropna(subset=['odp'])
     if not odp.empty:
         odp['geometry'] = odp['odp'].apply(lambda geom:shapely.from_wkt(geom))
         odp['name'] = "ODP " + odp['site_id']
+        odp['name'] = np.where(odp['odp_type'].isin([48, 96]), odp['name'].str.replace("ODP", "ODP_" + odp['odp_type'].astype(str)), odp['name'])
         odp = odp.drop(columns='odp')
         odp = odp.to_crs(epsg=4326)
         odp['long'] = odp.geometry.x
         odp['lat'] = odp.geometry.y
 
-    otb = points_boq[['site_id', 'ring_name','geometry', 'otb']].copy()
+    otb = points_boq[['site_id', 'ring_name','otb', 'otb_type', 'geometry']].copy()
     otb = otb.dropna(subset=['otb'])
     if not otb.empty:
         otb['geometry'] = otb['otb'].apply(lambda geom:shapely.from_wkt(geom))
-        otb['name'] = "OTB " + otb['site_id']
+        otb['name'] = f"{device_in_site} " + otb['site_id']
         otb = otb.drop(columns='otb')
         otb = otb.to_crs(epsg=4326)
         otb['long'] = otb.geometry.x
@@ -1000,7 +1025,6 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
         pole_exist['name'] = pole_exist['near_end'] + sep + pole_exist['far_end'] + "/POLE EXT"
         pole_exist['geometry'] = pole_exist['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
         pole_exist = pole_exist.to_crs(epsg=4326)
-
 
     closure = lines_boq[['near_end', 'far_end', 'ring_name', 'closure', 'geometry']].copy()
     closure = compile_dict(closure, 'closure')
@@ -1368,6 +1392,74 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
     
     return kml_updated
 
+def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, sep="-", operator="XL"):
+    import math
+
+    ring_names = sorted(points_boq['ring_name'].unique().tolist())
+
+    # CALCULATE PIVOT DATA
+    rings_compiled = {}
+    for num, ring_name in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process Excel BOQ'):
+        ring_points = points_boq[points_boq['ring_name'] == ring_name].copy()
+        ring_lines = lines_boq[lines_boq['ring_name'] == ring_name].copy()
+
+        ring_boq = compile_boq(ring_points, ring_lines, sep=sep)
+        odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = ring_boq
+
+        for idx, row in ring_lines.iterrows():
+            prev_idx_ring = ring_lines.loc[idx - 1, 'ring_name']
+            prev_idx_access = ring_lines.loc[idx - 1, 'access_fe']
+            prev_idx_ring = ring_lines.loc[idx - 1, 'ring_name']
+            segment_name = row['name']
+            seg_length = row['geometry'].length
+
+            # Parse Segment
+            seg_backbone = backbone[backbone['name'] == segment_name].copy()
+            seg_access = access_fe[access_fe['name'] == segment_name].copy()
+            seg_fo_exist = fo_exist[fo_exist['name'] == segment_name].copy()
+            seg_pole_exist = pole_exist[pole_exist['name'] == segment_name].copy()
+            seg_otb = otb[otb['name'] == segment_name].copy()
+            seg_odp = odp[odp['name'] == segment_name].copy()
+            seg_closure = closure[closure['name'] == segment_name].copy()
+            seg_obstacle_railway = obstacle_railway[obstacle_railway['name'] == segment_name].copy()
+            seg_obstacle_toll = obstacle_toll[obstacle_toll['name'] == segment_name].copy()
+
+            # Qty Length
+            route_qty = None
+            route_length = seg_length
+            bb_qty = None
+            bb_length = seg_backbone['geometry'].iloc[0].length
+            access_qty = None
+            access_length = seg_access['geometry'].iloc[0].length
+            overlap_qty = None
+            overlap_length = seg_fo_exist['geometry'].iloc[0].length
+            pole_qty = None
+            pole_length = seg_pole_exist['geometry'].iloc[0].length
+
+            # Dummy
+            access_ext_qty = None
+            access_ext_length = 0
+            cable_96 = 0
+            otb_96 = 0
+            cable_24 = 0
+
+            # Qty
+            otb_qty = len(seg_otb)
+            odp_qty = len(seg_odp)
+            closure_qty = len(seg_closure)
+            odp_qty = len(seg_odp)
+            obstacle_toll_qty = len(seg_obstacle_toll)
+            obstacle_railway_qty = len(seg_obstacle_railway)
+
+            # Calculate
+            # PU Permission
+            permission_pu = math.ceil((bb_length + access_length + pole_exist + otb_96))
+            factor = 1.15 if operator == "xl" else 1.1 
+            fo_cable = math.ceil(math.ceil(bb_length + access_length) * factor / 100) * 100
+            total_overlap = overlap_length + access_ext_length if ring_name == prev_idx_ring else overlap_length + access_ext_length
+
+    logger.info(f"✅ Save BOQ Parquet Done.")
+
 def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, sep="-"):
     result_boq = compile_boq(points_boq, lines_boq, sep=sep)
     odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
@@ -1403,15 +1495,16 @@ def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir
         obstacle_railway.to_parquet(os.path.join(export_dir, "Obstacle_Railway_BOQ.parquet"))
     if not obstacle_toll.empty:
         obstacle_toll.to_parquet(os.path.join(export_dir, "Obstacle_Toll_BOQ.parquet"))
-    logger.info(f"✅ Save BOQ Done.")
+    logger.info(f"✅ Save BOQ Parquet Done.")
 
-def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", **kwargs):
+
+def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", operator="ioh", **kwargs):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Not Defined")
     task_celery = kwargs.get("task_celery", False)
 
     start_time = time.time()
-    points_boq, lines_boq = parallel_boq(points, lines, sep=sep, task_celery=task_celery)
+    points_boq, lines_boq = parallel_boq(points, lines, sep=sep, operator=operator, task_celery=task_celery)
 
     # EXPORT
     save_boq(points_boq, lines_boq, export_dir, sep=sep)
@@ -1420,7 +1513,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     
     # EXCEL FILE
     start_time = time.time()
-    excel_boq(points_boq, lines_boq, export_dir, sep=sep)
+    excel_boq(points_boq, lines_boq, export_dir, sep=sep, operator=operator)
     end_time = time.time()
     excel_time = round((end_time-start_time)/60, 2)
 
