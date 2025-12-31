@@ -933,7 +933,11 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
         )
     return topology_gdf
 
-def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str="-"):
+def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str="-", **kwargs):
+
+    device_in_site = kwargs.get("device_in_site", "OTB")
+    device_in_branch = kwargs.get("device_in_branch", "ODP")
+
     # BILL OF QUANTITY
     backbone = lines_boq[['near_end', 'far_end', 'ring_name', 'backbone', 'geometry']].copy()
     backbone = backbone.dropna(subset=['backbone'])
@@ -1075,7 +1079,7 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     route['length'] = route.geometry.to_crs(epsg=3857).length
     route_columns = [ "near_end", "far_end", "geometry", "ring_name", "length"]
     route = route[route_columns].copy()
-    route["name"] = route["near_end"] + "-" + route["far_end"]
+    route["name"] = route["near_end"] + sep + route["far_end"]
 
     # BOQ
     result_boq = compile_boq(points_boq, lines_boq, sep=sep)

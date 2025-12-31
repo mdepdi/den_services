@@ -247,11 +247,10 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\Sitelist 40k Choosen.xlsx"
-    # excel_file = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 37k\Sitelist 39k Prioritize Alfamart.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 37k\Topology 37k.parquet"
-    export_dir = r"D:\JACOBS\PROJECT\CLIENT\SURGE\FWA\Asessment Sitelist 39k\40k Sitelist Choosen Topology V3"
-    program = "FWA Site v2 40k"
+    excel_file = r"C:\Users\202412020172\Downloads\Template_Topology_Based (2).xlsx"
+    line_file = r"C:\Users\202412020172\Downloads\Topology_Sample (3).kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 5\Intersite Algorithm"
+    program = "Trial Fiber Utilization"
     boq = False
 
     date_today = datetime.now().strftime("%Y%m%d")

@@ -30,7 +30,7 @@ from itertools import permutations
 from core.logger import create_logger
 from modules.data import validate_longlat
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
-from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection
+from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection, fiber_utilization
 from modules.table import sanitize_header, detect_week, excel_styler
 from modules.validation import input_newring
 from modules.kml import export_kml, sanitize_kml
@@ -1164,9 +1164,7 @@ def save_kml(
             ring_paths = region_paths[region_paths['ring_name'] == ring].copy()
             topology_ring = topology_region[topology_region['ring_name'] == ring].copy()
             topology_ring = topology_ring.dissolve(by='ring_name').reset_index()
-            topology_ring['geometry'] = topology_ring.geometry.apply(
-                lambda geom: linemerge(geom) if type(geom) == MultiLineString else geom
-            )
+            topology_ring['geometry'] = topology_ring.geometry.apply( lambda geom: linemerge(geom) if type(geom) == MultiLineString else geom)
             topology_ring = topology_ring[['name', 'ring_name', 'region', 'geometry']]
 
             # FO HUB & SITELIST
@@ -1230,10 +1228,19 @@ def save_intersite(
     logger.info("🧩 Exporting supervised outputs (parquet, KML, Excel).")
     topology = create_topology(points)
 
+    # FO UTILIZATION
+    paths = paths.reset_index(drop=True)
+    paths['num'] = paths.index + 1
+    
+    fo_utilization = fiber_utilization(data_gdf=paths)
+    pivot_utilization = fo_utilization.pivot_table(index='name', columns='fo_note', values='length', aggfunc='sum', fill_value=0).reset_index()
+    paths = paths.merge(pivot_utilization, how='left', on='name')
+    paths['cable_existing'] = paths['length'] - paths['cable_new']
+    paths['cable_existing'] = np.where(paths['cable_existing'] < 0, 0, paths['cable_existing'])
+    
     # EXPORT PARQUET
     if not points.empty:
-        points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Points.parquet"), index=False,
-)
+        points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Points.parquet"), index=False,)
         logger.info(f"🏆 Points parquet exported with {len(points):,} records.")
     if not paths.empty:
         paths.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Route.parquet"), index=False,)
@@ -1242,6 +1249,10 @@ def save_intersite(
         topology = topology.sort_values(by=['ring_name']).reset_index(drop=True)
         topology.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Topology.parquet"), index=False)
         logger.info(f"🏆 Topology parquet exported with {len(topology):,} records.")
+    if not fo_utilization.empty:
+        fo_utilization = fo_utilization.sort_values(by=['ring_name']).reset_index(drop=True)
+        fo_utilization.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"FO Utilization.parquet"), index=False)
+        logger.info(f"🏆 FO Utilization parquet exported with {len(fo_utilization):,} records.")
 
     # EXPORT KML
     if not points.empty and not paths.empty and not topology.empty:
@@ -1254,25 +1265,25 @@ def save_intersite(
             sheet_name = "Site Information"
             points_report = points.drop(columns="geometry")
             excel_styler(points_report).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(
-                f"ℹ️ Excel sheet '{sheet_name}' written with {len(points_report):,} records."
-            )
+            logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(points_report):,} records.")
         if not paths.empty:
             sheet_name = "Route Information"
             paths_report = paths.drop(columns="geometry")
             paths_report = paths_report.pivot_table(
-                index=['name', 'near_end', 'far_end', 'ring_name'],
+                index=['name', 'near_end', 'far_end', 'ring_name', 'cable_new', 'cable_existing'],
                 columns='fo_note',
                 values='length',
                 aggfunc='sum',
                 fill_value=0
             ).reset_index()
-            paths_report = paths_report.rename(columns={'merged': 'Length'})
+
+            paths_report = paths_report.rename(columns={'merged': 'length'})
             paths_report = paths_report.merge(
                 paths[['ring_name', 'region', 'program']].drop_duplicates(),
                 on='ring_name',
                 how='left'
             )
+
             paths_report = paths_report.sort_values(by=['ring_name', 'near_end']).reset_index(drop=True)
             paths_report.columns = paths_report.columns.str.replace(' ', '_').str.lower()
             excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
