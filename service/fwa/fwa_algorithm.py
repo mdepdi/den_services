@@ -1095,19 +1095,25 @@ if __name__ == "__main__":
     distance_fwa = 500
     threshold = 800
     threshold_sector = 300
-    max_workers = 16
+    max_workers = 16 
 
     score_map = {
-        "company": {
-            "TBG":5,
-            "PKP": 2,
-            "PKP (ALFA)": 2,
-            "GIHON": 2,
+        "batch_list": {
+            "Batch 1": 10,
+            "Batch 2": 10,
+            "Not Yet": 5,
+            "Non TBG":2,
             "__default__":1
         },
-        "remark_sitelist": {
-            "Main Selected": 10,
-            "Overlaping with Others": 1,
+        "status_sites_2": {
+            "Ready for Integration (RFI)": 10,
+            "Construction in Progress (CIP)": 7,
+            "Ready for Construction (RFC) - Sitac": 5,
+            "Ready for Construction (RFC) - Alfa​": 3,
+            "Ready for Construction (RFC) - Non Alfa": 2,
+            "Non TBG": 1,
+            "Dismantle": 1,
+            "__default__":1
         },
         "tower_type": {
             "SST": 5,
@@ -1115,7 +1121,6 @@ if __name__ == "__main__":
             "MONOPOLE": 1,
             "POLE":1,
             "__default__":1
-
         },
         "site_type": {
             "GREEN FIELD": 3,
@@ -1129,7 +1134,18 @@ if __name__ == "__main__":
             "STIP PKP 2025": 2,
             "Plan B2S (FWA)": 2,
             "__default__":1
-        }
+        },
+        "company": {
+            "TBG":5,
+            "PKP": 2,
+            "PKP (ALFA)": 2,
+            "GIHON": 2,
+            "__default__":1
+        },
+        # "remark_sitelist": {
+        #     "Main Selected": 10,
+        #     "Overlaping with Others": 1,
+        # },
     }
 
     # SECTOR_SCORE_MAP = {
@@ -1145,12 +1161,13 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 3\Surge SItelist 40k\FWA_40k_v10"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 5\FWA Surge 45k Sites\FWA Sectorization 45k v3"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 3\Surge SItelist 40k\Sitelist FWA_40k_v10_Site Only.xlsx"
+    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 5\FWA Surge 45k Sites\Sitelist Only FWA_45k_v3.xlsx"
     sitelist = read_gdf(sitelist_path, sheet_name='Sitelist')
     sitelist = sanitize_header(sitelist, lowercase=True)
+    print(sitelist.columns)
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
     sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)
