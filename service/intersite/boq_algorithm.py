@@ -2,6 +2,7 @@
 # ROUTE EXTRACTOR
 # ===============
 import os
+import sys
 import time
 import geopandas as gpd
 import pandas as pd
@@ -14,6 +15,8 @@ from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points
 from shapely.ops import linemerge
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
+sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from modules.kml import export_kml, sanitize_kml, validate_kmz_design
 from modules.table import excel_styler
@@ -963,7 +966,6 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
     # BILL OF QUANTITY
     backbone = lines_boq[['near_end', 'far_end', 'ring_name', 'backbone', 'cable_type', 'geometry']].copy()
     backbone = backbone.dropna(subset=['backbone'])
-    backbone['note'] = backbone
     if not backbone.empty:
         backbone['geometry'] = backbone['backbone'].apply(lambda geom:shapely.from_wkt(geom))
         backbone['name'] = "BB " + backbone['near_end'] + sep + backbone['far_end']
@@ -992,10 +994,24 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
 
     odp = points_boq[['site_id', 'ring_name','odp', 'odp_type', 'geometry']].copy()
     odp = odp.dropna(subset=['odp'])
+
     if not odp.empty:
-        odp['geometry'] = odp['odp'].apply(lambda geom:shapely.from_wkt(geom))
-        odp['name'] = "ODP " + odp['site_id']
-        odp['name'] = np.where(odp['odp_type'].isin([48, 96]), odp['name'].str.replace("ODP", "ODP_" + odp['odp_type'].astype(str)), odp['name'])
+        odp['geometry'] = odp['odp'].map(shapely.from_wkt)  # faster than apply+lambda
+        odp['name'] = "ODP " + odp['site_id'].astype(str)
+
+        mask_core = odp['odp_type'].isin([48, 96])
+        odp.loc[mask_core, 'name'] = ("ODP_" + odp.loc[mask_core, 'odp_type'].astype(str) + " " + odp.loc[mask_core, 'site_id'].astype(str))
+        odp['ext_note'] = odp['name'].duplicated().astype(int)
+        mask_ext = odp['ext_note'].eq(1)
+        odp.loc[mask_ext, 'name'] = (
+            odp.loc[mask_ext, 'name']
+            .str.replace(
+                r"^(?P<device>ODP|OTB|Closure)(?P<core>_\d{2})? (?P<site_id>\w+)$",
+                r"\g<device>\g<core>_EXT \g<site_id>",
+                regex=True
+            )
+        )
+
         odp = odp.drop(columns='odp')
         odp = odp.to_crs(epsg=4326)
         odp['long'] = odp.geometry.x
@@ -1006,6 +1022,16 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
     if not otb.empty:
         otb['geometry'] = otb['otb'].apply(lambda geom:shapely.from_wkt(geom))
         otb['name'] = f"{device_in_site} " + otb['site_id']
+        otb['ext_note'] = otb['name'].duplicated().astype(int)
+        mask_ext = otb['ext_note'].eq(1)
+        otb.loc[mask_ext, 'name'] = (
+            otb.loc[mask_ext, 'name']
+            .str.replace(
+                r"^(?P<device>ODP|OTB|Closure)(?P<core>_\d{2})? (?P<site_id>\w+)$",
+                r"\g<device>\g<core>_EXT \g<site_id>",
+                regex=True
+            )
+        )
         otb = otb.drop(columns='otb')
         otb = otb.to_crs(epsg=4326)
         otb['long'] = otb.geometry.x
@@ -1032,6 +1058,9 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
     if not closure.empty:
         closure = closure.explode(ignore_index=True)
         closure['name'] = "Closure " + closure['near_end'] + sep + closure['far_end']
+        closure['ext_note'] = np.where(closure[['name', 'geometry']].duplicated(), 1, 0)
+        mask_ext = closure['ext_note'].eq(1)
+        closure.loc[mask_ext, 'name'] = "Closure_EXT " + closure.loc[mask_ext, 'near_end'] + sep + closure.loc[mask_ext, 'far_end']
         closure['long'] = closure.geometry.x
         closure['lat'] = closure.geometry.y
 
@@ -1051,12 +1080,12 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
         obstacle_toll['geometry'] = obstacle_toll['obstacle_toll'].apply(lambda geom:shapely.from_wkt(geom))
         obstacle_toll = obstacle_toll.drop(columns='obstacle_toll')
         obstacle_toll = obstacle_toll.to_crs(epsg=4326)
+        obstacle_toll['name'] = "Obstacle Toll " + obstacle_toll['near_end'] + sep + obstacle_toll['far_end']
         obstacle_toll['long'] = obstacle_toll.geometry.x
         obstacle_toll['lat'] = obstacle_toll.geometry.y
-        obstacle_toll['name'] = "Obstacle Toll " + obstacle_toll['near_end'] + sep + obstacle_toll['far_end']
     return odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll
 
-def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, **kwargs):
+def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, device_in_site:str="OTB", **kwargs):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
     sep = kwargs.get("sep", "-")
@@ -1106,7 +1135,7 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     route["name"] = route["near_end"] + sep + route["far_end"]
 
     # BOQ
-    result_boq = compile_boq(points_boq, lines_boq, sep=sep)
+    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site)
     odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
 
     # SUMMARY
@@ -1130,7 +1159,6 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     hubs = hubs[valid_col]
     sitelist = sitelist[valid_col]
 
-
     sheet_sitelist = pd.concat([hubs, sitelist], join='inner')
     sheet_sitelist = sheet_sitelist.sort_values('ring_name')
     sheet_sitelist = sheet_sitelist.drop_duplicates(['ring_name', 'geometry'])
@@ -1144,7 +1172,7 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
         odp['long'] = odp.geometry.to_crs(epsg=4326).x
         odp['lat'] = odp.geometry.to_crs(epsg=4326).y
 
-    otb['type'] = "OTB"
+    otb['type'] = device_in_site
     otb = otb.to_crs(epsg=4326)
     if not otb.empty and 'geometry' in otb:
         otb['long'] = otb.geometry.to_crs(epsg=4326).x
@@ -1173,25 +1201,21 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     backbone = backbone.to_crs(epsg=4326)
     if not backbone.empty and 'geometry' in backbone:
         backbone['length'] = backbone.geometry.to_crs(epsg=3857).length
-        backbone['name'] = "BB " + backbone["near_end"] + sep + backbone["far_end"]
     
     access_fe['type'] = "Access"
     access_fe = access_fe.to_crs(epsg=4326)
     if not access_fe.empty and 'geometry' in access_fe:
         access_fe['length'] = access_fe.geometry.to_crs(epsg=3857).length
-        access_fe['name'] = "Akses " + access_fe["near_end"] + sep + access_fe["far_end"]
     
     fo_exist['type'] = "FO Existing"
     fo_exist = fo_exist.to_crs(epsg=4326)
     if not fo_exist.empty and 'geometry' in fo_exist:
         fo_exist['length'] = fo_exist.geometry.to_crs(epsg=3857).length
-        fo_exist['name'] = fo_exist["near_end"] + sep + fo_exist["far_end"] + "/" + fo_exist['fo_exist'].astype(str)
     
     pole_exist['type'] = "Pole Existing"
     pole_exist = pole_exist.to_crs(epsg=4326)
     if not pole_exist.empty and 'geometry' in pole_exist:
         pole_exist['length'] = pole_exist.geometry.to_crs(epsg=3857).length
-        pole_exist['name'] = pole_exist["near_end"] + sep + pole_exist["far_end"] + "/POLE EXT"
 
     sheet_routes = pd.concat([route, backbone, access_fe, fo_exist, pole_exist])
     sheet_routes = sheet_routes.sort_values('ring_name')
@@ -1262,13 +1286,14 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
             logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written.")
     logger.info("✅ Save Excel file BOQ Done.")
 
-def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, folder:str, **kwargs):
+def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, boq_data:tuple, folder:str, device_in_site="OTB", **kwargs):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
     sep = kwargs.get("sep", "-")
     
     lines_boq = lines_boq.copy()
     points_boq = points_boq.copy()
+
 
     def safe_get_geometry(site_id):
         match = points_boq.loc[points_boq["site_id"].astype(str).str.strip() == str(site_id), "geometry"]
@@ -1367,8 +1392,8 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
     kml_updated = export_kml(ring_hub, kml_updated, filename, subfolder=f"{folder}/FO Hub", name_col="Site ID", icon="http://maps.google.com/mapfiles/kml/paddle/A.png", size=0.8, popup=True)
     
     # -- BOQ --
-    result_boq = compile_boq(points_boq, lines_boq, sep=sep)
-    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
+    # result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site)
+    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = boq_data
 
     backbone = backbone.to_crs(epsg=4326)
     access_fe = access_fe.to_crs(epsg=4326)
@@ -1392,7 +1417,7 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, f
     
     return kml_updated
 
-def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, sep="-", operator="XL"):
+def excel_boq2(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, sep="-", operator="XL"):
     import math
 
     ring_names = sorted(points_boq['ring_name'].unique().tolist())
@@ -1457,7 +1482,6 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
             factor = 1.15 if operator == "xl" else 1.1 
             fo_cable = math.ceil(math.ceil(bb_length + access_length) * factor / 100) * 100
             total_overlap = overlap_length + access_ext_length if ring_name == prev_idx_ring else overlap_length + access_ext_length
-
     logger.info(f"✅ Save BOQ Parquet Done.")
 
 def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, sep="-"):
@@ -1498,7 +1522,7 @@ def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir
     logger.info(f"✅ Save BOQ Parquet Done.")
 
 
-def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", operator="ioh", **kwargs):
+def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", operator="ioh", device_in_site="OTB", **kwargs):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Not Defined")
     task_celery = kwargs.get("task_celery", False)
@@ -1521,10 +1545,28 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     start_time = time.time()
     ring_names = sorted(points_boq['ring_name'].dropna().unique().tolist())
     output_kmz = os.path.join(export_dir, "BOQ KMZ Design.kmz")
+
+    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site)
+    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
+
     main_kmz = simplekml.Kml()
     for num, ring in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process KMZ BOQ'):
         ring_points = points_boq[points_boq['ring_name'] == ring].copy()
         ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
+        
+        # DATA BOQ
+        ring_odp = odp[odp['ring_name'] == ring].copy()
+        ring_otb = otb[otb['ring_name'] == ring].copy()
+        ring_closure = closure[closure['ring_name'] == ring].copy()
+        ring_backbone = backbone[backbone['ring_name'] == ring].copy()
+        ring_access_fe = access_fe[access_fe['ring_name'] == ring].copy()
+        ring_access_ne = access_ne[access_ne['ring_name'] == ring].copy()
+        ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring].copy()
+        ring_pole_exist = pole_exist[pole_exist['ring_name'] == ring].copy()
+        ring_obstacle_railway = obstacle_railway[obstacle_railway['ring_name'] == ring].copy()
+        ring_obstacle_toll = obstacle_railway[obstacle_railway['ring_name'] == ring].copy()
+        boq_data = (ring_odp, ring_otb, ring_closure, ring_backbone, ring_access_ne, ring_access_fe, ring_fo_exist, ring_pole_exist, ring_obstacle_railway, ring_obstacle_toll)
+
         if 'region' in ring_points.columns:
             region = ring_points['region'].mode()[0]
             folder = f"{region}/{ring}"
@@ -1532,7 +1574,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
             folder = ring
 
         try:
-            main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=folder, vendor=vendor, program=program, sep=sep)
+            main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, boq_data=boq_data, folder=folder, vendor=vendor, program=program, sep=sep)
             if task_celery:
                 task_celery.update_state(
                     state="PROGRESS",
@@ -1555,48 +1597,8 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\BOQ Hasna\03122025 Design New Site XLSmart.kmz"
-    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 3\BOQ Hasna\Export"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 5\Intersite Algorithm\BOQ Excel Generation\BOQ_Design_Sample.kmz"
+    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
+    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 5\Intersite Algorithm\BOQ Excel Generation\Export"
     os.makedirs(export_dir, exist_ok=True)
-    
-    start_time = time.time()
-    points_boq, lines_boq = parallel_boq(points_kmz, lines_kmz)
-
-    # EXPORT
-    save_boq(points_boq, lines_boq, export_dir)
-    end_time = time.time()
-    boq_time = round((end_time-start_time)/60, 2)
-    
-    # EXCEL FILE
-    start_time = time.time()
-    excel_boq(points_boq, lines_boq, export_dir)
-    end_time = time.time()
-    excel_time = round((end_time-start_time)/60, 2)
-
-
-    # KMZ
-    start_time = time.time()
-    ring_names = points_boq['ring_name'].dropna().unique().tolist()
-    output_kmz = os.path.join(export_dir, "BOQ KMZ Design.kmz")
-    main_kmz = simplekml.Kml()
-    for ring in tqdm(ring_names, total=len(ring_names), desc='Process KMZ BOQ'):
-        ring_points = points_boq[points_boq['ring_name'] == ring].copy()  
-        ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
-        if 'region' in ring_points.columns:
-            region = ring_points['region'].mode()[0]
-            folder = f"{region}/{ring}"
-        else:
-            folder = ring
-        main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, folder=folder, vendor='TBG', program="BOQ Method")
-        logger.info(f"🟢 {ring} BOQ KMZ inserted.")
-    sanitize_kml(main_kmz)
-    main_kmz.savekmz(output_kmz)
-    end_time = time.time()
-    kmz_time = round((end_time-start_time)/60,2)
-
-    logger.info(f"✅ All BOQ Process Done.")
-    logger.info(f"ℹ️ Time Consumed:")
-    logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
-    logger.info(f"Excel Result Time   : {excel_time:,} minutes")
-    logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")
+    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep="-", operator="ioh", device_in_site="OTB")
