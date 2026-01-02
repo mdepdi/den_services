@@ -247,10 +247,11 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"C:\Users\202412020172\Downloads\Template_Topology_Based (2).xlsx"
-    line_file = r"C:\Users\202412020172\Downloads\Topology_Sample (3).kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 5\Intersite Algorithm"
-    program = "Trial Fiber Utilization"
+    excel_file = r"D:\JACOBS\TASK\DESEMBER\Week 5\BOQ Algorithm\024843_template_19ed180b17cc459fbdfa3e6b381b0b96.xlsx"
+    line_file = r"D:\JACOBS\TASK\DESEMBER\Week 5\BOQ Algorithm\024843_topology_54195bbcf2f64586ab9ae48a42cef087.parquet"
+    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 5\BOQ Algorithm\Export"
+    program = "Dev BOQ Utilization"
+    sep=";"
     boq = False
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -261,6 +262,7 @@ if __name__ == "__main__":
         excel_path=excel_file,
         line_file=line_file,
         export_dir=export_loc,
+        sep=sep,
         boq=boq,
         program=program
     )
