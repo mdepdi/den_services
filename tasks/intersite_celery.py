@@ -146,13 +146,13 @@ def task_supervised(self, data: dict):
             meta={"status": "Supervised fiberization data processed successfully", "zip_file": zip_filepath},
         )
 
-        # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(site_path):
-                os.remove(site_path)
+        # # CLEAN UP TEMP FILES
+        # try:
+        #     if os.path.exists(site_path):
+        #         os.remove(site_path)
 
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+        # except Exception as cleanup_error:
+        #     print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
 
@@ -227,12 +227,12 @@ def task_unsupervised(self, data: dict):
             meta={"status": "Unsupervised fiberization data processed successfully", "zip_file": zip_filepath},
         )
 
-        # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(site_path):
-                os.remove(site_path)
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+        # # CLEAN UP TEMP FILES
+        # try:
+        #     if os.path.exists(site_path):
+        #         os.remove(site_path)
+        # except Exception as cleanup_error:
+        #     print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
 
@@ -292,12 +292,12 @@ def task_fixroute(self, data: dict):
             meta={"status": "Fix route fiberization data processed successfully", "result": result, "zip_file": zip_filepath},
         )
 
-        # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(template_path):
-                os.remove(template_path)
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+        # # CLEAN UP TEMP FILES
+        # try:
+        #     if os.path.exists(template_path):
+        #         os.remove(template_path)
+        # except Exception as cleanup_error:
+        #     print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
 
@@ -361,13 +361,13 @@ def task_polygon_intersite(self, data: dict):
         )
 
         # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(polygon_path):
-                os.remove(polygon_path)
-            if os.path.exists(excel_path):
-                os.remove(excel_path)
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+        # try:
+        #     if os.path.exists(polygon_path):
+        #         os.remove(polygon_path)
+        #     if os.path.exists(excel_path):
+        #         os.remove(excel_path)
+        # except Exception as cleanup_error:
+        #     print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
 
@@ -431,13 +431,13 @@ def task_topology_intersite(self, data: dict):
         )
 
         # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(excel_path):
-                os.remove(excel_path)
-            if os.path.exists(topology_path):
-                os.remove(topology_path)
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+        # try:
+        #     if os.path.exists(excel_path):
+        #         os.remove(excel_path)
+        #     if os.path.exists(topology_path):
+        #         os.remove(topology_path)
+        # except Exception as cleanup_error:
+        #     print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
 
@@ -502,13 +502,13 @@ def task_boq(self, data: dict):
         )
 
         # CLEAN UP TEMP FILES
-        try:
-            if os.path.exists(points_path):
-                os.remove(points_path)
-            if os.path.exists(lines_path):
-                os.remove(lines_path)
-        except Exception as cleanup_error:
-            print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
+        # try:
+        #     if os.path.exists(points_path):
+        #         os.remove(points_path)
+        #     if os.path.exists(lines_path):
+        #         os.remove(lines_path)
+        # except Exception as cleanup_error:
+        #     print(f"Error during cleanup of temporary files: {str(cleanup_error)}")
             
         return result
     except Exception as e:
