@@ -197,16 +197,15 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
     site_data = sanitize_header(poligonized)
     site_data = supervised_validation(site_data)
 
-    date_today = datetime.now().strftime("%Y%m%d")
-    export_loc = f"{export_dir}/{date_today}"
-    os.makedirs(export_loc, exist_ok=True)
+    design_dir = f"{export_dir}/{method.replace(' ', '_')}"
+    os.makedirs(design_dir, exist_ok=True)
 
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Starting Polygon Based Intersite"})
 
     result = main_supervised(
         site_data=site_data,
-        export_loc=export_loc,
+        export_loc=design_dir,
         program=program,
         vendor=vendor,
         boq=boq,

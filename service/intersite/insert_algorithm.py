@@ -1409,10 +1409,14 @@ def main_insertring(
     logger.info(f"ℹ️ Potential sites to insert: {len(insert_reached):,}")
     logger.info(f"ℹ️ Potential sites to new design: {len(insert_not_reached):,}")
 
+    # INSERT DIR
+    insert_dir = os.path.join(export_dir, "Insert_Ring")
+    os.makedirs(insert_dir, exist_ok=True)
+
     if not insert_reached.empty:
-        insert_reached.to_parquet(os.path.join(export_dir, f"Reached_Points.parquet"))
+        insert_reached.to_parquet(os.path.join(insert_dir, f"Reached_Points.parquet"))
     if not insert_not_reached.empty:
-        insert_not_reached.to_parquet(os.path.join(export_dir, f"Not Reached_Points.parquet"))
+        insert_not_reached.to_parquet(os.path.join(insert_dir, f"Not Reached_Points.parquet"))
 
     insert_reached = insert_reached.to_crs(epsg=3857)
     points_existing = points_existing.to_crs(epsg=3857)
@@ -1424,31 +1428,31 @@ def main_insertring(
         insert_reached['vendor'] = vendor
     
     # PROCESS INSERT RING
-    points_path = os.path.join(export_dir, f"Inserted_Points.parquet")
-    paths_path = os.path.join(export_dir, f"Inserted_Lines.parquet")
-    # if os.path.exists(points_path) and os.path.exists(paths_path):
-    #     updated_points = gpd.read_parquet(points_path)
-    #     updated_paths = gpd.read_parquet(paths_path)
-    #     print(f"✅ Loaded existing processed data from {export_dir}.")
-    # else:
-    updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, sep=sep, task_celery=task_celery)
+    points_path = os.path.join(insert_dir, f"Inserted_Points.parquet")
+    paths_path = os.path.join(insert_dir, f"Inserted_Lines.parquet")
+    if os.path.exists(points_path) and os.path.exists(paths_path):
+        updated_points = gpd.read_parquet(points_path)
+        updated_paths = gpd.read_parquet(paths_path)
+        print(f"✅ Loaded existing processed data from {insert_dir}.")
+    else:
+        updated_points, updated_paths = parallel_insert(insert_reached, lines_existing, points_existing, max_member=max_member, sep=sep, task_celery=task_celery)
 
     if not updated_points.empty:
         updated_points.to_crs(epsg=4326).to_parquet(points_path, index=False)
         print(f"✅ Exported Updated Point Ring with {len(updated_points):,} records.")
     if not updated_paths.empty:
-        updated_paths.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Inserted_Lines.parquet"), index=False)
+        updated_paths.to_crs(epsg=4326).to_parquet(os.path.join(insert_dir, f"Inserted_Lines.parquet"), index=False)
         print(f"✅ Exported Updated Route Fiber with {len(updated_paths):,} records.")
 
     logger.info("🧩 Clean Not Contain New")
     updated_points, updated_paths = mark_insert(updated_points, updated_paths)
 
     logger.info("🧩 Save Design Information")
-    save_intersite(updated_points, updated_paths, export_dir, method)
+    save_intersite(updated_points, updated_paths, insert_dir, method)
 
     if operator == "IOH":
         logger.info("🧩 Save Excel IOH Format")
-        ioh_report(updated_points, updated_paths, export_dir, program=program, vendor=vendor)
+        ioh_report(updated_points, updated_paths, insert_dir, program=program, vendor=vendor)
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":

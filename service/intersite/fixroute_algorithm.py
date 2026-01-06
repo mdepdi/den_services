@@ -1,6 +1,8 @@
 import os
 import sys
 import zipfile
+import shutil
+
 import geopandas as gpd
 import pandas as pd
 import networkx as nx
@@ -238,8 +240,8 @@ def parallel_fixroute(
         logger.info(f"ℹ️ Total new segments collected: {len(all_new_segments):,}")
     else:
         raise ValueError(f"No new segments collected.")
-    return all_new_points, all_new_segments
 
+    return all_new_points, all_new_segments
 
 def validate_fixroute(df: pd.DataFrame):
     df = sanitize_header(df, lowercase=True)
@@ -368,8 +370,9 @@ if __name__ == "__main__":
     zip_filepath = os.path.join(export_dir, zip_filename)
     with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for root, dirs, files in os.walk(export_dir):
+            skip_files = [zip_filename, 'Checkpoint', '.zip']
             for file in files:
-                if file != zip_filename:
+                if file != zip_filename and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_dir)
                     zipf.write(file_path, arcname)

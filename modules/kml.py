@@ -1,6 +1,7 @@
 import simplekml
 import html
 import os
+import re
 import zipfile
 import pandas as pd
 import numpy as np
@@ -265,6 +266,7 @@ def parse_placemark(pm, folder_name, full_path):
 def parse_folder(folder, parent_name=None):
     results = []
     folder_name = folder.find("name").text if folder.find("name") else "Unnamed Folder"
+    folder_name = folder_name.strip()
     full_path = f"{parent_name};{folder_name}" if parent_name else folder_name
 
     # Parse Placemark
@@ -355,6 +357,7 @@ def read_kml(file:str):
 
 
 def validate_kmz_design(filepath:str, sep: str = "-"):
+    
     points_kmz, lines_kmz, _ = read_kml(filepath)
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
@@ -372,19 +375,20 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 8)
     points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
     points_existing['geometry'] = points_existing.geometry.force_2d()
-    points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
+    points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Za-z0-9]{6,});')
     points_existing['region'] = points_existing['region'] if "region" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
     points_existing['program'] = points_existing['program'].fillna("NA")
     points_existing = points_existing.dropna(how='all', axis=1)
 
     # LINES EXISTING
-    lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(" ", "")
+    sep_re = re.escape(sep)
+    lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(fr"^(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)$", fr"\g<near>{sep_re}\g<far>", regex=True)
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
     lines_existing['length'] = lines_existing.geometry.to_crs(epsg=3857).length
     lines_existing['ring_name'] = lines_existing['folders'].str.split(";").str[-2]
-    lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{6,});')
+    lines_existing['program'] = lines_existing['program'] if "program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Za-z0-9]{6,});')
     lines_existing['region'] = lines_existing['region'] if "region" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
     lines_existing['fo_note'] = 'merged'
     lines_existing['program'] = lines_existing['program'].fillna("NA")
@@ -414,8 +418,132 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
 
     if lines_existing.empty:
         raise ValueError(f"Lines data in existing kmz is empty")
-    
+
     print(f"ℹ️ Summary Validated Ring:")
     print(f"ℹ️ Total Points      : {len(points_existing):,}")
     print(f"ℹ️ Total LineString  : {len(points_existing):,}")
     return points_existing, lines_existing
+
+def validate_kmz_ipl(filepath:str, sep: str = "-"):
+    points_kmz, lines_kmz, _ = read_kml(filepath)
+    points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
+    lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
+    points_kmz = sanitize_header(points_kmz)
+    lines_kmz = sanitize_header(lines_kmz)
+    points_data = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
+
+    # POINT DATA
+    points_data['site_id']      = points_data['name'].str.strip().astype(str)
+    points_data['site_name']    = points_data['Site_Name'] if "Site_Name" in points_data.columns else points_data['name']
+    points_data['site_type']    = points_data['folders'].str.split(";").str[-1]
+    points_data['site_type']    = np.where(points_data['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
+    points_data['long']         = round(points_data.geometry.to_crs(epsg=4326).x, 8)
+    points_data['lat']          = round(points_data.geometry.to_crs(epsg=4326).y, 8)
+    points_data['ring_name']    = points_data['folders'].str.split(";").str[-2]
+    points_data['geometry']     = points_data.geometry.force_2d()
+    points_data['program']      = points_data['program'] if "program" in points_data.columns else points_data['folders'].str.extract(r';([A-Za-z0-9]{6,});')
+    points_data['region']       = points_data['region'] if "region" in points_data.columns else points_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    points_data['program']      = points_data['program'].fillna("NA")
+    points_data = points_data.dropna(how='all', axis=1)
+
+    # LINES DATA
+    lines_data['segment']   = lines_data['name'].str.strip().str.replace(fr"^(?P<prefix>\w+\s*)?(?P<near>.+?)\s*{sep}\s*(?P<far>.+?)$", fr"\g<near>{sep}\g<far>", regex=True)
+    lines_data['near_end']  = lines_data['segment'].str.split(sep).str[0]
+    lines_data['far_end']   = lines_data['segment'].str.split(sep).str[-1]
+    lines_data['geometry']  = lines_data.geometry.force_2d()
+    lines_data['length']    = lines_data.geometry.to_crs(epsg=3857).length
+    lines_data['ring_name'] = lines_data['folders'].str.split(";").str[-2]
+    lines_data['program']   = lines_data['program'] if "program" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Za-z0-9]{6,});')
+    lines_data['region']    = lines_data['region'] if "region" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    lines_data['fo_note']   = 'merged'
+    lines_data['program']   = lines_data['program'].fillna("NA")
+    lines_data = lines_data.dropna(how='all', axis=1)
+
+    # COMPILE
+    existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
+    for col in existing_col:
+        if col not in points_data.columns:
+            if col == "region":
+                existing_col.pop(existing_col.index('region'))
+                continue
+            raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
+    points_data = points_data[existing_col]
+
+    existing_col = ['segment', 'name', 'near_end', 'far_end', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
+    for col in existing_col:
+        if col not in lines_data.columns:
+            if col == "region":
+                existing_col.pop(existing_col.index('region'))
+                continue
+            raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")
+    lines_data = lines_data[existing_col]
+
+    if points_data.empty:
+        raise ValueError(f"Point data in existing kmz is empty")
+
+    if lines_data.empty:
+        raise ValueError(f"Lines data in existing kmz is empty")
+    
+    # PARSE FOLDER
+    # Points
+    fo_hub = points_data[points_data['folder_name'].str.lower().str.contains('hub')].copy()
+    sitelist = points_data[points_data['folder_name'].str.lower().str.contains('site')].copy()
+
+    near_set = set(lines_data['near_end'])
+    mask_fhub = fo_hub[fo_hub['site_id'].isin(near_set)].copy()
+    fo_hub['is_first'] = np.where(fo_hub['site_id'].isin(mask_fhub['site_id']), 1, 0)
+    lines_data['is_first'] = np.where(lines_data['near_end'].isin(mask_fhub['site_id']), 1, 0)
+    points_data['is_first'] = np.where((
+        points_data['site_id'].isin(lines_data[lines_data['is_first'] == 1]['near_end']) |
+        points_data['site_id'].isin(lines_data[lines_data['is_first'] == 1]['far_end']), 1, 0
+    ))
+
+    odp = points_data[points_data['folder_name'].str.lower().str.contains('odp')].copy()
+    otb = points_data[points_data['folder_name'].str.lower().str.contains('otb')].copy()
+    closure = points_data[points_data['folder_name'].str.lower().str.contains('closure')].copy()
+
+    # Lines
+    topology = lines_data[lines_data['name'].str.lower().str.strip() == 'connection'].copy()
+    route = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'route'].copy()
+    backbone = lines_data[lines_data['folder_name'].str.lower().str.contains('backbone')].copy()
+    access = lines_data[lines_data['folder_name'].str.lower().str.contains('access')].copy()
+    fo_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'fo existing'].copy()
+    pole_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'pole existing'].copy()
+
+    # Obstacle
+    obstacle = points_data[points_data['folder_name'].str.lower().str.contains('obstacle')].copy()
+    obstacle['obstacle_type'] = np.select(
+        [
+            obstacle['name'].str.lower().str.contains('rail|kai'),
+            obstacle['name'].str.lower().str.contains('toll'),
+            obstacle['name'].str.lower().str.contains('bridge'),
+        ],
+        [
+            'Railway',
+            'Toll Road',
+            'Bridge',
+        ],
+        default='Not Defined'
+    )
+
+    # METADATA
+    odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('ext_'), 1, 0)
+    otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('ext_'), 1, 0)
+    odp['core'] = odp['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})? (?P<site_id>\w+)$")['core'].fillna(24).astype(int)
+    otb['core'] = otb['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})? (?P<site_id>\w+)$")['core'].fillna(24).astype(int)
+
+    pole_exist[['near_end', 'far_end']] = pole_exist['segment'].str.extract(fr"^(?P<near>.+?)\s*{sep}\s*(?P<far>.+?)$", regex=True)
+
+    data_compiled = list(points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
+                         topology, route, backbone, access, fo_exist, pole_exist, obstacle)
+    data_compiled_names = ['points_data', 'lines_data', 'fo_hub', 'sitelist', 'odp', 'otb', 'closure',
+                           'topology', 'route', 'backbone', 'access', 'fo_exist', 'pole_exist', 'obstacle']
+    
+    data_dict = dict(zip(data_compiled_names, data_compiled))
+
+    print(f"ℹ️ Summary Validated IPL:")
+    for name, df in data_dict.items():
+        print(f"ℹ️ {name} : {len(df):,} records")
+
+    print(f"✅ Extraction done.")
+    return data_dict

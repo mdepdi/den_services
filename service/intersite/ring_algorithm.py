@@ -1123,7 +1123,7 @@ def save_kml(
     import simplekml
 
     date_today = datetime.now().strftime("%Y%m%d")
-    kmz_path = os.path.join(export_dir, f"Intersite Design_{method}_{date_today}.kmz")
+    kmz_path = os.path.join(export_dir, f"Intersite Design_{method}.kmz")
     logger.info(f"🧩 Exporting KML/KMZ to {kmz_path}")
 
     points = points.to_crs(epsg=4326).reset_index(drop=True)
@@ -1288,7 +1288,6 @@ def save_intersite(
             paths_report.columns = paths_report.columns.str.replace(' ', '_').str.lower()
             excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
             logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records.")
-
 
 # ------------------------------------------------------
 # 6) MAIN ENTRYPOINT

@@ -226,15 +226,14 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     print(f"ℹ️ Total Sitelist Mapped Topology: {len(site_data):,} points")
     # site_data = validate_fixroute(site_data)
 
-    date_today = datetime.now().strftime("%Y%m%d")
-    export_loc = f"{export_dir}/{date_today}"
-    os.makedirs(export_loc, exist_ok=True)
+    design_dir = f"{export_dir}/{method.replace(' ', '_')}"
+    os.makedirs(design_dir, exist_ok=True)
 
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Starting Fix Route Topology Based"})
     result = main_fixroute(
         template_df=site_data,
-        export_dir=export_loc,
+        export_dir=design_dir,
         program=program,
         vendor=vendor,
         spof_threshold=spof_threshold,
@@ -247,33 +246,29 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\TASK\DESEMBER\Week 5\BOQ Algorithm\024843_template_19ed180b17cc459fbdfa3e6b381b0b96.xlsx"
-    line_file = r"D:\JACOBS\TASK\DESEMBER\Week 5\BOQ Algorithm\024843_topology_54195bbcf2f64586ab9ae48a42cef087.parquet"
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 5\BOQ Algorithm\Export"
+    excel_file = r"D:\JACOBS\SERVICE\API\test\boq_test\points.xlsx"
+    line_file = r"D:\JACOBS\SERVICE\API\test\boq_test\topology.parquet"
+    export_dir = r"D:\JACOBS\SERVICE\API\test\boq_test\export"
     program = "Dev BOQ Utilization"
     sep=";"
     boq = False
 
-    date_today = datetime.now().strftime("%Y%m%d")
-    export_loc = f"{export_dir}/{date_today}"
-    os.makedirs(export_loc, exist_ok=True)
-
     result = main_topology(
         excel_path=excel_file,
         line_file=line_file,
-        export_dir=export_loc,
+        export_dir=export_dir,
         sep=sep,
         boq=boq,
         program=program
     )
 
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Topology_Task.zip"
-    zip_filepath = os.path.join(export_loc, zip_filename)
+    zip_filepath = os.path.join(export_dir, zip_filename)
     with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(export_loc):
+        for root, dirs, files in os.walk(export_dir):
             for file in files:
                 if file != zip_filename:
                     file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, export_loc)
+                    arcname = os.path.relpath(file_path, export_dir)
                     zipf.write(file_path, arcname)
     logger.info(f"🏆 Result files zipped at {zip_filepath}.")
