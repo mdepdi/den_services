@@ -1642,8 +1642,8 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\SERVICE\API\test\boq_test\export\20260103\Topology_Based\Intersite Design_Topology Based_20260103.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export\20260102\20260102\Intersite Design_Topology Based_20260102.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\SERVICE\API\test\boq_test\export"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export"
     os.makedirs(export_dir, exist_ok=True)
-    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="ioh", device_in_site="OTB")
+    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
