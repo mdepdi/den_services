@@ -1012,7 +1012,7 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
 
     if not odp.empty:
         odp['geometry'] = odp['odp'].map(shapely.from_wkt)
-        odp['name'] = f"{device_in_branch} {odp['site_id'].astype(str)}"
+        odp['name'] = f"{device_in_branch} " + odp['site_id'].astype(str)
 
         mask_core = odp['core'].isin([48, 96])
         odp.loc[mask_core, 'name'] = (f"{device_in_branch}_" + odp.loc[mask_core, 'core'].astype(str) + " " + odp.loc[mask_core, 'site_id'].astype(str))
