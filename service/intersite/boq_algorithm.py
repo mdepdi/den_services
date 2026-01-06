@@ -9,7 +9,9 @@ import pandas as pd
 import numpy as np
 import shapely
 import simplekml
+import zipfile
 from tqdm import tqdm
+from datetime import datetime
 from shapely.strtree import STRtree
 from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points
@@ -1642,8 +1644,20 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export\20260102\20260102\Intersite Design_Topology Based_20260102.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\TBG-Fiberization XLS Makassar V5 - Ring.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export_v5"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
+
+    # ZIPFILE
+    zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"
+    zip_filepath = os.path.join(export_dir, zip_filename)
+    with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(export_dir):
+            for export_file in files:
+                if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                    export_file_path = os.path.join(root, export_file)
+                    arcname = os.path.relpath(export_file_path, export_dir)
+                    zipf.write(export_file_path, arcname)
+    print(f"📦 Result files zipped.")
