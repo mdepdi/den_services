@@ -68,11 +68,11 @@ def task_insertring(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         
         self.update_state(
@@ -134,11 +134,11 @@ def task_supervised(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         
         self.update_state(
@@ -216,11 +216,11 @@ def task_unsupervised(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         self.update_state(
             state="SUCCESS",
@@ -280,11 +280,11 @@ def task_fixroute(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         
         self.update_state(
@@ -348,11 +348,11 @@ def task_polygon_intersite(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         
         self.update_state(
@@ -419,11 +419,11 @@ def task_topology_intersite(self, data: dict):
 
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         
         self.update_state(
@@ -492,11 +492,11 @@ def task_boq(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(export_loc):
-                for file in files:
-                    if file != zip_filename and not file.endswith(".zip") and "Checkpoint" not in file:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.relpath(file_path, export_loc)
-                        zipf.write(file_path, arcname)
+                for export_file in files:
+                    if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
         print(f"📦 Result files zipped.")
         
         self.update_state(
