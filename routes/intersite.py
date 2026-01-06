@@ -137,6 +137,17 @@ async def insert_ring(
     upload_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
     os.makedirs(upload_dir, exist_ok=True)
 
+    # Operator
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
+
     kmz_suffix = os.path.splitext(kmz_design.filename)[1].lower()
     if kmz_suffix not in [".kmz", ".kml"]:
         return {"error": "KMZ/KML only is supported for design plan."}
@@ -162,16 +173,6 @@ async def insert_ring(
         f.write(await insert_list.read())
     print(f"📥 Saved Insert List → {insert_path}")
     _, _, _ = validate_insert(insert_path, kmz_path)
-
-    # Operator
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     # Params
     params = dumps({
@@ -233,6 +234,16 @@ async def supervised_ring(
     # Read Excel file
     if excel_file is None:
         return {"error": "Excel file is required."}
+
+    # Process data
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
     
     date_today = datetime.now().strftime("%Y%m%d")
     supervised_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Supervised")
@@ -254,16 +265,6 @@ async def supervised_ring(
     temp_parquet_path = os.path.join(supervised_upload, f"{datetime.now().strftime('%H%M%S')}_site_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     print(f"📥 Temporary site data saved to: {temp_parquet_path}")
-
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         data = {
@@ -322,6 +323,16 @@ async def unsupervised_ring(
     unsupervised_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Unsupervised")
     os.makedirs(unsupervised_upload, exist_ok=True)
     
+    # Process data
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
     # LOAD DATA
         with pd.ExcelFile(excel_file.file) as xls:
@@ -352,16 +363,6 @@ async def unsupervised_ring(
     hubs_data.to_parquet(temp_hub_path, index=False)
     print(f"📥 Temporary site data saved to : {temp_parquet_path}")
     print(f"📥 Temporary hub data saved to  : {temp_hub_path}")
-
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         data = {
@@ -418,6 +419,16 @@ async def fixroute_ring(
     fixroute_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Fix Route")
     os.makedirs(fixroute_upload, exist_ok=True)
     
+    # Process data
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     try:
     # LOAD DATA
         with pd.ExcelFile(excel_file.file) as xls:
@@ -431,16 +442,6 @@ async def fixroute_ring(
     excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
     fixroute_input.to_excel(excel_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
-
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         data = {
@@ -502,6 +503,15 @@ async def polygon_intersite(
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
     
+    # Process data
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
     
     try:
         suffix = os.path.splitext(polygon_file.filename)[1].lower()
@@ -528,16 +538,6 @@ async def polygon_intersite(
     polygon_gdf.to_parquet(polygon_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
     print(f"📥 Temporary Polygon data saved to: {polygon_path}")
-
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         data = {
@@ -587,6 +587,16 @@ async def topology_intersite(
         - XL Operator   : Separator will be ';'
     """
 
+    # Process data
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+
     # Read Excel file
     if excel_file is None:
         return {"error": "Excel file is required."}
@@ -626,15 +636,6 @@ async def topology_intersite(
     print(f"📥 Temporary Excel data saved to: {excel_path}")
     print(f"📥 Temporary Topology data saved to: {topology_path}")
 
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         data = {
@@ -682,6 +683,11 @@ async def boq_intersite(
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
     
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -705,11 +711,6 @@ async def boq_intersite(
     print(f"📥 Temporary Points data saved to   : {points_path}")
     print(f"📥 Temporary Lines data saved to    : {lines_path}")
 
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
     
     print(f"ℹ️ Operator  : {operator}")
     print(f"ℹ️ Separator : {sep}")
