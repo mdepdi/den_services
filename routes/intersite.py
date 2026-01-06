@@ -688,6 +688,8 @@ async def boq_intersite(
             sep = ";"
         case _:
             sep = "-"
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
     
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -710,10 +712,6 @@ async def boq_intersite(
     line_kmz.to_parquet(lines_path, index=False)
     print(f"📥 Temporary Points data saved to   : {points_path}")
     print(f"📥 Temporary Lines data saved to    : {lines_path}")
-
-    
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         data = {

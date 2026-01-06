@@ -68,7 +68,7 @@ def task_insertring(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
@@ -134,7 +134,7 @@ def task_supervised(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
@@ -216,7 +216,7 @@ def task_unsupervised(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
@@ -280,7 +280,7 @@ def task_fixroute(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
@@ -348,7 +348,7 @@ def task_polygon_intersite(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
@@ -419,7 +419,7 @@ def task_topology_intersite(self, data: dict):
 
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, export_loc)
@@ -492,7 +492,7 @@ def task_boq(self, data: dict):
         zip_filepath = os.path.join(export_loc, zip_filename)
         with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
             skip_files = [zip_filename, ".zip", "Checkpoint"]
-            for root, dirs, files in os.walk(export_loc):
+            for root, _, files in os.walk(export_loc):
                 for file in files and all(skip not in file for skip in skip_files):
                     if file != zip_filename and not file.endswith(".zip"):
                         file_path = os.path.join(root, file)
