@@ -213,10 +213,10 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
 
     sitelist_gdf = validate_topology(excel_path)
     line_gdf = read_gdf(line_file, geom_type='line')
-    if "name" in line_gdf.columns:
-        connection = line_gdf[line_gdf['name'].str.lower().str.contains('connection')]
-        if not connection.empty and "folders" in connection.columns:
-            line_gdf['ring_name'] = line_gdf['folders'].str.split(";").str[-1]
+    # if "name" in line_gdf.columns:
+    #     connection = line_gdf[line_gdf['name'].str.lower().str.contains('connection')]
+    #     if not connection.empty and "folders" in connection.columns:
+    #         line_gdf['ring_name'] = line_gdf['folders'].str.split(";").str[-1]
 
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
@@ -246,10 +246,10 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\SERVICE\API\test\boq_test\points.xlsx"
-    line_file = r"D:\JACOBS\SERVICE\API\test\boq_test\topology.parquet"
-    export_dir = r"D:\JACOBS\SERVICE\API\test\boq_test\export"
-    program = "Dev BOQ Utilization"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Topology Based Debug\Template_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Topology Based Debug\Connection.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Topology Based Debug"
+    program = "XL Design"
     sep=";"
     boq = False
 

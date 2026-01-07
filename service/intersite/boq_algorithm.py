@@ -632,9 +632,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
 
     existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(drop=True)
     existing_route = existing_route.dissolve(["id_line", "fiber"]).reset_index()
-    existing_route["geometry"] = existing_route.geometry.apply(
-        lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g
-    )
+    existing_route["geometry"] = existing_route.geometry.apply(lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g)
     existing_route["length"] = existing_route.geometry.length
     existing_route = existing_route.sort_values("length", ascending=False)
 
@@ -1304,98 +1302,178 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
             logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written.")
     logger.info("✅ Save Excel file BOQ Done.")
 
-def boq_ioh(kmz_path:str, export_dir:str, sep="-", operator="XL"):
+def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
     import math
 
-    validated_kmz = validate_kmz_ipl(kmz_path)
+    validated_kmz = validate_kmz_ipl(kmz_path, sep=sep)
     if validated_kmz is None:
-        logger.info(f"❌ BOQ IOH failed due to invalid KMZ: {kmz_path}")
+        logger.info(f"❌ BOQ Surge failed due to invalid KMZ: {kmz_path}")
         return
 
-    points_data, lines_data, fo_hub, sitelist, odp, otb, closure, topology, route, backbone, access, fo_exist, pole_exist, obstacle = validated_kmz
-    lines_grouped = lines_data.groupby('ring_name')
+    points_data = validated_kmz['points_data']
+    lines_data = validated_kmz['lines_data']
 
-    for ring_name, group in lines_grouped:
+    # Points Data
+    fo_hub = validated_kmz['fo_hub']
+    sitelist = validated_kmz['sitelist']
+    odp = validated_kmz['odp']
+    otb = validated_kmz['otb']
+    closure = validated_kmz['closure']
+    topology = validated_kmz['topology']
+
+    # Lines Data
+    route = validated_kmz['route']
+    backbone = validated_kmz['backbone']
+    access = validated_kmz['access']
+    fo_exist = validated_kmz['fo_exist']
+    pole_exist = validated_kmz['pole_exist']
+    obstacle = validated_kmz['obstacle']
+
+    # Convert to 3857
+    points_data = points_data.to_crs(epsg=3857)
+    lines_data = lines_data.to_crs(epsg=3857)
+    fo_hub = fo_hub.to_crs(epsg=3857)
+    sitelist = sitelist.to_crs(epsg=3857)
+    odp = odp.to_crs(epsg=3857)
+    otb = otb.to_crs(epsg=3857)
+    closure = closure.to_crs(epsg=3857)
+    topology = topology.to_crs(epsg=3857)
+
+    route = route.to_crs(epsg=3857)
+    backbone = backbone.to_crs(epsg=3857)
+    access = access.to_crs(epsg=3857)
+    fo_exist = fo_exist.to_crs(epsg=3857)
+    pole_exist = pole_exist.to_crs(epsg=3857)
+    obstacle = obstacle.to_crs(epsg=3857)
+
+    route_grouped = route.groupby('ring_name')
+    compiled_boq_records = []
+    for ring_name, group in route_grouped:
         ring_lines = group.copy()
         ring_points = points_data[points_data['ring_name'] == ring_name].copy()
         for idx, row in ring_lines.iterrows():
             segment_name = row['name']
-            seg_length = row['geometry'].length
             near_end = row['near_end']
             far_end = row['far_end']
-            is_first_segment = row['is_first'].astype(bool)
+            seg_length = row['geometry'].length
+            seg_type = row.get('core', 24)
 
             # BOQ Data
             seg_backbone = backbone[(backbone['ring_name'] == ring_name) & (backbone['near_end'] == near_end) & (backbone['far_end'] == far_end)].copy()
+            backbone_core = seg_backbone['name'].iloc[0].split("_FO")[-1].replace("C", "") if not seg_backbone.empty else "24"
+            backbone_core = int(backbone_core) if backbone_core.isdigit() else 24
             seg_access = access[(access['ring_name'] == ring_name) & (access['near_end'] == near_end) & (access['far_end'] == far_end)].copy()
+        
             seg_fo_exist = fo_exist[(fo_exist['ring_name'] == ring_name) & (fo_exist['near_end'] == near_end) & (fo_exist['far_end'] == far_end)].copy()
             seg_pole_exist = pole_exist[(pole_exist['ring_name'] == ring_name) & (pole_exist['near_end'] == near_end) & (pole_exist['far_end'] == far_end)].copy()
-            seg_otb = otb[otb['site_id'].astype(str).str.strip() == near_end].copy()
-            seg_odp = odp[odp['site_id'].astype(str).str.strip() == far_end].copy()
-            if is_first_segment:
-                print(f"Processing first segment: {segment_name} in ring {ring_name}")
 
-    # # CALCULATE PIVOT DATA
-    # rings_compiled = {}
-    # for num, ring_name in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process Excel BOQ'):
-    #     ring_points = points_boq[points_boq['ring_name'] == ring_name].copy()
-    #     ring_lines = lines_boq[lines_boq['ring_name'] == ring_name].copy()
+            seg_otb = otb[otb['segment'] == segment_name].copy()
+            seg_otb_new = seg_otb[seg_otb['ext_note'] == 0].copy()
+            seg_otb_ext = seg_otb[seg_otb['ext_note'] == 1].copy()
+            seg_odp = odp[odp['segment'] == segment_name].copy()
+            seg_odp_new = seg_odp[seg_odp['ext_note'] == 0].copy()
+            seg_odp_ext = seg_odp[seg_odp['ext_note'] == 1].copy()
+            seg_odp_24 = seg_odp[seg_odp['core'] == 24].copy()
+            seg_odp_48 = seg_odp[seg_odp['core'] == 48].copy()
+            seg_odp_96 = seg_odp[seg_odp['core'] == 96].copy()
+            seg_closure = closure[closure['segment'] == segment_name].copy()
+            seg_closure_new = seg_closure[seg_closure['ext_note'] == 0].copy()
+            seg_closure_ext = seg_closure[seg_closure['ext_note'] == 1].copy()
+            seg_obstacle_toll = obstacle[(obstacle['ring_name'] == ring_name) & (obstacle['near_end'] == near_end) & (obstacle['far_end'] == far_end) & (obstacle['obstacle_type'].str.lower().str.contains('toll'))].copy()
+            seg_obstacle_railway = obstacle[(obstacle['ring_name'] == ring_name) & (obstacle['near_end'] == near_end) & (obstacle['far_end'] == far_end) & (obstacle['obstacle_type'].str.lower().str.contains('rail'))].copy()
+            seg_obstacle_bridge = obstacle[(obstacle['ring_name'] == ring_name) & (obstacle['near_end'] == near_end) & (obstacle['far_end'] == far_end) & (obstacle['obstacle_type'].str.lower().str.contains('bridge'))].copy()
 
-    #     ring_boq = compile_boq(ring_points, ring_lines, sep=sep)
-    #     odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = ring_boq
+            # Qty Length
+            route_qty = None
+            bb_qty = None
+            access_qty = None
+            overlap_qty = None
+            pole_qty = None
+            access_ext_qty = None
+            route_length = seg_length if not seg_length is None else 0
+            bb_length = seg_backbone['geometry'].iloc[0].length if not seg_backbone.empty else 0
+            access_length = seg_access['geometry'].iloc[0].length if not seg_access.empty else 0
+            overlap_length = seg_fo_exist['geometry'].iloc[0].length if not seg_fo_exist.empty else 0
+            pole_length = seg_pole_exist['geometry'].iloc[0].length if not seg_pole_exist.empty else 0
+            access_ext_length = 0
 
-    #     for idx, row in ring_lines.iterrows():
-    #         prev_idx_ring = ring_lines.loc[idx - 1, 'ring_name']
-    #         prev_idx_access = ring_lines.loc[idx - 1, 'access_fe']
-    #         prev_idx_ring = ring_lines.loc[idx - 1, 'ring_name']
-    #         segment_name = row['name']
-    #         seg_length = row['geometry'].length
+            # Qty
+            otb_qty = len(seg_otb)
+            otb_new_qty = len(seg_otb_new)
+            otb_ext_qty = len(seg_otb_ext)
+            odp_qty = len(seg_odp)
+            odp_new_qty = len(seg_odp_new)
+            odp_ext_qty = len(seg_odp_ext)
+            odp_24_qty = len(seg_odp_24)
+            odp_48_qty = len(seg_odp_48)
+            odp_96_qty = len(seg_odp_96)
+            closure_qty = len(seg_closure)
+            closure_new_qty = len(seg_closure_new)
+            closure_ext_qty = len(seg_closure_ext)
+            obstacle_toll_qty = len(seg_obstacle_toll)
+            obstacle_railway_qty = len(seg_obstacle_railway)
+            obstacle_bridge_qty = len(seg_obstacle_bridge)
+            cable_96 = seg_length if backbone_core == 96 else 0
+            otb_96 = len(seg_otb[seg_otb['core'] == 96])
+            cable_24 = seg_length if backbone_core == 24 else 0
 
-    #         # Parse Segment
-    #         seg_backbone = backbone[backbone['name'] == segment_name].copy()
-    #         seg_access = access_fe[access_fe['name'] == segment_name].copy()
-    #         seg_fo_exist = fo_exist[fo_exist['name'] == segment_name].copy()
-    #         seg_pole_exist = pole_exist[pole_exist['name'] == segment_name].copy()
-    #         seg_otb = otb[otb['name'] == segment_name].copy()
-    #         seg_odp = odp[odp['name'] == segment_name].copy()
-    #         seg_closure = closure[closure['name'] == segment_name].copy()
-    #         seg_obstacle_railway = obstacle_railway[obstacle_railway['name'] == segment_name].copy()
-    #         seg_obstacle_toll = obstacle_toll[obstacle_toll['name'] == segment_name].copy()
+            # Calculate
+            # PU Permission
+            permission_pu = math.ceil((bb_length + access_length + pole_length + cable_96))
+            fo_factor = 1.15 if operator == "xl" else 1.1 
+            fo_cable = math.ceil(math.ceil(bb_length + access_length) * fo_factor / 100) * 100
+            total_overlap = overlap_length + access_ext_length # if ring_name == prev_idx_ring else overlap_length + access_ext_length
 
-    #         # Qty Length
-    #         route_qty = None
-    #         route_length = seg_length
-    #         bb_qty = None
-    #         bb_length = seg_backbone['geometry'].iloc[0].length
-    #         access_qty = None
-    #         access_length = seg_access['geometry'].iloc[0].length
-    #         overlap_qty = None
-    #         overlap_length = seg_fo_exist['geometry'].iloc[0].length
-    #         pole_qty = None
-    #         pole_length = seg_pole_exist['geometry'].iloc[0].length
-
-    #         # Dummy
-    #         access_ext_qty = None
-    #         access_ext_length = 0
-    #         cable_96 = 0
-    #         otb_96 = 0
-    #         cable_24 = 0
-
-    #         # Qty
-    #         otb_qty = len(seg_otb)
-    #         odp_qty = len(seg_odp)
-    #         closure_qty = len(seg_closure)
-    #         odp_qty = len(seg_odp)
-    #         obstacle_toll_qty = len(seg_obstacle_toll)
-    #         obstacle_railway_qty = len(seg_obstacle_railway)
-
-    #         # Calculate
-    #         # PU Permission
-    #         permission_pu = math.ceil((bb_length + access_length + pole_exist + otb_96))
-    #         factor = 1.15 if operator == "xl" else 1.1 
-    #         fo_cable = math.ceil(math.ceil(bb_length + access_length) * factor / 100) * 100
-    #         total_overlap = overlap_length + access_ext_length if ring_name == prev_idx_ring else overlap_length + access_ext_length
-    logger.info(f"✅ Save BOQ Parquet Done.")
+            # Compile Data
+            record = {
+                "ring_name": ring_name,
+                "segment_name": segment_name,
+                "near_end": near_end,
+                "far_end": far_end,
+                "route_qty": route_qty,
+                "route_length_m": route_length,
+                "bb_qty": bb_qty,
+                "bb_length_m": bb_length,
+                "access_qty": access_qty,
+                "access_length_m": access_length,
+                "access_ext_qty": access_ext_qty,
+                "access_ext_length_m": access_ext_length,
+                "overlap_qty": overlap_qty,
+                "overlap_length_m": total_overlap,
+                "pole_ext_length_m": pole_length,
+                "otb_qty": otb_qty,
+                "otb_new_qty": otb_new_qty,
+                "otb_ext_qty": otb_ext_qty,
+                "odp_qty": odp_qty,
+                "odp_new_qty": odp_new_qty,
+                "odp_ext_qty": odp_ext_qty,
+                "odp_24_qty": odp_24_qty,
+                "odp_48_qty": odp_48_qty,
+                "odp_96_qty": odp_96_qty,
+                "closure_qty": closure_qty,
+                "closure_new_qty": closure_new_qty,
+                "closure_ext_qty": closure_ext_qty,
+                "obstacle_toll_qty": obstacle_toll_qty,
+                "obstacle_railway_qty": obstacle_railway_qty,
+                "obstacle_bridge_qty": obstacle_bridge_qty,
+                "permission_pu": permission_pu,
+                "fo_cable_m": fo_cable,
+                "total_overlap_m": total_overlap,
+                "cable_96_m": cable_96,
+                "cable_24_m": cable_24,
+            }
+            compiled_boq_records.append(record)
+    boq_df = pd.DataFrame(compiled_boq_records)
+    excel_path = os.path.join(export_dir, f"BOQ Surge Report.xlsx")
+    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+        if not boq_df.empty:
+            sheet_name = "BOQ Surge"
+            boq_df = boq_df.reset_index(drop=True)
+            excel_styler(boq_df).to_excel(writer, sheet_name=sheet_name, index=False)
+            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(boq_df):,} records written.")
+        else:
+            logger.info("❌ No BOQ Surge data to write.")
+    logger.info("✅ Save Excel file BOQ Surge Done.")
 
 def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, boq_data:tuple, folder:str, device_in_site="OTB", **kwargs):
     program = kwargs.get("program", "N/A")
@@ -1636,17 +1714,23 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     end_time = time.time()
     kmz_time = round((end_time-start_time)/60,2)
 
+    # BOQ FORMAT RESULT
+    start_time = time.time()
+    boq_surge(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
+    end_time = time.time()
+
     logger.info(f"✅ All BOQ Process Done.")
     logger.info(f"ℹ️ Time Consumed:")
     logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
     logger.info(f"Excel Result Time   : {excel_time:,} minutes")
     logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")
+    logger.info(f"BOQ {operator.upper()} Time : {round((end_time-start_time)/60,2):,} minutes")
 
 
 if __name__ == "__main__":
     kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\TBG-Fiberization XLS Makassar V5 - Ring.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export_v5"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export_v5_Surge BOQ Test"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
 

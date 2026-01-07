@@ -357,7 +357,6 @@ def read_kml(file:str):
 
 
 def validate_kmz_design(filepath:str, sep: str = "-"):
-    
     points_kmz, lines_kmz, _ = read_kml(filepath)
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
@@ -382,7 +381,11 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
 
     # LINES EXISTING
     sep_re = re.escape(sep)
-    lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(fr"^(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)$", fr"\g<near>{sep_re}\g<far>", regex=True)
+    lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(
+        fr"^(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)$",
+        fr"\g<near>{sep_re}\g<far>",
+        regex=True
+    )
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
@@ -431,6 +434,7 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     points_kmz = sanitize_header(points_kmz)
     lines_kmz = sanitize_header(lines_kmz)
     points_data = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
+    lines_data = lines_kmz.copy()
 
     # POINT DATA
     points_data['site_id']      = points_data['name'].str.strip().astype(str)
@@ -447,7 +451,22 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     points_data = points_data.dropna(how='all', axis=1)
 
     # LINES DATA
-    lines_data['segment']   = lines_data['name'].str.strip().str.replace(fr"^(?P<prefix>\w+\s*)?(?P<near>.+?)\s*{sep}\s*(?P<far>.+?)$", fr"\g<near>{sep}\g<far>", regex=True)
+    sep_re = re.escape(sep)
+    lines_data['bb_fiber'] = lines_data['name'].str.split("/").str[-1]
+    lines_data['name'] = lines_data['name'].str.split("/").str[0]
+    lines_extracted = lines_data['name'].str.strip().str.extract(
+        fr"^(?P<data_type>BB|Akses|s*)?(?P<near_end>[A-Za-z0-9 -_]+)\s*{sep_re}\s*(?P<far_end>[A-Za-z0-9 -_]+)(\_FO(?P<core>\d{{2}}))?$",
+        expand=True
+    )
+    lines_extracted['near_end'] = lines_extracted['near_end'].str.strip()
+    lines_extracted['far_end']  = lines_extracted['far_end'].str.strip()
+    if 'core' in lines_extracted.columns:
+        lines_extracted['core'] = lines_extracted['core'].fillna(24).astype(int)
+    else:
+        lines_extracted['core'] = 24
+
+    lines_data['segment'] = lines_extracted['near_end'] + sep + lines_extracted['far_end']
+    lines_data['segment'] = lines_data['segment'].str.strip()
     lines_data['near_end']  = lines_data['segment'].str.split(sep).str[0]
     lines_data['far_end']   = lines_data['segment'].str.split(sep).str[-1]
     lines_data['geometry']  = lines_data.geometry.force_2d()
@@ -456,11 +475,12 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     lines_data['program']   = lines_data['program'] if "program" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Za-z0-9]{6,});')
     lines_data['region']    = lines_data['region'] if "region" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
     lines_data['fo_note']   = 'merged'
+    lines_data['core']      = lines_extracted['core']
     lines_data['program']   = lines_data['program'].fillna("NA")
     lines_data = lines_data.dropna(how='all', axis=1)
 
     # COMPILE
-    existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
+    existing_col = ['name', 'folder_name', 'site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
     for col in existing_col:
         if col not in points_data.columns:
             if col == "region":
@@ -469,7 +489,7 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
             raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
     points_data = points_data[existing_col]
 
-    existing_col = ['segment', 'name', 'near_end', 'far_end', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
+    existing_col = ['name', 'folder_name', 'segment', 'near_end', 'far_end', 'core', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
     for col in existing_col:
         if col not in lines_data.columns:
             if col == "region":
@@ -483,32 +503,112 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
 
     if lines_data.empty:
         raise ValueError(f"Lines data in existing kmz is empty")
-    
+
     # PARSE FOLDER
-    # Points
-    fo_hub = points_data[points_data['folder_name'].str.lower().str.contains('hub')].copy()
-    sitelist = points_data[points_data['folder_name'].str.lower().str.contains('site')].copy()
-
-    near_set = set(lines_data['near_end'])
-    mask_fhub = fo_hub[fo_hub['site_id'].isin(near_set)].copy()
-    fo_hub['is_first'] = np.where(fo_hub['site_id'].isin(mask_fhub['site_id']), 1, 0)
-    lines_data['is_first'] = np.where(lines_data['near_end'].isin(mask_fhub['site_id']), 1, 0)
-    points_data['is_first'] = np.where((
-        points_data['site_id'].isin(lines_data[lines_data['is_first'] == 1]['near_end']) |
-        points_data['site_id'].isin(lines_data[lines_data['is_first'] == 1]['far_end']), 1, 0
-    ))
-
-    odp = points_data[points_data['folder_name'].str.lower().str.contains('odp')].copy()
-    otb = points_data[points_data['folder_name'].str.lower().str.contains('otb')].copy()
-    closure = points_data[points_data['folder_name'].str.lower().str.contains('closure')].copy()
-
     # Lines
     topology = lines_data[lines_data['name'].str.lower().str.strip() == 'connection'].copy()
     route = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'route'].copy()
+
     backbone = lines_data[lines_data['folder_name'].str.lower().str.contains('backbone')].copy()
-    access = lines_data[lines_data['folder_name'].str.lower().str.contains('access')].copy()
+    access = lines_data[lines_data['folder_name'].str.lower().str.contains('access|akses')].copy()
     fo_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'fo existing'].copy()
     pole_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'pole existing'].copy()
+
+    # Points
+    sites_data = points_data[points_data['folder_name'].str.lower().str.contains('site') | points_data['folder_name'].str.lower().str.contains('hub')].copy()
+    fo_hub = sites_data[sites_data['folder_name'].str.lower().str.contains('hub')].copy()
+    sitelist = sites_data[sites_data['folder_name'].str.lower().str.contains('site')].copy()
+
+    near_set = set(route['near_end'].astype(str))
+    mask_fhub = fo_hub[fo_hub['site_id'].astype(str).isin(near_set)].copy()
+    fo_hub['is_first'] = np.where(fo_hub['site_id'].astype(str).isin(mask_fhub['site_id'].astype(str)), 1, 0)
+    route['is_first'] = np.where(route['near_end'].astype(str).isin(mask_fhub['site_id'].astype(str)), 1, 0)
+    sites_data['is_first'] = np.where(
+        sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'near_end'].dropna()) |
+        sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'far_end'].dropna()), 1, 0
+    )
+    first_points = sites_data[sites_data['is_first'] == 1].copy()
+    first_route = route[route['is_first'] == 1].copy()
+    first_point_ids = set(first_points['site_id'].astype(str))
+    first_route_ids = set(first_route['segment'].astype(str))
+
+    # DEVICES DATA
+    devices = ['odp', 'otb', 'closure']
+    devices_mask = points_data['folder_name'].str.lower().str.contains('|'.join(devices))
+    devices_data = points_data[devices_mask].copy()
+    devices_data['device_name'] = devices_data['name'].str.strip().astype(str)
+    devices_data['segment'] = None
+    devices_data = devices_data.drop(columns=['site_id'])
+    devices_data['device_type'] = np.select(
+        [
+            devices_data['folder_name'].str.lower().str.contains('odp'),
+            devices_data['folder_name'].str.lower().str.contains('otb'),
+            devices_data['folder_name'].str.lower().str.contains('closure'),
+        ],
+        [ "ODP", "OTB", "Closure"],
+        default="Unknown"
+    )
+    devices_data['core'] = devices_data['name'].str.extract(r"(?P<device_type>[\w+])\s*(?P<core>\d{2})?", expand=True)["core"].fillna(24).astype(int)
+    devices_data['identifier'] = np.select(
+        [devices_data['device_type'] == "ODP",
+        devices_data['device_type'] == "OTB",
+        devices_data['device_type'] == "Closure"],
+        [
+            devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<core>\d{2})?\s*(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
+            devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<core>\d{2})?\s*(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
+            devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<segment>[A-Za-z0-9\ -;_]+)$", expand=True)["segment"].str.strip(),
+        ],
+        default=devices_data['name'].str.strip()
+    )
+    devices_data['is_first'] = np.select(
+        [
+            devices_data['device_type'] == "ODP",
+            devices_data['device_type'] == "OTB",
+            devices_data['device_type'] == "Closure",
+        ],
+        [
+            devices_data['identifier'].isin(first_point_ids).astype(int),
+            devices_data['identifier'].isin(first_point_ids).astype(int),
+            devices_data['identifier'].isin(first_route_ids).astype(int),
+        ],
+        default=0
+    )
+
+    # ASSIGN SEGMENT TO DEVICES
+    grouped_devices = devices_data.groupby('ring_name')
+    for ring, group in grouped_devices:
+        ring_lines = route[route['ring_name'] == ring]
+        first_line = route[route['is_first'] == 1]
+        if first_line.empty:
+            print(f"🔴 No first line found for ring {ring}")
+            continue
+
+        ne_unique = set(ring_lines['near_end'].unique())
+        fe_unique = set(ring_lines['far_end'].unique())
+        for idx, row in group.iterrows():
+            device_name = row['device_name']
+            device_type = row['device_type']
+            is_first = bool(row['is_first'])
+            identifier = row['identifier']
+
+            if device_type in ['ODP', 'OTB']:
+                if is_first:
+                    segment_line = first_line['segment'].values[0]
+                else:
+                    fe_line = ring_lines[ring_lines['far_end'] == identifier]
+                    if fe_line.empty:
+                        print(f"🔴 No far end line found for device {device_name} in ring {ring}")
+                        continue
+
+                    segment_line = fe_line['segment'].values[0]
+                devices_data.at[idx, 'segment'] = segment_line
+            else:
+                segment_line = identifier
+                devices_data.at[idx, 'segment'] = segment_line
+
+    odp = devices_data[devices_data['folder_name'].str.lower().str.contains('odp')].copy()
+    otb = devices_data[devices_data['folder_name'].str.lower().str.contains('otb')].copy()
+    closure = devices_data[devices_data['folder_name'].str.lower().str.contains('closure')].copy()
 
     # Obstacle
     obstacle = points_data[points_data['folder_name'].str.lower().str.contains('obstacle')].copy()
@@ -518,32 +618,31 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
             obstacle['name'].str.lower().str.contains('toll'),
             obstacle['name'].str.lower().str.contains('bridge'),
         ],
-        [
-            'Railway',
-            'Toll Road',
-            'Bridge',
-        ],
+        ['Railway','Toll Road','Bridge'],
         default='Not Defined'
     )
-
+    obstacle[['near_end', 'far_end']] = obstacle['name'].str.extract(rf"(?P<obstacle_type>.+?)?\s*{sep}\s*(?P<near>.+?)\s*{sep}\s*(?P<far>.+?)$")[['near', 'far']]
+    obstacle['segment'] = obstacle['near_end'] + sep + obstacle['far_end']
+    
     # METADATA
     odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('ext_'), 1, 0)
     otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('ext_'), 1, 0)
-    odp['core'] = odp['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})? (?P<site_id>\w+)$")['core'].fillna(24).astype(int)
-    otb['core'] = otb['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})? (?P<site_id>\w+)$")['core'].fillna(24).astype(int)
+    closure['ext_note'] = np.where(closure['name'].str.lower().str.contains('ext_'), 1, 0)
+    odp_extracted = odp['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})\s*(?P<site_id>\[\w+\s*\])$", expand=True)
+    odp['core'] = odp_extracted['core'].fillna(24).astype(int) if 'core' in odp_extracted else 24
+    otb_extracted = otb['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})\s*(?P<site_id>\[\w+\s*\])$", expand=True)
+    otb['core'] = otb_extracted['core'].fillna(24).astype(int) if 'core' in otb_extracted else 24
 
-    pole_exist[['near_end', 'far_end']] = pole_exist['segment'].str.extract(fr"^(?P<near>.+?)\s*{sep}\s*(?P<far>.+?)$", regex=True)
-
-    data_compiled = list(points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
-                         topology, route, backbone, access, fo_exist, pole_exist, obstacle)
+    data_compiled = [points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
+                     topology, route, backbone, access, fo_exist, pole_exist, obstacle]
     data_compiled_names = ['points_data', 'lines_data', 'fo_hub', 'sitelist', 'odp', 'otb', 'closure',
                            'topology', 'route', 'backbone', 'access', 'fo_exist', 'pole_exist', 'obstacle']
-    
+
     data_dict = dict(zip(data_compiled_names, data_compiled))
 
     print(f"ℹ️ Summary Validated IPL:")
     for name, df in data_dict.items():
-        print(f"ℹ️ {name} : {len(df):,} records")
+        print(f"ℹ️ {name:<20} : {len(df):,} records")
 
     print(f"✅ Extraction done.")
     return data_dict
