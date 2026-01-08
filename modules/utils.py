@@ -257,97 +257,6 @@ def spof_detection(
 
     return paths_gdf
 
-def identify_connection(
-    ring: str,
-    target_fiber: gpd.GeoDataFrame,
-    target_point: gpd.GeoDataFrame,
-    start_column: str = 'near_end'
-) -> tuple:
-    
-    import numpy as np
-    import geopandas as gpd
-
-    # --- CRS normalize ---
-    if target_fiber.crs != 'EPSG:3857':
-        target_fiber = target_fiber.to_crs(epsg=3857)
-    if target_point.crs != 'EPSG:3857':
-        target_point = target_point.to_crs(epsg=3857)
-
-    # --- Flatten any list/array values ---
-    for col in ['near_end', 'far_end']:
-        if col in target_fiber.columns:
-            target_fiber[col] = target_fiber[col].apply(
-                lambda x: x[0] if isinstance(x, (list, tuple, np.ndarray)) else x
-            )
-
-    # --- Validate start column ---
-    if start_column == 'near_end':
-        opposite_column = 'far_end'
-    elif start_column == 'far_end':
-        opposite_column = 'near_end'
-    else:
-        raise ValueError("start_column must be either 'near_end' or 'far_end'.")
-
-    # --- Separate hub and site list ---
-    fo_hub = target_point[target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
-    site_list = target_point[~target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
-
-    # --- Identify starting hub ---
-    hub_ids = fo_hub['site_id'].astype(str).tolist()
-    start_hub = target_fiber[target_fiber[start_column].astype(str).isin(hub_ids)][start_column].values
-    if len(start_hub) == 0:
-        start_hub = target_fiber[target_fiber[opposite_column].astype(str).isin(hub_ids)][opposite_column].values
-    if len(start_hub) == 0:
-        print(f"❌ No FO Hub found in ring {ring}")
-        return None, None
-
-    start_hub = start_hub[0]
-
-    # --- Sequential connection search ---
-    connection = [start_hub]
-    visited = set([start_hub])
-    frontier = [start_hub]  # support branching
-
-    while frontier:
-        current = frontier.pop(0)
-
-        # find all fiber segments connected to this site
-        matches = target_fiber[
-            (target_fiber[start_column] == current) | (target_fiber[opposite_column] == current)
-        ]
-
-        for _, seg in matches.iterrows():
-            if seg[start_column] == current:
-                next_sites = [seg[opposite_column]]
-            else:
-                next_sites = [seg[start_column]]
-
-            for next_site in next_sites:
-                if next_site not in visited:
-                    visited.add(next_site)
-                    connection.append(next_site)
-                    frontier.append(next_site)
-
-    # --- Build ordered GeoDataFrame of connection points ---
-    points_sequential = []
-    for site_id in connection:
-        site_id = str(site_id)
-        if site_id in fo_hub['site_id'].astype(str).values:
-            row = fo_hub[fo_hub['site_id'].astype(str) == site_id].iloc[0].to_dict()
-        elif site_id in site_list['site_id'].astype(str).values:
-            row = site_list[site_list['site_id'].astype(str) == site_id].iloc[0].to_dict()
-        else:
-            print(f"⚠️ Site {site_id} not found.")
-            continue
-        points_sequential.append(row)
-
-    if not points_sequential:
-        print(f"⚠️ No valid points found for ring {ring}")
-        return None, None
-
-    points_sequential = gpd.GeoDataFrame(points_sequential, crs='EPSG:3857').reset_index(drop=True)
-    return points_sequential, connection
-
 def auto_sorter(df: pd.DataFrame|gpd.GeoDataFrame, column: str, sort_list: list):
     from itertools import groupby
     
@@ -358,7 +267,88 @@ def auto_sorter(df: pd.DataFrame|gpd.GeoDataFrame, column: str, sort_list: list)
         df = df.sort_values('order', na_position='last').drop(columns='order')
     return df
 
-def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.GeoDataFrame:
+def sequential_connection(paths_gdf, points_gdf, start_column='near_end'):
+
+    if paths_gdf.crs != 'EPSG:3857':
+        paths_gdf = paths_gdf.to_crs(epsg=3857)
+    if points_gdf.crs != 'EPSG:3857':
+        points_gdf = points_gdf.to_crs(epsg=3857)
+
+    points_gdf = points_gdf.copy()
+    paths_gdf  = paths_gdf.copy()
+
+    points_gdf['site_id'] = points_gdf['site_id'].astype(str).str.strip()
+    paths_gdf['near_end'] = paths_gdf['near_end'].astype(str).str.strip()
+    paths_gdf['far_end']  = paths_gdf['far_end'].astype(str).str.strip()
+
+    points_gdf = points_gdf.drop_duplicates(["ring_name", "site_id"], ignore_index=True)
+    paths_gdf  = paths_gdf.drop_duplicates(["ring_name", start_column], ignore_index=True)
+
+    ne_set = set(paths_gdf['near_end'])
+    fe_set = set(paths_gdf['far_end'])
+    union_list = sorted(ne_set | fe_set, key=len, reverse=True)  # deterministic
+
+    for idx, row in points_gdf.iterrows():
+        site_id = row['site_id']
+        if site_id not in ne_set and site_id not in fe_set:
+            for i in union_list:
+                if i and (i in site_id):
+                    print(f"🔸 Adjust site id {site_id} to {i}.")
+                    points_gdf.loc[idx, 'site_id'] = i  # ✅ fix (idx, not i)
+                    break
+
+    points_index = points_gdf.set_index("site_id")
+    paths_index  = paths_gdf.set_index(start_column)
+
+    opposite_column = "near_end" if start_column == "far_end" else "far_end"
+
+    hubs = points_gdf[points_gdf["site_type"].str.lower().str.contains("hub", na=False)].copy()
+    if hubs.empty:
+        raise ValueError("No Hub found.")
+
+    hubs_ids  = set(hubs['site_id'].astype(str))
+    start_ids = set(paths_gdf[start_column].astype(str))
+
+    source_ids = set(paths_index.index)
+
+    candidates = list(hubs_ids | start_ids)
+    start_id = next((x for x in candidates if x in source_ids), None)
+    if start_id is None:
+        start_id = next((x for x in start_ids if x in source_ids), None)
+    if start_id is None:
+        raise ValueError(f"🔴 No valid start_id found in paths_index for index={start_column}")
+
+    connection = [start_id]
+    total_paths = len(paths_gdf)
+
+    for _ in range(total_paths - 1):
+
+        if start_id not in source_ids:
+            print(f"🔴 Start id {start_id} not found in source_ids (index={start_column}).")
+            print(f"Available ids: {source_ids}")
+            break
+
+        source_site = paths_index.loc[start_id].copy()
+        target_id = source_site[opposite_column]
+
+        if target_id not in points_index.index:
+            print(f"🔴 Site {opposite_column} with id {target_id} not found in points.")
+            print(points_index[['site_type', 'ring_name']])
+            break
+
+
+        connection.append(target_id)
+        start_id = target_id
+
+        # Break Last path
+        if target_id not in source_ids:
+            break
+
+    points_sequential = auto_sorter(points_gdf, "site_id", connection)
+    return points_sequential
+
+
+def create_topology(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.GeoDataFrame:
     if points_gdf.crs != 'EPSG:3857':
         points_gdf = points_gdf.to_crs(epsg=3857)
 
@@ -370,18 +360,23 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
 
     for ring in ring_list:
         try:
+            ring_paths = paths_gdf[paths_gdf['ring_name'] == ring].reset_index(drop=True)
             ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
+            ring_points = sequential_connection(ring_paths, ring_points)
             if ring_points.empty:
                 continue
 
             region = next((x for x in ring_points.get('region', []) if pd.notna(x)), 'Unknown Region')
             program = next((x for x in ring_points.get('project', []) if pd.notna(x)), 'Unknown Program')
             fo_hub = ring_points[ring_points['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
+            sitelist = ring_points[~ring_points.index.isin(fo_hub.index)].drop_duplicates('geometry')
             fo_hub_count = len(fo_hub)
+            sitelist_count = len(sitelist)
 
             for i in range(len(ring_points)):
                 start_point = ring_points.iloc[i]
                 end_point = ring_points.iloc[(i + 1) % len(ring_points)]
+                end_site_type = end_point['site_type']
 
                 # skip bad geometries
                 if start_point.geometry is None or end_point.geometry is None:
@@ -393,7 +388,12 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
                     case 0:
                         raise ValueError(f"Ring {ring} not containing FO Hubs, check manual input data.")
                     case 1:
-                        pass
+                        # print(f"Ring {ring} has {fo_hub_count} FO Hubs, potentially star method.")
+                        if (i + 1) % len(ring_points) == 0 and 'hub' not in end_site_type:
+                            continue
+                        # else:
+                        #     print(f"I : {i} and total ring point {len(ring_points)}")
+                        #     print(ring_points[['site_id', 'site_type']].head())
                     case 2:
                         if (i + 1) % len(ring_points) == 0:
                             continue
@@ -485,7 +485,7 @@ def auto_group(data_gdf:gpd.GeoDataFrame, distance=25000):
 
     return groups
 
-def fiber_utilization(data_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def fiber_utilization(data_gdf: gpd.GeoDataFrame, tolerance:int=20) -> gpd.GeoDataFrame:
     target_fiber = gpd.read_parquet(f"{MAINDATA_DIR}/06. FO TBG/Compile FO Route Only June 2025/FO TBG Only_01062025.parquet")
     target_fiber = target_fiber.to_crs(epsg=3857)
     data_gdf = data_gdf.to_crs(epsg=3857)
@@ -493,7 +493,7 @@ def fiber_utilization(data_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     target_fiber.columns = target_fiber.columns.str.lower()
     target_fiber = target_fiber[['name', 'remark', 'operator', 'geometry']]
     target_fiber = target_fiber.rename(columns={'name':'fiber'})
-    target_fiber['geometry']  = target_fiber['geometry'].buffer(20)
+    target_fiber['geometry']  = target_fiber['geometry'].buffer(tolerance)
     
     data_gdf = data_gdf.reset_index(drop=True)
     data_gdf['num'] = data_gdf.index + 1
@@ -534,6 +534,7 @@ def fiber_utilization(data_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
     compiled = pd.concat([existing_gdf, new_gdf])
     compiled = gpd.GeoDataFrame(compiled, geometry='geometry')
-    compiled = compiled.sort_values('ring_name')
+    if 'ring_name' in compiled.columns:
+        compiled = compiled.sort_values('ring_name')
 
     return compiled

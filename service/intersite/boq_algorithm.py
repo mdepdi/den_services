@@ -1728,9 +1728,9 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\TBG-Fiberization XLS Makassar V5 - Ring.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Fiberisasi XL Smart_Karanganyar_2025_New Ring_R002.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export_v5_Surge BOQ Test"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export_Karanganyar New Ring R002"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
 

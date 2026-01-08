@@ -47,10 +47,13 @@ def get_homepass(data_gdf:gpd.GeoDataFrame=None, admin_dict:dict=None, one_unit=
             data_gdf = data_gdf.to_crs(epsg=3857)
         
         if len(provinsi) > 0:
+            print(f"ℹ️ Filter Provinsi: {provinsi}")
             data_gdf = data_gdf[data_gdf['Provinsi'].isin(provinsi)].copy()
         if len(kabkot) > 0:
+            print(f"ℹ️ Filter Kabkot: {kabkot}")
             data_gdf = data_gdf[data_gdf['Kabkot'].isin(kabkot)].copy()
         if len(kecamatan) > 0:
+            print(f"ℹ️ Filter Kecamatan: {kecamatan}")
             data_gdf = data_gdf[data_gdf['Kecamatan'].isin(kecamatan)].copy()
 
         # IDENTIFY HEXAGONS
@@ -64,7 +67,13 @@ def get_homepass(data_gdf:gpd.GeoDataFrame=None, admin_dict:dict=None, one_unit=
     return homepass_all
 
 if __name__ == "__main__":
-    data_excel = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Alfa Store PKP Identify Fasad\TBG Sitelist_Compile_Cek FWA_Dec 2025_v2.xlsx"
-    data_gdf = read_gdf(data_excel, sheet_name='Alfa')
-    homepass = get_homepass(data_gdf, centroid=False)
-    homepass.to_parquet(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Alfa Store PKP Identify Fasad\Alfa Building.parquet")
+    # data_excel = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Alfa Store PKP Identify Fasad\TBG Sitelist_Compile_Cek FWA_Dec 2025_v2.xlsx"
+    # data_gdf = read_gdf(data_excel, sheet_name='Alfa')
+    admin_dict = {
+        'provinsi': ['LAMPUNG'],
+        'kabkot': ['KAB. LAMPUNG TENGAH'],
+    }
+    homepass = get_homepass(admin_dict=admin_dict, centroid=True)
+    homepass.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Get Homepass\Lampung Tengah Building.parquet")
+    grouped = homepass.groupby(['Provinsi', 'Kabkot', 'Kecamatan', 'Desa']).size().reset_index(name='Building_Count')
+    grouped.to_excel(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Get Homepass\Lampung Tengah Building Summary.xlsx", index=False)

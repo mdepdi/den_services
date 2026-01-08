@@ -1223,20 +1223,28 @@ def save_intersite(
     points: gpd.GeoDataFrame,
     paths: gpd.GeoDataFrame,
     export_dir: str,
-    method: str = "Supervised"
+    method: str = "Supervised",
+    check_utils: bool = False
 ):
     logger.info("🧩 Exporting supervised outputs (parquet, KML, Excel).")
-    topology = create_topology(points)
+    topology = create_topology(points, paths)
 
     # FO UTILIZATION
     paths = paths.reset_index(drop=True)
     paths['num'] = paths.index + 1
     
-    fo_utilization = fiber_utilization(data_gdf=paths)
-    pivot_utilization = fo_utilization.pivot_table(index='name', columns='fo_note', values='length', aggfunc='sum', fill_value=0).reset_index()
-    paths = paths.merge(pivot_utilization, how='left', on='name')
-    paths['cable_existing'] = paths['length'] - paths['cable_new']
-    paths['cable_existing'] = np.where(paths['cable_existing'] < 0, 0, paths['cable_existing'])
+    if check_utils:
+        print(f"ℹ️ Checking FO Utilization")
+        fo_utilization = fiber_utilization(data_gdf=paths)
+        pivot_utilization = fo_utilization.pivot_table(index='name', columns='fo_note', values='length', aggfunc='sum', fill_value=0).reset_index()
+        paths = paths.merge(pivot_utilization, how='left', on='name')
+        paths['cable_existing'] = paths['length'] - paths['cable_new']
+        paths['cable_existing'] = np.where(paths['cable_existing'] < 0, 0, paths['cable_existing'])
+    else:
+        print(f"ℹ️ Skip Checking FO Utilization")
+        fo_utilization = gpd.GeoDataFrame()
+        paths['cable_new'] = 0
+        paths['cable_existing'] = 0
     
     # EXPORT PARQUET
     if not points.empty:
@@ -1266,11 +1274,17 @@ def save_intersite(
             points_report = points.drop(columns="geometry")
             excel_styler(points_report).to_excel(writer, sheet_name=sheet_name, index=False)
             logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(points_report):,} records.")
+
         if not paths.empty:
             sheet_name = "Route Information"
             paths_report = paths.drop(columns="geometry")
+            if check_utils:
+                index_col = ['ring_name', 'name', 'near_end', 'far_end', 'cable_new', 'cable_existing']
+            else:
+                index_col = ['ring_name', 'name', 'near_end', 'far_end']
+
             paths_report = paths_report.pivot_table(
-                index=['name', 'near_end', 'far_end', 'ring_name', 'cable_new', 'cable_existing'],
+                index=index_col,
                 columns='fo_note',
                 values='length',
                 aggfunc='sum',

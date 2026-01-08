@@ -362,12 +362,18 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
     lines_kmz = sanitize_header(lines_kmz)
-    points_existing = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
+    points_existing = points_kmz[points_kmz['folder_name'].str.lower().str.contains('site|hub')].copy()
     lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route')].copy()
+
+    # CLEAN UNUSED DATA
+    points_existing = points_existing[~points_existing['folder_name'].str.lower().str.contains("closure|odp|otb|obstacle")]
+    points_existing = points_existing[~points_existing['name'].str.lower().str.contains("connection|closure|odp |otb |obstacle")]
+    lines_existing = lines_existing[~lines_existing['folder_name'].str.lower().str.contains("bb|backbone|akses|existing")]
 
     # POINT EXISTING
     points_existing['site_id'] = points_existing['name'].str.strip()
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
+    points_existing['site_name'] = np.where(points_existing['site_name'].isna(), points_existing['site_id'], points_existing['site_name'])
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
     points_existing['long'] = round(points_existing.geometry.to_crs(epsg=4326).x, 8)
@@ -383,7 +389,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     sep_re = re.escape(sep)
     lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(
         fr"^(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)$",
-        fr"\g<near>{sep_re}\g<far>",
+        fr"\g<near>{sep}\g<far>",
         regex=True
     )
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
