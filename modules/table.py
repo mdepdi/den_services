@@ -63,7 +63,7 @@ def sanitize_header(df:pd.DataFrame, preview_row = 5, lowercase=False):
     # Clean duplicate columns
     duplicated_cols = df.columns[df.columns.duplicated()].tolist()
     if duplicated_cols:
-        print(f"‼️ Duplicate columns found")
+        print(f"‼️ Duplicate columns found {(",").join(duplicated_cols)}")
         new_columns = []
         col_count = {}
         for col in df.columns:
