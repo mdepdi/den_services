@@ -522,7 +522,7 @@ def parallel_sectorize(
     for _, s in sites.iterrows():
         if 'buffer_distance' in s:
             distance = s.get('buffer_distance', 0)
-            print(f"using buffer distance: {distance}")
+            # print(f"using buffer distance: {distance}")
 
         buff = s.geometry.buffer(distance)
         idx = sindex.query(buff, predicate="intersects")
