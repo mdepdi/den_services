@@ -520,6 +520,10 @@ def parallel_sectorize(
     site_args = []
 
     for _, s in sites.iterrows():
+        if 'buffer_distance' in s:
+            distance = s.get('buffer_distance', 0)
+            print(f"using buffer distance: {distance}")
+
         buff = s.geometry.buffer(distance)
         idx = sindex.query(buff, predicate="intersects")
         hp = homepass.iloc[idx].reset_index(drop=True)
@@ -1100,8 +1104,8 @@ if __name__ == "__main__":
         "batch_list": {
             "Batch 1": 10,
             "Batch 2": 10,
-            "Not Yet": 5,
-            "Non TBG":2,
+            # "Not Yet": 5,
+            # "Non TBG":2,
             "__default__":1
         },
         "status_sites_2": {
@@ -1109,8 +1113,8 @@ if __name__ == "__main__":
             "Construction in Progress (CIP)": 7,
             "Ready for Construction (RFC) - Sitac": 5,
             "Ready for Construction (RFC) - Alfa​": 3,
-            "Ready for Construction (RFC) - Non Alfa": 2,
-            "Non TBG": 1,
+            "Non TBG": 2,
+            "Ready for Construction (RFC) - Non Alfa": 1,
             "Dismantle": 1,
             "__default__":1
         },
@@ -1131,7 +1135,7 @@ if __name__ == "__main__":
             "Sitelist 37k": 3,
             "STIP TBG 2025": 2,
             "STIP PKP 2025": 2,
-            "Plan B2S (FWA)": 2,
+            "Plan B2S (FWA)": 0,
             "__default__":1
         },
         "company": {
@@ -1160,10 +1164,10 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\TASK\DESEMBER\Week 5\FWA Surge 45k Sites\FWA Sectorization 45k v3"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Sites Clutter\FWA_45k_v7_Joined Clutter"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\TASK\DESEMBER\Week 5\FWA Surge 45k Sites\Sitelist Only FWA_45k_v3.xlsx"
+    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Sites Clutter\Sitelist FWA_45k_v7_Joined Clutter.parquet"
     sitelist = read_gdf(sitelist_path, sheet_name='Sitelist')
     sitelist = sanitize_header(sitelist, lowercase=True)
     print(sitelist.columns)

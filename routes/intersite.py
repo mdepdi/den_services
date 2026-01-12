@@ -26,8 +26,6 @@ from service.intersite.fixroute_algorithm import validate_fixroute
 from service.intersite.topology_algorithm import validate_topology
 from service.intersite.poligonized_algorithm import validate_poligonize
 from service.intersite.insert_algorithm import validate_insert
-from modules.validation import input_insertring, identify_fiberzone, prepare_prevdata, identify_insertdata
-from service.update_intersite import main_update_intersite
 from tasks.intersite_celery import task_insertring, task_supervised, task_unsupervised, task_fixroute, task_polygon_intersite, task_topology_intersite, task_boq
 
 # EXPORT DIR
@@ -731,64 +729,3 @@ async def boq_intersite(
         }
     except Exception as e:
         return {"error": f"Failed to process data: {str(e)}"}
-
-# ================
-# UPDATE INTERSITE
-# ================
-@router.post("/update_intersite", tags=["Intersite"])
-async def update_intersite(
-    point_gdf: UploadFile = File(
-        ..., description="GPKG, Parquet, or Shapefile containing point data."
-    ),
-    route_gdf: UploadFile = File(
-        ..., description="GPKG, Parquet, or Shapefile containing route data."
-    ),
-    separator: str = Form("-", description="Define separator to identify near end and far end.")
-):
-    """
-    Generate excel file from updated intersite route and point data.
-    """
-    # Read linestring data
-    print(f"🌏 Execute | Update Intersite")
-    
-    # Point data
-    suffix = os.path.splitext(point_gdf.filename)[1].lower()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_point:
-        tmp_point.write(point_gdf.file.read())
-        tmp_point_path = tmp_point.name
-    
-    if suffix in ['.gpkg', '.parquet', '.shp']:
-        point_gdf = read_gdf(tmp_point_path)
-        print(f"📥 Reading linesetring file: {point_gdf.filename}")
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported linesetring file format. Supported formats are GPKG, Parquet, and Shapefile.")
-    
-    # Line data
-    suffix = os.path.splitext(route_gdf.filename)[1].lower()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_route:
-        tmp_route.write(route_gdf.file.read())
-        tmp_route_path = tmp_route.name
-    
-    if suffix in ['.gpkg', '.parquet', '.shp']:
-        route_gdf = read_gdf(tmp_route_path)
-        print(f"📥 Reading linesetring file: {route_gdf.filename}")
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported linestring file format. Supported formats are GPKG, Parquet, and Shapefile.")
-    
-    for geom_type in route_gdf.geom_type:
-        if geom_type not in ['Linestring', 'MultiLineString']:
-            raise HTTPException(status_code=400, detail=f"Invalid file format {geom_type}")
-
-    try:
-        result_dir = os.path.join(EXPORT_DIR, "Fiberization", "Update Intersite")
-        os.makedirs(result_dir, exist_ok=True)
-        zip_path = main_update_intersite(point_gdf=point_gdf, route_gdf=route_gdf, export_dir=result_dir)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error: {e}")
-
-    # --- FileResponse ---
-    return FileResponse(
-        path=zip_path,
-        media_type="application/zip",
-        filename=os.path.basename(zip_path),
-    )

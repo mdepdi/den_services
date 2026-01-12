@@ -14,7 +14,7 @@ MAINDATA_DIR = settings.MAINDATA_DIR
 DATA_DIR = settings.DATA_DIR
 EXPORT_DIR = settings.EXPORT_DIR
 
-def identify_hexagon(data_gdf, resolution=5, buffer=10000, type="bound"):
+def identify_hexagon(data_gdf, resolution=5, buffer=5000, type="bound"):
     """
     Identify hexagon identifiers in a GeoDataFrame.
 
@@ -411,7 +411,7 @@ def retrieve_building(hex_list, centroid=True, hex_dir=None, **kwargs):
         print(f"⚠️ No data found for hex list: {hex_list}.")
         return []
 
-    # print(f"ℹ️ Concating building data.")
+    print(f"ℹ️ Concating building data.")
     all_data = pd.concat(all_data, ignore_index=True)
     all_data = all_data.drop_duplicates(subset="geometry").reset_index(drop=True)
     all_data = gpd.GeoDataFrame(all_data, geometry="geometry", crs="EPSG:3857")
