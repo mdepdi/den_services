@@ -17,7 +17,7 @@ from core.config import settings
 from modules.data import read_gdf
 from modules.table import sanitize_header
 from tasks.fwa_celery import task_fwa
-from service.fwa_alghoritm import validate_fwa
+from service.fwa.fwa_algorithm import validate_fwa
 
 # EXPORT DIR
 UPLOAD_DIR = settings.UPLOAD_DIR

@@ -770,8 +770,6 @@ def parallel_insert(
     task_celery = kwargs.get("task_celery", False)
 
     ring_list = mapped_insert["ring_name"].dropna().unique().tolist()
-    ring_list = ["TBG-KLA-MOCNPhase1-DF077", "TBG-PAT-Phase4a-DF054", "TBG-KDS-Phase4a-DF084"]
-
     mapped_insert = mapped_insert.sort_values(by="dist_fiber")
     mapped_insert = mapped_insert[mapped_insert["dist_fiber"] > 0].reset_index(drop=True)
     mapped_insert["note"] = "Insert Site"
@@ -1006,7 +1004,7 @@ def save_intersite(
     method: str = "Insert"
 ):
     logger.info("🧩 Exporting insert outputs (parquet, KML, Excel).")
-    topology = create_topology(points)
+    topology = create_topology(points, paths_gdf=paths)
 
     # EXPORT PARQUET
     if not points.empty:
@@ -1456,9 +1454,12 @@ def main_insertring(
     print(f"✅ Export completed.")
 
 if __name__ == "__main__":
-    insert_sites = pd.read_excel(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Insert Site.xlsx")
-    kmz_data = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\20251119-Week47-TBG-v1.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4"
+    insert_sites = pd.read_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Sitelist_Insert FWA.parquet")
+    insert_sites['site_id'] = insert_sites['site_id'].astype(str)
+    insert_sites['site_name'] = insert_sites['site_id']
+    insert_sites = insert_sites[['site_id', 'site_name','company_group', 'company', 'lat', 'long']]
+    kmz_data = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Surge_Compile Design Manual_14012025.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export"
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
@@ -1469,7 +1470,7 @@ if __name__ == "__main__":
         kmz_data=kmz_data,
         export_dir=export_loc,
         max_member=12,
-        max_distance=3000
+        max_distance=1000
     )
 
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Insert_Task.zip"

@@ -6,7 +6,7 @@ from time import time
 from json import loads, dumps
 from datetime import datetime
 from celery_app import celery_app
-from service.fwa_alghoritm import main_fwa
+from service.fwa.fwa_algorithm import main_fwa
 from core.config import settings
 
 EXPORT_DIR = settings.EXPORT_DIR

@@ -1351,6 +1351,15 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
     for ring_name, group in route_grouped:
         ring_lines = group.copy()
         ring_points = points_data[points_data['ring_name'] == ring_name].copy()
+        ring_backbone = backbone[backbone['ring_name'] == ring_name].copy()
+        ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring_name].copy()
+        ring_pole_exist = pole_exist[pole_exist['ring_name'] == ring_name].copy()
+        ring_access = access[access['ring_name'] == ring_name].copy()
+        ring_otb = otb[otb['ring_name'] == ring_name].copy()
+        ring_odp = odp[odp['ring_name'] == ring_name].copy()
+        ring_closure = closure[closure['ring_name'] == ring_name].copy()
+        ring_obstacle = obstacle[obstacle['ring_name'] == ring_name].copy()
+
         for idx, row in ring_lines.iterrows():
             segment_name = row['name']
             near_end = row['near_end']
@@ -1359,29 +1368,32 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             seg_type = row.get('core', 24)
 
             # BOQ Data
-            seg_backbone = backbone[(backbone['ring_name'] == ring_name) & (backbone['near_end'] == near_end) & (backbone['far_end'] == far_end)].copy()
+            seg_backbone = ring_backbone[(ring_backbone['near_end'] == near_end) & (ring_backbone['far_end'] == far_end)].copy()
             backbone_core = seg_backbone['name'].iloc[0].split("_FO")[-1].replace("C", "") if not seg_backbone.empty else "24"
             backbone_core = int(backbone_core) if backbone_core.isdigit() else 24
-            seg_access = access[(access['ring_name'] == ring_name) & (access['near_end'] == near_end) & (access['far_end'] == far_end)].copy()
-        
-            seg_fo_exist = fo_exist[(fo_exist['ring_name'] == ring_name) & (fo_exist['near_end'] == near_end) & (fo_exist['far_end'] == far_end)].copy()
-            seg_pole_exist = pole_exist[(pole_exist['ring_name'] == ring_name) & (pole_exist['near_end'] == near_end) & (pole_exist['far_end'] == far_end)].copy()
+            
+            seg_access = ring_access[(ring_access['near_end'] == near_end) & (ring_access['far_end'] == far_end)].copy()
+            seg_fo_exist = ring_fo_exist[(ring_fo_exist['near_end'] == near_end) & (ring_fo_exist['far_end'] == far_end)].copy()
+            seg_pole_exist = ring_pole_exist[(ring_pole_exist['near_end'] == near_end) & (ring_pole_exist['far_end'] == far_end)].copy()
 
-            seg_otb = otb[otb['segment'] == segment_name].copy()
+            seg_otb = ring_otb[ring_otb['segment'] == segment_name].copy()
             seg_otb_new = seg_otb[seg_otb['ext_note'] == 0].copy()
             seg_otb_ext = seg_otb[seg_otb['ext_note'] == 1].copy()
-            seg_odp = odp[odp['segment'] == segment_name].copy()
+
+            seg_odp = ring_odp[ring_odp['segment'] == segment_name].copy()
             seg_odp_new = seg_odp[seg_odp['ext_note'] == 0].copy()
             seg_odp_ext = seg_odp[seg_odp['ext_note'] == 1].copy()
             seg_odp_24 = seg_odp[seg_odp['core'] == 24].copy()
             seg_odp_48 = seg_odp[seg_odp['core'] == 48].copy()
             seg_odp_96 = seg_odp[seg_odp['core'] == 96].copy()
-            seg_closure = closure[closure['segment'] == segment_name].copy()
+
+            seg_closure = ring_closure[ring_closure['segment'] == segment_name].copy()
             seg_closure_new = seg_closure[seg_closure['ext_note'] == 0].copy()
             seg_closure_ext = seg_closure[seg_closure['ext_note'] == 1].copy()
-            seg_obstacle_toll = obstacle[(obstacle['ring_name'] == ring_name) & (obstacle['near_end'] == near_end) & (obstacle['far_end'] == far_end) & (obstacle['obstacle_type'].str.lower().str.contains('toll'))].copy()
-            seg_obstacle_railway = obstacle[(obstacle['ring_name'] == ring_name) & (obstacle['near_end'] == near_end) & (obstacle['far_end'] == far_end) & (obstacle['obstacle_type'].str.lower().str.contains('rail'))].copy()
-            seg_obstacle_bridge = obstacle[(obstacle['ring_name'] == ring_name) & (obstacle['near_end'] == near_end) & (obstacle['far_end'] == far_end) & (obstacle['obstacle_type'].str.lower().str.contains('bridge'))].copy()
+            
+            seg_obstacle_toll = ring_obstacle[(ring_obstacle['near_end'] == near_end) & (ring_obstacle['far_end'] == far_end) & (ring_obstacle['obstacle_type'].str.lower().str.contains('toll'))].copy()
+            seg_obstacle_railway = ring_obstacle[(ring_obstacle['near_end'] == near_end) & (ring_obstacle['far_end'] == far_end) & (ring_obstacle['obstacle_type'].str.lower().str.contains('rail'))].copy()
+            seg_obstacle_bridge = ring_obstacle[(ring_obstacle['near_end'] == near_end) & (ring_obstacle['far_end'] == far_end) & (ring_obstacle['obstacle_type'].str.lower().str.contains('bridge'))].copy()
 
             # Qty Length
             route_qty = None
@@ -1422,7 +1434,7 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             permission_pu = math.ceil((bb_length + access_length + pole_length + cable_96))
             fo_factor = 1.15 if operator == "xl" else 1.1 
             fo_cable = math.ceil(math.ceil(bb_length + access_length) * fo_factor / 100) * 100
-            total_overlap = overlap_length + access_ext_length # if ring_name == prev_idx_ring else overlap_length + access_ext_length
+            total_overlap = overlap_length + access_ext_length
 
             # Compile Data
             record = {
@@ -1730,7 +1742,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 if __name__ == "__main__":
     kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Fiberisasi XL Smart_Karanganyar_2025_New Ring_R002.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Export_Karanganyar New Ring R002"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Export_Karanganyar New Ring R002"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
 
