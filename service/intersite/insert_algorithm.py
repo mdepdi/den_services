@@ -473,7 +473,6 @@ def routing_insert(
     # nodes = retrieve_roads(hex_list, type="nodes").to_crs(3857)
     integrated = integrate_roads(roads, target_fiber, buf=3, min_length=10)
     nodes, roads = route_preprocess(integrated)
-    roads.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251206\Debug\Integrated_{ring}.parquet")
     G = build_graph(roads, graph_type="fiber")
 
     if "nearest_node" not in new_points.columns:
@@ -675,10 +674,8 @@ def routing_insert(
 
     if len(existing_data) > 0:
         existing_data = gpd.GeoDataFrame(existing_data, geometry='geometry', crs="EPSG:3857")
-        existing_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251206\Debug\Existing_{ring}.parquet")
     if len(new_data) > 0:
         new_data = gpd.GeoDataFrame(new_data, geometry='geometry', crs="EPSG:3857")
-        new_data.to_parquet(fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Insert Ring\Trial Insert Ring TX Expansion 2026 V4\20251206\Debug\New_{ring}.parquet")
 
     if len(segments) == 0:
         return gpd.GeoDataFrame(columns=target_fiber.columns, geometry="geometry", crs=3857)
@@ -1470,7 +1467,7 @@ if __name__ == "__main__":
         kmz_data=kmz_data,
         export_dir=export_loc,
         max_member=12,
-        max_distance=1000
+        max_distance=800
     )
 
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Insert_Task.zip"
