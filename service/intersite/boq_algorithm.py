@@ -626,8 +626,13 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     _ = substring_overlay(lines, fo_route_clip)
     existing_route = gpd.overlay(lines, fo_route_clip, how="intersection", keep_geom_type=True)
 
+    lines["fo_exist"] = [{} for _ in range(len(lines))]
+    lines["pole_exist"] = [{} for _ in range(len(lines))]
+    lines["closure"] = [{} for _ in range(len(lines))]
+    
     if existing_route.empty:
         logger.info("⚠️ No existing FO intersections found.")
+        lines = obstacle_detection(lines, sep=sep)
         return points, lines
 
     existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(drop=True)
@@ -649,10 +654,6 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
         existing_route = existing_route.drop(index=dropped)
         logger.info(f"ℹ️ Dropped {len(dropped)} overlapped lines.")
     existing_route = existing_route.drop_duplicates("geometry").reset_index(drop=True)
-
-    lines["fo_exist"] = [{} for _ in range(len(lines))]
-    lines["pole_exist"] = [{} for _ in range(len(lines))]
-    lines["closure"] = [{} for _ in range(len(lines))]
 
     # =============================
     # CLASSIFY EXISTING & POLE EXISTING
@@ -1740,9 +1741,9 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\BOQ Algo\Fiberisasi XL Smart_Karanganyar_2025_New Ring_R002.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Debug BOQ\20260105 Fiberisasi XLSmart Newsite new.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Export_Karanganyar New Ring R002"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Debug BOQ\XLSmart Newsite"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
 

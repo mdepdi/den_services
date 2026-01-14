@@ -246,10 +246,10 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Topology Based Debug\Template_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Topology Based Debug\Connection.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W1\Topology Based Debug"
-    program = "XL Design"
+    excel_file = r"D:\JACOBS\SERVICE\API\test\topologi_based\FWA Central Java Sitelist.xlsx"
+    line_file = r"D:\JACOBS\SERVICE\API\test\topologi_based\FWA Central Java Topology.kml"
+    export_dir = r"D:\JACOBS\SERVICE\API\test\topologi_based\Jawa Tengah 2"
+    program = "Jawa Tengah"
     sep=";"
     boq = False
 

@@ -1227,7 +1227,7 @@ def save_intersite(
     check_utils: bool = False
 ):
     logger.info("🧩 Exporting supervised outputs (parquet, KML, Excel).")
-    topology = create_topology(points, paths)
+    topology = create_topology(points, paths, sequential=False)
 
     # FO UTILIZATION
     paths = paths.reset_index(drop=True)

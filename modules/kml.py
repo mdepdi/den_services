@@ -377,7 +377,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
     points_existing['long'] = round(points_existing.geometry.to_crs(epsg=4326).x, 8)
-    points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 8)
+    points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 8) 
     points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
     points_existing['geometry'] = points_existing.geometry.force_2d()
     points_existing['program'] = points_existing['program'] if "program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Za-z0-9]{6,});')
