@@ -1001,7 +1001,7 @@ def save_intersite(
     method: str = "Insert"
 ):
     logger.info("🧩 Exporting insert outputs (parquet, KML, Excel).")
-    topology = create_topology(points, paths_gdf=paths)
+    topology = create_topology(points, paths_gdf=paths, sequential=False)
 
     # EXPORT PARQUET
     if not points.empty:
@@ -1454,9 +1454,10 @@ if __name__ == "__main__":
     insert_sites = pd.read_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Sitelist_Insert FWA.parquet")
     insert_sites['site_id'] = insert_sites['site_id'].astype(str)
     insert_sites['site_name'] = insert_sites['site_id']
+    # insert_sites = insert_sites[insert_sites['company_group'] == "TBG GROUP"].copy()
     insert_sites = insert_sites[['site_id', 'site_name','company_group', 'company', 'lat', 'long']]
-    kmz_data = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Surge_Compile Design Manual_14012025.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export"
+    kmz_data = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\KMZ PLAN FWA SURGE Batch 1 + 3.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\All TP No Max"
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
@@ -1466,7 +1467,7 @@ if __name__ == "__main__":
         insert_data=insert_sites,
         kmz_data=kmz_data,
         export_dir=export_loc,
-        max_member=12,
+        max_member=20,
         max_distance=800
     )
 

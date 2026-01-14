@@ -369,7 +369,6 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     gdf = gdf.drop_duplicates(subset=[geom_col]).reset_index(drop=True)
 
     # --- EXTRACT EDGES ---
-    print("Extract Edges")
     edge_records = []
 
     for row in gdf.itertuples():
@@ -408,7 +407,6 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     edges_gdf = gpd.GeoDataFrame(edge_records, geometry="geometry", crs=gdf.crs)
 
     # --- BUILD NODES ---
-    print("Extract Nodes")
     edges_gdf["u_key"] = list(zip(edges_gdf["u_x"], edges_gdf["u_y"]))
     edges_gdf["v_key"] = list(zip(edges_gdf["v_x"], edges_gdf["v_y"]))
 

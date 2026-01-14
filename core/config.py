@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
     DEBUG: bool = True
 
-    MAX_WORKERS: int = 4
+    MAX_WORKERS: int
     DOCKER: bool
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str

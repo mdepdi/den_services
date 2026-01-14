@@ -348,7 +348,7 @@ def sequential_connection(paths_gdf, points_gdf, start_column='near_end'):
     return points_sequential
 
 
-def create_topology(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.GeoDataFrame:
+def create_topology(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame, merge: bool = True, sequential: bool = True) -> gpd.GeoDataFrame:
     if points_gdf.crs != 'EPSG:3857':
         points_gdf = points_gdf.to_crs(epsg=3857)
 
@@ -362,7 +362,10 @@ def create_topology(points_gdf: gpd.GeoDataFrame, paths_gdf: gpd.GeoDataFrame, m
         try:
             ring_paths = paths_gdf[paths_gdf['ring_name'] == ring].reset_index(drop=True)
             ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
-            ring_points = sequential_connection(ring_paths, ring_points)
+
+            if sequential:
+                ring_points = sequential_connection(ring_paths, ring_points)
+
             if ring_points.empty:
                 continue
 
