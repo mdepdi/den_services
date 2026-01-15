@@ -1350,7 +1350,7 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
     route_grouped = route.groupby('ring_name')
     compiled_boq_records = []
     for ring_name, group in route_grouped:
-        ring_lines = group.copy()
+        ring_lines = group.drop_duplicates().copy()
         ring_points = points_data[points_data['ring_name'] == ring_name].copy()
         ring_backbone = backbone[backbone['ring_name'] == ring_name].copy()
         ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring_name].copy()
@@ -1366,7 +1366,7 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             near_end = row['near_end']
             far_end = row['far_end']
             seg_length = row['geometry'].length
-            seg_type = row.get('core', 24)
+            seg_core = row.get('core', 24)
 
             # BOQ Data
             seg_backbone = ring_backbone[(ring_backbone['near_end'] == near_end) & (ring_backbone['far_end'] == far_end)].copy()
@@ -1386,7 +1386,10 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             seg_odp_ext = seg_odp[seg_odp['ext_note'] == 1].copy()
             seg_odp_24 = seg_odp[seg_odp['core'] == 24].copy()
             seg_odp_48 = seg_odp[seg_odp['core'] == 48].copy()
+            seg_odp_72 = seg_odp[seg_odp['core'] == 72].copy()
             seg_odp_96 = seg_odp[seg_odp['core'] == 96].copy()
+            seg_odp_120 = seg_odp[seg_odp['core'] == 120].copy()
+            seg_odp_144 = seg_odp[seg_odp['core'] == 144].copy()
 
             seg_closure = ring_closure[ring_closure['segment'] == segment_name].copy()
             seg_closure_new = seg_closure[seg_closure['ext_note'] == 0].copy()
@@ -1419,16 +1422,23 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             odp_ext_qty = len(seg_odp_ext)
             odp_24_qty = len(seg_odp_24)
             odp_48_qty = len(seg_odp_48)
+            odp_72_qty = len(seg_odp_72)
             odp_96_qty = len(seg_odp_96)
+            odp_120_qty = len(seg_odp_120)
+            odp_144_qty = len(seg_odp_144)
             closure_qty = len(seg_closure)
             closure_new_qty = len(seg_closure_new)
             closure_ext_qty = len(seg_closure_ext)
             obstacle_toll_qty = len(seg_obstacle_toll)
             obstacle_railway_qty = len(seg_obstacle_railway)
             obstacle_bridge_qty = len(seg_obstacle_bridge)
-            cable_96 = seg_length if backbone_core == 96 else 0
-            otb_96 = len(seg_otb[seg_otb['core'] == 96])
             cable_24 = seg_length if backbone_core == 24 else 0
+            cable_48 = seg_length if backbone_core == 48 else 0
+            cable_72 = seg_length if backbone_core == 72 else 0
+            cable_96 = seg_length if backbone_core == 96 else 0
+            cable_120 = seg_length if backbone_core == 120 else 0
+            cable_144 = seg_length if backbone_core == 144 else 0
+            otb_96 = len(seg_otb[seg_otb['core'] == 96])
 
             # Calculate
             # PU Permission
@@ -1462,7 +1472,10 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
                 "odp_ext_qty": odp_ext_qty,
                 "odp_24_qty": odp_24_qty,
                 "odp_48_qty": odp_48_qty,
+                "odp_72_qty": odp_72_qty,
                 "odp_96_qty": odp_96_qty,
+                "odp_120_qty": odp_120_qty,
+                "odp_144_qty": odp_144_qty,
                 "closure_qty": closure_qty,
                 "closure_new_qty": closure_new_qty,
                 "closure_ext_qty": closure_ext_qty,
@@ -1472,8 +1485,12 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
                 "permission_pu": permission_pu,
                 "fo_cable_m": fo_cable,
                 "total_overlap_m": total_overlap,
-                "cable_96_m": cable_96,
                 "cable_24_m": cable_24,
+                "cable_48_m": cable_48,
+                "cable_72_m": cable_72,
+                "cable_96_m": cable_96,
+                "cable_120_m": cable_120,
+                "cable_144_m": cable_144,
             }
             compiled_boq_records.append(record)
     boq_df = pd.DataFrame(compiled_boq_records)
@@ -1741,9 +1758,9 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Debug BOQ\20260105 Fiberisasi XLSmart Newsite new.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Use Case Design Jawa Tengah.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Debug BOQ\XLSmart Newsite"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Jawa Tengah"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
 

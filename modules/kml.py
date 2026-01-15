@@ -2,6 +2,7 @@ import simplekml
 import html
 import os
 import re
+import io
 import zipfile
 import pandas as pd
 import numpy as np
@@ -279,81 +280,101 @@ def parse_folder(folder, parent_name=None):
     return results
 
 
-def parse_doc(doc, parent=None):
+def parse_doc(doc, parent=None, source_prefix=""):
     result = []
     doc_name = doc.find("name").text if doc.find("name") else None
-    full_doc = f"{parent};{doc_name}" if parent else doc_name
-    print(f"ℹ️ Parsing {full_doc}")
 
-    # Direct Placemark
+    full_doc = f"{parent};{doc_name}" if parent else doc_name
+    print(f"ℹ️ Parsing {source_prefix}{full_doc}")
+
     for pm in doc.find_all("Placemark", recursive=False):
         result.extend(parse_placemark(pm, folder_name=doc_name, full_path=full_doc))
 
-    # Folder
-    all_folders = doc.find_all("Folder", recursive=False)
-    for f in all_folders:
+    for f in doc.find_all("Folder", recursive=False):
         result.extend(parse_folder(f))
 
-    # Docs
     for sub_doc in doc.find_all("Document", recursive=False):
-        result.extend(parse_doc(sub_doc, parent=full_doc))
+        result.extend(parse_doc(sub_doc, parent=full_doc, source_prefix=source_prefix))
+
     return result
 
 
-def parse_kml(kml_file):
+def parse_kml(kml_file, source_prefix=""):
     soup = BeautifulSoup(kml_file.read(), "xml")
     doc = soup.find("Document")
-
     if doc is None:
         doc = soup.find("kml") or soup
 
-    parsed = parse_doc(doc)
+    parsed = parse_doc(doc, source_prefix=source_prefix)
     return pd.DataFrame(parsed) if parsed else pd.DataFrame()
 
-
-def read_kml(file:str):
+def read_kml(file: str):
     ext = os.path.splitext(file)[1].lower()
     basename = os.path.basename(file)
     print(f"🌏 Extracting KMZ File: {basename}")
-    
+
     result = []
+
+    def walk_kmz(zip_obj: zipfile.ZipFile, prefix: str):
+        entries = [e for e in zip_obj.namelist()]
+        kml_files = [e for e in entries if e.lower().endswith(".kml")]
+
+        for kml_path in kml_files:
+            with zip_obj.open(kml_path) as kml_fp:
+                print(f"KML File ({prefix}): {kml_path}")
+                parsed_kml = parse_kml(kml_fp, source_prefix=f"{prefix}{kml_path}::")
+                result.append(parsed_kml)
+
+        kmz_files = [e for e in entries if e.lower().endswith(".kmz")]
+        if kmz_files:
+            print(f"List of nested KMZ ({prefix}): {kmz_files}")
+
+        for kmz_path in kmz_files:
+            with zip_obj.open(kmz_path) as kmz_fp:
+                kmz_bytes = kmz_fp.read()
+
+            try:
+                with zipfile.ZipFile(io.BytesIO(kmz_bytes), "r") as nested_zip:
+                    nested_prefix = f"{prefix}{kmz_path}::"
+                    print(f"➡️ Enter nested KMZ: {nested_prefix}")
+                    walk_kmz(nested_zip, nested_prefix)
+            except zipfile.BadZipFile:
+                print(f"⚠️ Skipped invalid nested KMZ: {prefix}{kmz_path}")
+
+    # --- entrypoint ---
     if ext == ".kmz":
         with zipfile.ZipFile(file, "r") as z:
-            kml_files = [f for f in z.namelist() if f.endswith(".kml")]
-            print(f"List of KML Files: {kml_files}")
-            if not kml_files:
-                raise FileNotFoundError("No .kml file found inside the .kmz archive.")
-
-            for kml in kml_files:
-                with z.open(kml) as kml_file:
-                    print(f"KML File: {kml_file}")
-                    parsed_kml = parse_kml(kml_file)
-                    result.append(parsed_kml)
+            walk_kmz(z, prefix=f"{basename}::")
 
     elif ext == ".kml":
         with open(file, "rb") as f:
-            parsed_kml = parse_kml(f)
+            parsed_kml = parse_kml(f, source_prefix=f"{basename}::")
             result.append(parsed_kml)
 
     else:
         raise ValueError(f"Invalid file format: {ext}")
 
-    # CONVERT TO GDF
+    # --- Convert to GDF ---
+    if not result:
+        raise FileNotFoundError("No KML data found in KMZ / nested KMZ.")
+
     try:
-        data_df = pd.concat(result)
-        data_gdf = gpd.GeoDataFrame(data_df, geometry='geometry', crs="EPSG:4326")
-        points = data_gdf[data_gdf.geometry.type == "Point"]
-        lines = data_gdf[data_gdf.geometry.type.isin(["LineString", "MultiLineString"])]
-        polygons = data_gdf[data_gdf.geometry.type.isin(["Polygon", "MultiPolygon"])]
+        data_df = pd.concat(result, ignore_index=True)
+        data_gdf = gpd.GeoDataFrame(data_df, geometry="geometry", crs="EPSG:4326")
+
+        gt = data_gdf.geometry.geom_type
+        points = data_gdf[gt == "Point"]
+        lines = data_gdf[gt.isin(["LineString", "MultiLineString"])]
+        polygons = data_gdf[gt.isin(["Polygon", "MultiPolygon"])]
 
         print(f"ℹ️ Total Points data extracted {len(points)}")
         print(f"ℹ️ Total Lines data extracted {len(lines)}")
         print(f"ℹ️ Total Polygon data extracted {len(polygons)}")
-        print(f"✅ Extraction done.")
+        print("✅ Extraction done.")
+        return points, lines, polygons
+
     except Exception as e:
         raise ValueError(f"Error in GeoDataFrame conversion: {e}")
-    
-    return points, lines, polygons
 
 
 def validate_kmz_design(filepath:str, sep: str = "-"):
@@ -527,23 +548,37 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
 
     near_set = set(route['near_end'].astype(str))
     mask_fhub = fo_hub[fo_hub['site_id'].astype(str).isin(near_set)].copy()
-    fo_hub['is_first'] = np.where(fo_hub['site_id'].astype(str).isin(mask_fhub['site_id'].astype(str)), 1, 0)
-    route['is_first'] = np.where(route['near_end'].astype(str).isin(mask_fhub['site_id'].astype(str)), 1, 0)
+
+    route["hub_ring_id"] = route["ring_name"].astype(str) + "_" + route["near_end"].astype(str)
+    mask_fhub = fo_hub.loc[
+        fo_hub["site_id"].astype(str).isin(route["near_end"].astype(str)),
+        ["site_id", "ring_name"]
+    ].copy()
+
+    mask_fhub["hub_ring_id"] = mask_fhub["ring_name"].astype(str) + "_" + mask_fhub["site_id"].astype(str)
+    valid_ids = set(mask_fhub["hub_ring_id"])
+    route["is_first"] = np.where(route["hub_ring_id"].isin(valid_ids), 1, 0)
+    
     sites_data['is_first'] = np.where(
-        sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'near_end'].dropna()) |
-        sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'far_end'].dropna()), 1, 0
+        (sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'near_end'].dropna()) & sites_data['site_type'].str.lower().str.contains('hub')) |
+        (sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'far_end'].dropna()) & sites_data['site_type'].str.lower().str.contains('site')), 1, 0
     )
+
     first_points = sites_data[sites_data['is_first'] == 1].copy()
     first_route = route[route['is_first'] == 1].copy()
-    first_point_ids = set(first_points['site_id'].astype(str))
-    first_route_ids = set(first_route['segment'].astype(str))
+    first_points = first_points.drop_duplicates(subset=['ring_name', 'site_type'])
+    first_route = first_route.drop_duplicates(subset=['ring_name', 'segment'])
+    first_points['first_id'] = first_points['ring_name'].astype(str) + "_" + first_points['name'].astype(str)
+    first_route['first_id'] = first_route['ring_name'].astype(str) + "_" + first_route['segment'].astype(str)
+
+    first_point_ids = set(first_points['first_id'].astype(str))
+    first_route_ids = set(first_route['first_id'].astype(str))
 
     # DEVICES DATA
     devices = ['odp', 'otb', 'closure']
     devices_mask = points_data['folder_name'].str.lower().str.contains('|'.join(devices))
     devices_data = points_data[devices_mask].copy()
     devices_data['device_name'] = devices_data['name'].str.strip().astype(str)
-    devices_data['segment'] = None
     devices_data = devices_data.drop(columns=['site_id'])
     devices_data['device_type'] = np.select(
         [
@@ -554,17 +589,30 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
         [ "ODP", "OTB", "Closure"],
         default="Unknown"
     )
-    devices_data['core'] = devices_data['name'].str.extract(r"(?P<device_type>[\w+])\s*(?P<core>\d{2})?", expand=True)["core"].fillna(24).astype(int)
+    devices_data['core'] = devices_data['name'].str.extract(r"(?P<device_type>[\w+])\s*(?P<core>\((24|48|72|96|120|144)\))?", expand=True)["core"].fillna(24).astype(int)
     devices_data['identifier'] = np.select(
         [devices_data['device_type'] == "ODP",
         devices_data['device_type'] == "OTB",
         devices_data['device_type'] == "Closure"],
         [
-            devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<core>\d{2})?\s*(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
-            devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<core>\d{2})?\s*(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
+            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-]*(?P<core>\((24|48|72|96|120|144)\))?[\s\-]+(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
+            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-]*(?P<core>\((24|48|72|96|120|144)\))?[\s\-]+(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
             devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<segment>[A-Za-z0-9\ -;_]+)$", expand=True)["segment"].str.strip(),
         ],
         default=devices_data['name'].str.strip()
+    )
+    devices_data['first_id'] = np.select(
+        [
+            devices_data['device_type'] == "ODP",
+            devices_data['device_type'] == "OTB",
+            devices_data['device_type'] == "Closure",
+        ],
+        [
+            devices_data['ring_name'] + "_" + devices_data['identifier'].astype(str),
+            devices_data['ring_name'] + "_" + devices_data['identifier'].astype(str),
+            devices_data['ring_name'] + "_" + devices_data['identifier'].astype(str),
+        ],
+        default=0
     )
     devices_data['is_first'] = np.select(
         [
@@ -573,14 +621,15 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
             devices_data['device_type'] == "Closure",
         ],
         [
-            devices_data['identifier'].isin(first_point_ids).astype(int),
-            devices_data['identifier'].isin(first_point_ids).astype(int),
-            devices_data['identifier'].isin(first_route_ids).astype(int),
+            devices_data['first_id'].isin(first_point_ids).astype(int),
+            devices_data['first_id'].isin(first_point_ids).astype(int),
+            devices_data['first_id'].isin(first_route_ids).astype(int),
         ],
         default=0
     )
 
     # ASSIGN SEGMENT TO DEVICES
+    devices_data['segment'] = None
     grouped_devices = devices_data.groupby('ring_name')
     for ring, group in grouped_devices:
         ring_lines = route[route['ring_name'] == ring]
@@ -604,6 +653,8 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
                     fe_line = ring_lines[ring_lines['far_end'] == identifier]
                     if fe_line.empty:
                         print(f"🔴 No far end line found for device {device_name} in ring {ring}")
+                        print(f"Identifier {identifier} | First point ids: {first_point_ids}")
+                        print(f"Ring Lines \n {ring_lines[['near_end', 'far_end']]}")
                         continue
 
                     segment_line = fe_line['segment'].values[0]
@@ -652,3 +703,14 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
 
     print(f"✅ Extraction done.")
     return data_dict
+
+
+if __name__ == "__main__":
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\KMZ PLAN FWA SURGE Batch 1 + 3.kmz"
+
+    # KMZ DATA
+    points_kmz, lines_kmz, _ = read_kml(kmz_path)
+    # if not points_kmz.empty:
+    #     points_kmz.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\Debug Insert\Point KMZ.parquet")
+    # if not lines_kmz.empty:
+    #     lines_kmz.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\Debug Insert\Lines KMZ.parquet")

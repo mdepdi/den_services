@@ -270,6 +270,8 @@ def validate_fixroute(df: pd.DataFrame):
     logger.info(f"ℹ️ Converting to GeoDataFrame...")
     gdf_ne = gpd.GeoDataFrame(df_ne, geometry=geom_ne, crs="EPSG:4326").to_crs(epsg=3857)
     gdf_fe = gpd.GeoDataFrame(df_fe, geometry=geom_fe, crs="EPSG:4326").to_crs(epsg=3857)
+    gdf_ne["site_name"] = gdf_ne['site_name'].astype(str)
+    gdf_fe["site_name"] = gdf_fe['site_name'].astype(str)
     gdf_ne["point_type"] = "NE"
     gdf_fe["point_type"] = "FE"
     logger.info(f"ℹ️ Validation completed.\n")

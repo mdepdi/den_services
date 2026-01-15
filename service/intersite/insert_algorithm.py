@@ -64,7 +64,12 @@ def validate_insert(insert_sites:str | gpd.GeoDataFrame, kmz_data: str, sep="-")
             raise ValueError(f"Column {col} not detected in Insert Sites data.")
 
     # KMZ DATA
-    points_kmz, lines_kmz, _ = read_kml(kmz_data)  
+    points_kmz, lines_kmz, _ = read_kml(kmz_data)
+    if not points_kmz.empty:
+        points_kmz.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\Debug Insert\Point KMZ.parquet")
+    if not lines_kmz.empty:
+        lines_kmz.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\Debug Insert\Lines KMZ.parquet")
+
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
@@ -1400,7 +1405,7 @@ def main_insertring(
 
     insert_sites, points_existing, lines_existing = validate_insert(insert_sites=insert_data, kmz_data=kmz_data, sep=sep)
     insert_reached, insert_not_reached = identify_insert(insert_sites, lines_existing, max_distance=max_distance)
-
+    
     logger.info(f"ℹ️ Potential sites to insert: {len(insert_reached):,}")
     logger.info(f"ℹ️ Potential sites to new design: {len(insert_not_reached):,}")
 
@@ -1412,6 +1417,11 @@ def main_insertring(
         insert_reached.to_parquet(os.path.join(insert_dir, f"Reached_Points.parquet"))
     if not insert_not_reached.empty:
         insert_not_reached.to_parquet(os.path.join(insert_dir, f"Not Reached_Points.parquet"))
+
+    if not points_existing.empty:
+        points_existing.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\Debug Insert\Points Existing.parquet")
+    if not lines_existing.empty:
+        lines_existing.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Insert Task\Export\Debug Insert\Lines Existing.parquet")
 
     insert_reached = insert_reached.to_crs(epsg=3857)
     points_existing = points_existing.to_crs(epsg=3857)
@@ -1467,7 +1477,7 @@ if __name__ == "__main__":
         insert_data=insert_sites,
         kmz_data=kmz_data,
         export_dir=export_loc,
-        max_member=20,
+        max_member=999,
         max_distance=800
     )
 
