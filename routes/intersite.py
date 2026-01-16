@@ -62,6 +62,7 @@ class Operator(str, Enum):
 
 class RoutePreference(str, Enum):
     FIBER = "existing_fiber"
+    ROAD = "weigthed_road"
     SHORTEST = "shortest_route"
 
 # ========
@@ -248,6 +249,8 @@ async def supervised_ring(
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
+        case RoutePreference.ROAD:
+            graph_type = "weighted_road"
         case _:
             graph_type = "route"
     
@@ -345,6 +348,8 @@ async def unsupervised_ring(
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
+        case RoutePreference.ROAD:
+            graph_type = "weighted_road"
         case _:
             graph_type = "route"
     
@@ -450,6 +455,8 @@ async def fixroute_ring(
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
+        case RoutePreference.ROAD:
+            graph_type = "weighted_road"
         case _:
             graph_type = "route"
     
@@ -543,6 +550,8 @@ async def polygon_intersite(
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
+        case RoutePreference.ROAD:
+            graph_type = "weighted_road"
         case _:
             graph_type = "route"
     
@@ -636,6 +645,8 @@ async def topology_intersite(
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
+        case RoutePreference.ROAD:
+            graph_type = "weighted_road"
         case _:
             graph_type = "route"
     

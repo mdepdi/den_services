@@ -183,7 +183,7 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
             ref_fo = set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_start']) | set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_end'])
             
     # BASE WEIGHT
-    if graph_type == "full_weighted":
+    if graph_type in ["weighted_road", "full_weighted"]:
         roads_gdf = roads_gdf.drop(columns='road_weight')
         roads_gdf['road_weight'] = roads_gdf['highway'].map(road_weight).fillna(1)
 
@@ -199,6 +199,11 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
 
             case "full_fiber":
                 weight = row.length * (100 if identified_fo else cable_cost)
+
+            case "weighted_road":
+                base_weight = row.road_weight
+                build_charge = row.build_charge if avoid_railway else 0
+                weight = row.length * base_weight + build_charge
 
             case "full_weighted":
                 base_weight = row.road_weight
@@ -217,7 +222,6 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
     G = G.to_undirected()
 
     return G
-
 
 
 def fiber_utilization(data: gpd.GeoDataFrame, ref_fo: list, roads: gpd.GeoDataFrame, nodes: gpd.GeoDataFrame):
