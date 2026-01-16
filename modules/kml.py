@@ -454,254 +454,295 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     print(f"ℹ️ Total LineString  : {len(points_existing):,}")
     return points_existing, lines_existing
 
-def validate_kmz_ipl(filepath:str, sep: str = "-"):
+
+def validate_kmz_ipl(filepath: str, sep: str = "-"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
-    points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
-    lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
+
+    points_kmz = gpd.GeoDataFrame(points_kmz, geometry="geometry", crs="EPSG:4326")
+    lines_kmz  = gpd.GeoDataFrame(lines_kmz,  geometry="geometry", crs="EPSG:4326")
+
     points_kmz = sanitize_header(points_kmz)
-    lines_kmz = sanitize_header(lines_kmz)
-    points_data = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
-    lines_data = lines_kmz.copy()
+    lines_kmz  = sanitize_header(lines_kmz)
 
+    points_data = points_kmz[~points_kmz["name"].astype(str).str.lower().str.contains("connection", na=False)].copy()
+    lines_data  = lines_kmz.copy()
+
+    # --------------------------------
     # POINT DATA
-    points_data['site_id']      = points_data['name'].str.strip().astype(str)
-    points_data['site_name']    = points_data['Site_Name'] if "Site_Name" in points_data.columns else points_data['name']
-    points_data['site_type']    = points_data['folders'].str.split(";").str[-1]
-    points_data['site_type']    = np.where(points_data['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
-    points_data['long']         = round(points_data.geometry.to_crs(epsg=4326).x, 8)
-    points_data['lat']          = round(points_data.geometry.to_crs(epsg=4326).y, 8)
-    points_data['ring_name']    = points_data['folders'].str.split(";").str[-2]
-    points_data['geometry']     = points_data.geometry.force_2d()
-    points_data['program']      = points_data['program'] if "program" in points_data.columns else points_data['folders'].str.extract(r';([A-Za-z0-9]{6,});')
-    points_data['region']       = points_data['region'] if "region" in points_data.columns else points_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
-    points_data['program']      = points_data['program'].fillna("NA")
-    points_data = points_data.dropna(how='all', axis=1)
+    # --------------------------------
+    points_data["name"] = points_data["name"].astype(str).str.strip()
 
+    # folder_name is used later; ensure it exists
+    if "folder_name" not in points_data.columns and "folders" in points_data.columns:
+        points_data["folder_name"] = points_data["folders"].astype(str).str.split(";").str[-1].str.strip()
+
+    points_data["site_id"]   = points_data["name"]
+    points_data["site_name"] = points_data["Site_Name"] if "Site_Name" in points_data.columns else points_data["name"]
+
+    points_data["ring_name"] = points_data["folders"].astype(str).str.split(";").str[-2].str.strip()
+    points_data["site_type"] = np.where(
+        points_data["folder_name"].str.lower().str.contains("hub", na=False),
+        "FO Hub",
+        "Site List"
+    )
+
+    # already EPSG:4326, so no need to_crs again
+    points_data["long"]     = points_data.geometry.x.round(8)
+    points_data["lat"]      = points_data.geometry.y.round(8)
+    points_data["geometry"] = points_data.geometry.force_2d()
+
+    if "program" not in points_data.columns:
+        points_data["program"] = points_data["folders"].astype(str).str.extract(r";([A-Za-z0-9]{6,});")[0]
+    if "region" not in points_data.columns:
+        points_data["region"] = points_data["folders"].astype(str).str.extract(r";([A-Z0-9]{3,6});")[0]
+
+    points_data["program"] = points_data["program"].fillna("NA")
+    points_data = points_data.dropna(how="all", axis=1)
+
+    # --------------------------------
     # LINES DATA
+    # --------------------------------
+    lines_data["name"] = lines_data["name"].astype(str)
+
+    if "folder_name" not in lines_data.columns and "folders" in lines_data.columns:
+        lines_data["folder_name"] = lines_data["folders"].astype(str).str.split(";").str[-1].str.strip()
+
     sep_re = re.escape(sep)
-    lines_data['bb_fiber'] = lines_data['name'].str.split("/").str[-1]
-    lines_data['name'] = lines_data['name'].str.split("/").str[0]
-    lines_extracted = lines_data['name'].str.strip().str.extract(
-        fr"^(?P<data_type>BB|Akses|s*)?(?P<near_end>[A-Za-z0-9 -_]+)\s*{sep_re}\s*(?P<far_end>[A-Za-z0-9 -_]+)(\_FO(?P<core>\d{{2}}))?$",
+
+    lines_data["bb_fiber"] = lines_data["name"].str.split("/").str[-1]
+    lines_data["name"]     = lines_data["name"].str.split("/").str[0].str.strip()
+
+    lines_extracted = lines_data["name"].str.extract(
+        fr"^(?P<data_type>BB|Akses)?\s*(?P<near_end>[A-Za-z0-9 \-_]+)\s*{sep_re}\s*(?P<far_end>[A-Za-z0-9 \-_]+)(?:_FO(?P<core>\d{{2}}))?$",
         expand=True
     )
-    lines_extracted['near_end'] = lines_extracted['near_end'].str.strip()
-    lines_extracted['far_end']  = lines_extracted['far_end'].str.strip()
-    if 'core' in lines_extracted.columns:
-        lines_extracted['core'] = lines_extracted['core'].fillna(24).astype(int)
-    else:
-        lines_extracted['core'] = 24
 
-    lines_data['segment'] = lines_extracted['near_end'] + sep + lines_extracted['far_end']
-    lines_data['segment'] = lines_data['segment'].str.strip()
-    lines_data['near_end']  = lines_data['segment'].str.split(sep).str[0]
-    lines_data['far_end']   = lines_data['segment'].str.split(sep).str[-1]
-    lines_data['geometry']  = lines_data.geometry.force_2d()
-    lines_data['length']    = lines_data.geometry.to_crs(epsg=3857).length
-    lines_data['ring_name'] = lines_data['folders'].str.split(";").str[-2]
-    lines_data['program']   = lines_data['program'] if "program" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Za-z0-9]{6,});')
-    lines_data['region']    = lines_data['region'] if "region" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
-    lines_data['fo_note']   = 'merged'
-    lines_data['core']      = lines_extracted['core']
-    lines_data['program']   = lines_data['program'].fillna("NA")
-    lines_data = lines_data.dropna(how='all', axis=1)
+    bad = lines_extracted["near_end"].isna() | lines_extracted["far_end"].isna()
+    if bad.any():
+        samples = lines_data.loc[bad, "name"].head(10).tolist()
+        raise ValueError(f"Line name parse failed for {bad.sum()} records. Samples: {samples}")
 
-    # COMPILE
-    existing_col = ['name', 'folder_name', 'site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
-    for col in existing_col:
-        if col not in points_data.columns:
-            if col == "region":
-                existing_col.pop(existing_col.index('region'))
-                continue
-            raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
-    points_data = points_data[existing_col]
+    lines_extracted["near_end"] = lines_extracted["near_end"].str.strip()
+    lines_extracted["far_end"]  = lines_extracted["far_end"].str.strip()
+    lines_extracted["core"]     = lines_extracted["core"].fillna("24").astype(int)
 
-    existing_col = ['name', 'folder_name', 'segment', 'near_end', 'far_end', 'core', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
-    for col in existing_col:
-        if col not in lines_data.columns:
-            if col == "region":
-                existing_col.pop(existing_col.index('region'))
-                continue
-            raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")
-    lines_data = lines_data[existing_col]
+    lines_data["segment"]  = (lines_extracted["near_end"] + sep + lines_extracted["far_end"]).str.strip()
+    lines_data["near_end"] = lines_extracted["near_end"]
+    lines_data["far_end"]  = lines_extracted["far_end"]
+    lines_data["core"]     = lines_extracted["core"]
+
+    lines_data["geometry"]  = lines_data.geometry.force_2d()
+    lines_data["length"]    = lines_data.geometry.to_crs(epsg=3857).length
+    lines_data["ring_name"] = lines_data["folders"].astype(str).str.split(";").str[-2].str.strip()
+    lines_data["fo_note"]   = "merged"
+
+    if "program" not in lines_data.columns:
+        lines_data["program"] = lines_data["folders"].astype(str).str.extract(r";([A-Za-z0-9]{6,});")[0]
+    if "region" not in lines_data.columns:
+        lines_data["region"] = lines_data["folders"].astype(str).str.extract(r";([A-Z0-9]{3,6});")[0]
+
+    lines_data["program"] = lines_data["program"].fillna("NA")
+    lines_data = lines_data.dropna(how="all", axis=1)
+
+    # --------------------------------
+    # COMPILE + VALIDATE COLS
+    # --------------------------------
+    pts_cols = ["name", "folder_name", "site_id", "site_name", "site_type", "long", "lat", "ring_name", "program", "region", "geometry"]
+    if "region" not in points_data.columns:
+        pts_cols.remove("region")
+    missing = [c for c in pts_cols if c not in points_data.columns]
+    if missing:
+        raise ValueError(f"Missing columns in points_data: {missing}")
+    points_data = points_data[pts_cols]
+
+    lns_cols = ["name", "folder_name", "segment", "near_end", "far_end", "core", "fo_note", "ring_name", "program", "region", "geometry", "length"]
+    if "region" not in lines_data.columns:
+        lns_cols.remove("region")
+    missing = [c for c in lns_cols if c not in lines_data.columns]
+    if missing:
+        raise ValueError(f"Missing columns in lines_data: {missing}")
+    lines_data = lines_data[lns_cols]
 
     if points_data.empty:
-        raise ValueError(f"Point data in existing kmz is empty")
-
+        raise ValueError("Point data in existing kmz is empty")
     if lines_data.empty:
-        raise ValueError(f"Lines data in existing kmz is empty")
+        raise ValueError("Lines data in existing kmz is empty")
 
+    # --------------------------------
     # PARSE FOLDER
+    # --------------------------------
     # Lines
-    topology = lines_data[lines_data['name'].str.lower().str.strip() == 'connection'].copy()
-    route = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'route'].copy()
-
-    backbone = lines_data[lines_data['folder_name'].str.lower().str.contains('backbone')].copy()
-    access = lines_data[lines_data['folder_name'].str.lower().str.contains('access|akses')].copy()
-    fo_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'fo existing'].copy()
-    pole_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'pole existing'].copy()
+    topology   = lines_data[lines_data["name"].str.lower().str.strip() == "connection"].copy()
+    route      = lines_data[lines_data["folder_name"].str.lower().str.strip() == "route"].copy()
+    backbone   = lines_data[lines_data["folder_name"].str.lower().str.contains("backbone", na=False)].copy()
+    access     = lines_data[lines_data["folder_name"].str.lower().str.contains("access|akses", na=False)].copy()
+    fo_exist   = lines_data[lines_data["folder_name"].str.lower().str.strip() == "fo existing"].copy()
+    pole_exist = lines_data[lines_data["folder_name"].str.lower().str.strip() == "pole existing"].copy()
 
     # Points
-    sites_data = points_data[points_data['folder_name'].str.lower().str.contains('site') | points_data['folder_name'].str.lower().str.contains('hub')].copy()
-    fo_hub = sites_data[sites_data['folder_name'].str.lower().str.contains('hub')].copy()
-    sitelist = sites_data[sites_data['folder_name'].str.lower().str.contains('site')].copy()
+    sites_data = points_data[
+        points_data["folder_name"].str.lower().str.contains("site", na=False)
+        | points_data["folder_name"].str.lower().str.contains("hub", na=False)
+    ].copy()
+    fo_hub   = sites_data[sites_data["folder_name"].str.lower().str.contains("hub", na=False)].copy()
+    sitelist = sites_data[sites_data["folder_name"].str.lower().str.contains("site", na=False)].copy()
 
-    near_set = set(route['near_end'].astype(str))
-    mask_fhub = fo_hub[fo_hub['site_id'].astype(str).isin(near_set)].copy()
-
+    # --------------------------------
+    # FIRST ROUTE DETECTION
+    # --------------------------------
     route["hub_ring_id"] = route["ring_name"].astype(str) + "_" + route["near_end"].astype(str)
+
     mask_fhub = fo_hub.loc[
         fo_hub["site_id"].astype(str).isin(route["near_end"].astype(str)),
         ["site_id", "ring_name"]
     ].copy()
-
     mask_fhub["hub_ring_id"] = mask_fhub["ring_name"].astype(str) + "_" + mask_fhub["site_id"].astype(str)
-    valid_ids = set(mask_fhub["hub_ring_id"])
-    route["is_first"] = np.where(route["hub_ring_id"].isin(valid_ids), 1, 0)
-    
-    sites_data['is_first'] = np.where(
-        (sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'near_end'].dropna()) & sites_data['site_type'].str.lower().str.contains('hub')) |
-        (sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'far_end'].dropna()) & sites_data['site_type'].str.lower().str.contains('site')), 1, 0
+
+    valid_ids = set(mask_fhub["hub_ring_id"].astype(str))
+    route["is_first"] = route["hub_ring_id"].isin(valid_ids).astype(int)
+
+    sites_data["is_first"] = np.where(
+        (sites_data["site_id"].isin(route.loc[route["is_first"] == 1, "near_end"].dropna())) |
+        (sites_data["site_id"].isin(route.loc[route["is_first"] == 1, "far_end"].dropna())),
+        1, 0
     )
 
-    first_points = sites_data[sites_data['is_first'] == 1].copy()
-    first_route = route[route['is_first'] == 1].copy()
-    first_points = first_points.drop_duplicates(subset=['ring_name', 'site_type'])
-    first_route = first_route.drop_duplicates(subset=['ring_name', 'segment'])
-    first_points['first_id'] = first_points['ring_name'].astype(str) + "_" + first_points['name'].astype(str)
-    first_route['first_id'] = first_route['ring_name'].astype(str) + "_" + first_route['segment'].astype(str)
+    first_points = sites_data[sites_data["is_first"] == 1].drop_duplicates(subset=["ring_name", "site_type"]).copy()
+    first_route  = route[route["is_first"] == 1].drop_duplicates(subset=["ring_name", "segment"]).copy()
 
-    first_point_ids = set(first_points['first_id'].astype(str))
-    first_route_ids = set(first_route['first_id'].astype(str))
+    first_points["first_id"] = first_points["ring_name"].astype(str) + "_" + first_points["name"].astype(str)
+    first_route["first_id"]  = first_route["ring_name"].astype(str) + "_" + first_route["segment"].astype(str)
 
+    first_point_ids = set(first_points["first_id"].astype(str))
+    first_route_ids = set(first_route["first_id"].astype(str))
+
+    # --------------------------------
     # DEVICES DATA
-    devices = ['odp', 'otb', 'closure']
-    devices_mask = points_data['folder_name'].str.lower().str.contains('|'.join(devices))
+    # --------------------------------
+    devices_mask = points_data["folder_name"].str.lower().str.contains(r"odp|otb|closure", na=False)
     devices_data = points_data[devices_mask].copy()
-    devices_data['device_name'] = devices_data['name'].str.strip().astype(str)
-    devices_data = devices_data.drop(columns=['site_id'])
-    devices_data['device_type'] = np.select(
+    devices_data["device_name"] = devices_data["name"].astype(str).str.strip()
+
+    if "site_id" in devices_data.columns:
+        devices_data = devices_data.drop(columns=["site_id"])
+
+    devices_data["device_type"] = np.select(
         [
-            devices_data['folder_name'].str.lower().str.contains('odp'),
-            devices_data['folder_name'].str.lower().str.contains('otb'),
-            devices_data['folder_name'].str.lower().str.contains('closure'),
+            devices_data["folder_name"].str.lower().str.contains("odp", na=False),
+            devices_data["folder_name"].str.lower().str.contains("otb", na=False),
+            devices_data["folder_name"].str.lower().str.contains("closure", na=False),
         ],
-        [ "ODP", "OTB", "Closure"],
+        ["ODP", "OTB", "Closure"],
         default="Unknown"
     )
-    devices_data['core'] = devices_data['name'].str.extract(r"(?P<device_type>[\w+])\s*(?P<core>\((24|48|72|96|120|144)\))?", expand=True)["core"].fillna(24).astype(int)
-    devices_data['identifier'] = np.select(
-        [devices_data['device_type'] == "ODP",
-        devices_data['device_type'] == "OTB",
-        devices_data['device_type'] == "Closure"],
-        [
-            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-]*(?P<core>\((24|48|72|96|120|144)\))?[\s\-]+(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
-            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-]*(?P<core>\((24|48|72|96|120|144)\))?[\s\-]+(?P<site_id>[A-Za-z0-9\ -_]+)$", expand=True)["site_id"].str.strip(),
-            devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<segment>[A-Za-z0-9\ -;_]+)$", expand=True)["segment"].str.strip(),
-        ],
-        default=devices_data['name'].str.strip()
+
+    # core: extract number inside (...) => int
+    core_str = devices_data["device_name"].str.extract(r"\((?P<core>24|48|72|96|120|144)\)")[0]
+    devices_data["core"] = core_str.fillna("24").astype(int)
+
+    pat_odp_otb = r"(?P<device_type>ODP|OTB)(?:[\s_]+(?P<ext>EXT))?[\s-]*(?:\((?P<core>24|48|72|96|120|144)\))?[\s-]+(?P<site_id>[A-Za-z0-9 \-_]+)$"
+    id_odp_otb = devices_data["device_name"].str.extract(pat_odp_otb, expand=True)["site_id"].str.strip()
+    id_closure = devices_data["device_name"].str.extract(r"(?P<device_type>\w+)\s*(?P<segment>[A-Za-z0-9 \-;_]+)$", expand=True)["segment"].str.strip()
+
+    devices_data["identifier"] = np.where(
+        devices_data["device_type"].isin(["ODP", "OTB"]),
+        id_odp_otb,
+        np.where(devices_data["device_type"].eq("Closure"), id_closure, devices_data["device_name"])
     )
-    devices_data['first_id'] = np.select(
+
+    devices_data["first_id"] = devices_data["ring_name"].astype(str) + "_" + devices_data["identifier"].astype(str)
+
+    devices_data["is_first"] = np.select(
         [
-            devices_data['device_type'] == "ODP",
-            devices_data['device_type'] == "OTB",
-            devices_data['device_type'] == "Closure",
+            devices_data["device_type"].isin(["ODP", "OTB"]),
+            devices_data["device_type"].eq("Closure"),
         ],
         [
-            devices_data['ring_name'] + "_" + devices_data['identifier'].astype(str),
-            devices_data['ring_name'] + "_" + devices_data['identifier'].astype(str),
-            devices_data['ring_name'] + "_" + devices_data['identifier'].astype(str),
-        ],
-        default=0
-    )
-    devices_data['is_first'] = np.select(
-        [
-            devices_data['device_type'] == "ODP",
-            devices_data['device_type'] == "OTB",
-            devices_data['device_type'] == "Closure",
-        ],
-        [
-            devices_data['first_id'].isin(first_point_ids).astype(int),
-            devices_data['first_id'].isin(first_point_ids).astype(int),
-            devices_data['first_id'].isin(first_route_ids).astype(int),
+            devices_data["first_id"].isin(first_point_ids).astype(int),
+            devices_data["first_id"].isin(first_route_ids).astype(int),
         ],
         default=0
     )
 
+    # --------------------------------
     # ASSIGN SEGMENT TO DEVICES
-    devices_data['segment'] = None
-    grouped_devices = devices_data.groupby('ring_name')
-    for ring, group in grouped_devices:
-        ring_lines = route[route['ring_name'] == ring]
-        first_line = route[route['is_first'] == 1]
+    # --------------------------------
+    devices_data["segment"] = None
+    for ring, group in devices_data.groupby("ring_name"):
+        ring_lines = route[route["ring_name"] == ring]
+        first_line = ring_lines[ring_lines["is_first"] == 1]
         if first_line.empty:
-            print(f"🔴 No first line found for ring {ring}")
             continue
+        first_seg = first_line.iloc[0]["segment"]
 
-        ne_unique = set(ring_lines['near_end'].unique())
-        fe_unique = set(ring_lines['far_end'].unique())
         for idx, row in group.iterrows():
-            device_name = row['device_name']
-            device_type = row['device_type']
-            is_first = bool(row['is_first'])
-            identifier = row['identifier']
+            if row["device_type"] not in ["ODP", "OTB"]:
+                devices_data.at[idx, "segment"] = row["identifier"]
+                continue
 
-            if device_type in ['ODP', 'OTB']:
-                if is_first:
-                    segment_line = first_line['segment'].values[0]
-                else:
-                    fe_line = ring_lines[ring_lines['far_end'] == identifier]
-                    if fe_line.empty:
-                        print(f"🔴 No far end line found for device {device_name} in ring {ring}")
-                        print(f"Identifier {identifier} | First point ids: {first_point_ids}")
-                        print(f"Ring Lines \n {ring_lines[['near_end', 'far_end']]}")
-                        continue
+            ident = row["identifier"]
+            ne_line = ring_lines[ring_lines["near_end"] == ident]
+            fe_line = ring_lines[ring_lines["far_end"] == ident]
 
-                    segment_line = fe_line['segment'].values[0]
-                devices_data.at[idx, 'segment'] = segment_line
+            if ne_line.empty and fe_line.empty:
+                continue  # or raise if strict
+
+            primary_seg = fe_line.iloc[0]["segment"] if not fe_line.empty else ne_line.iloc[0]["segment"]
+            ends = str(primary_seg).split(sep)
+
+            if bool(row["is_first"]) and ident in ends:
+                devices_data.at[idx, "segment"] = first_seg
             else:
-                segment_line = identifier
-                devices_data.at[idx, 'segment'] = segment_line
+                devices_data.at[idx, "segment"] = primary_seg
 
-    odp = devices_data[devices_data['folder_name'].str.lower().str.contains('odp')].copy()
-    otb = devices_data[devices_data['folder_name'].str.lower().str.contains('otb')].copy()
-    closure = devices_data[devices_data['folder_name'].str.lower().str.contains('closure')].copy()
+    odp     = devices_data[devices_data["folder_name"].str.lower().str.contains("odp", na=False)].copy()
+    otb     = devices_data[devices_data["folder_name"].str.lower().str.contains("otb", na=False)].copy()
+    closure = devices_data[devices_data["folder_name"].str.lower().str.contains("closure", na=False)].copy()
 
-    # Obstacle
-    obstacle = points_data[points_data['folder_name'].str.lower().str.contains('obstacle')].copy()
-    obstacle['obstacle_type'] = np.select(
+    # --------------------------------
+    # OBSTACLE
+    # --------------------------------
+    obstacle = points_data[points_data["folder_name"].str.lower().str.contains("obstacle", na=False)].copy()
+    obstacle["obstacle_type"] = np.select(
         [
-            obstacle['name'].str.lower().str.contains('rail|kai'),
-            obstacle['name'].str.lower().str.contains('toll'),
-            obstacle['name'].str.lower().str.contains('bridge'),
+            obstacle["name"].astype(str).str.lower().str.contains("rail|kai", na=False),
+            obstacle["name"].astype(str).str.lower().str.contains("toll", na=False),
+            obstacle["name"].astype(str).str.lower().str.contains("bridge", na=False),
         ],
-        ['Railway','Toll Road','Bridge'],
-        default='Not Defined'
+        ["Railway", "Toll Road", "Bridge"],
+        default="Not Defined",
     )
-    obstacle[['near_end', 'far_end']] = obstacle['name'].str.extract(rf"(?P<obstacle_type>.+?)?\s*{sep}\s*(?P<near>.+?)\s*{sep}\s*(?P<far>.+?)$")[['near', 'far']]
-    obstacle['segment'] = obstacle['near_end'] + sep + obstacle['far_end']
-    
-    # METADATA
-    odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('ext_'), 1, 0)
-    otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('ext_'), 1, 0)
-    closure['ext_note'] = np.where(closure['name'].str.lower().str.contains('ext_'), 1, 0)
-    odp_extracted = odp['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})\s*(?P<site_id>\[\w+\s*\])$", expand=True)
-    odp['core'] = odp_extracted['core'].fillna(24).astype(int) if 'core' in odp_extracted else 24
-    otb_extracted = otb['name'].str.extract(r"^(?P<device>ODP|OTB|Closure)(_?P<core>\d{2})\s*(?P<site_id>\[\w+\s*\])$", expand=True)
-    otb['core'] = otb_extracted['core'].fillna(24).astype(int) if 'core' in otb_extracted else 24
+    tmp = obstacle["name"].astype(str).str.extract(
+        rf"^(?P<obs>.+?)\s*{sep_re}\s*(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)$"
+    )
+    obstacle["near_end"] = tmp["near"].str.strip()
+    obstacle["far_end"]  = tmp["far"].str.strip()
+    obstacle["segment"]  = obstacle["near_end"] + sep + obstacle["far_end"]
 
-    data_compiled = [points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
-                     topology, route, backbone, access, fo_exist, pole_exist, obstacle]
-    data_compiled_names = ['points_data', 'lines_data', 'fo_hub', 'sitelist', 'odp', 'otb', 'closure',
-                           'topology', 'route', 'backbone', 'access', 'fo_exist', 'pole_exist', 'obstacle']
+    # --------------------------------
+    # METADATA
+    # --------------------------------
+    for df in (odp, otb, closure):
+        df["ext_note"] = df["name"].astype(str).str.lower().str.contains("ext_", na=False).astype(int)
+
+    # --------------------------------
+    # OUTPUT
+    # --------------------------------
+    data_compiled = [
+        points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
+        topology, route, backbone, access, fo_exist, pole_exist, obstacle
+    ]
+    data_compiled_names = [
+        "points_data", "lines_data", "fo_hub", "sitelist", "odp", "otb", "closure",
+        "topology", "route", "backbone", "access", "fo_exist", "pole_exist", "obstacle"
+    ]
 
     data_dict = dict(zip(data_compiled_names, data_compiled))
 
-    print(f"ℹ️ Summary Validated IPL:")
+    print("ℹ️ Summary Validated IPL:")
     for name, df in data_dict.items():
         print(f"ℹ️ {name:<20} : {len(df):,} records")
-
-    print(f"✅ Extraction done.")
+    print("✅ Extraction done.")
     return data_dict
 
 

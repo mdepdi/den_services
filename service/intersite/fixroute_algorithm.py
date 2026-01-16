@@ -43,7 +43,8 @@ def fixroute_algo(
     ring: str,
     export_loc: str = None,
     spof_threshold: int = 3000,
-    sep:str = "-"
+    sep:str = "-",
+    graph_type: str = "full_weighted",
 ) -> tuple:
     
     if export_loc is None:
@@ -79,7 +80,7 @@ def fixroute_algo(
     concated = concated.to_crs(epsg=3857).reset_index(drop=True)
     roads = roads.to_crs(epsg=3857).reset_index(drop=True)
     nodes = nodes.to_crs(epsg=3857).reset_index(drop=True)
-    G = build_graph(roads, graph_type='full_weighted')
+    G = build_graph(roads, graph_type=graph_type)
 
     concated = gpd.sjoin_nearest(concated, nodes[['node_id', 'geometry']], how='left', distance_col='dist_to_node')
     gdf_ne_ring = gpd.sjoin_nearest(gdf_ne_ring, nodes[['node_id', 'geometry']], how='left', distance_col='dist_to_node')
@@ -172,6 +173,7 @@ def parallel_fixroute(
 
     task_celery = kwargs.get("task_celery", False)
     sep = kwargs.get("sep", "-")
+    graph_type = kwargs.get("graph_type", "full_weighted")
     spof_threshold = kwargs.get("spof_threshold", 3000)
 
     ring_list = ne_data['ring_name'].dropna().unique().tolist()
@@ -205,6 +207,7 @@ def parallel_fixroute(
                 checkpoint_dir,
                 spof_threshold,
                 sep=sep,
+                graph_type=graph_type
             )
             futures[future] = ring
 
@@ -283,6 +286,7 @@ def main_fixroute(
     boq:bool = False,
     sep:str = "-",
     spof_threshold: int = 3000,
+    graph_type: str = "full_weighted",
     **kwargs
 ):
     if not os.path.exists(export_dir):
@@ -316,7 +320,7 @@ def main_fixroute(
         
         if task_celery:
             task_celery.update_state(state="PROGRESS", meta={"status": "Starting Parallel Fix Route"})
-        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, spof_threshold=spof_threshold, task_celery=task_celery, sep=sep)
+        updated_points, updated_routes = parallel_fixroute(ne_data, fe_data, export_dir, spof_threshold=spof_threshold, task_celery=task_celery, sep=sep, graph_type=graph_type)
         updated_routes['name'] = updated_routes['near_end'] + sep + updated_routes['far_end']
         
     if not updated_points.empty:

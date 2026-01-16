@@ -535,6 +535,7 @@ def ring_cluster(cluster_args):
     spof_threshold = cluster_args.get("spof_threshold", 3000)
     sep = cluster_args.get("sep", "-")
     export_dir = cluster_args.get("export_dir", None)
+    graph_type = cluster_args.get("graph_type", "full_weighted")
 
     final_paths = []
     final_points = []
@@ -562,7 +563,7 @@ def ring_cluster(cluster_args):
     hex_list = identify_hexagon(cluster_site, type="convex")
     roads = retrieve_roads(hex_list, type="roads").to_crs(epsg=3857)
     nodes = retrieve_roads(hex_list, type="nodes").to_crs(epsg=3857)
-    G = build_graph(roads, graph_type="full_weighted", ref_fo=ref_fo, cable_cost=cable_cost, avoid_railway=False)
+    G = build_graph(roads, graph_type=graph_type, ref_fo=ref_fo, cable_cost=cable_cost, avoid_railway=False)
 
     node_sindex = nodes.sindex
     cluster_site["nearest_node"] = cluster_site.geometry.apply(
@@ -772,6 +773,7 @@ def ring_parallel(
     spof_threshold=3000,
     cable_cost=35000,
     sep="-",
+    graph_type="full_weighted",
     task_celery=False,
 ):
     """Process multiple clusters in parallel and merge results."""
@@ -807,6 +809,7 @@ def ring_parallel(
             "spof_threshold": spof_threshold,
             "sep": sep,
             "cable_cost": cable_cost,
+            "graph_type": graph_type
         })
 
     if not cluster_args:
@@ -973,6 +976,7 @@ def ring_supervised(
     logger.info(f"🧩 Running supervised ring design for area '{area}'.")
     cable_cost = kwargs.get("cable_cost", 35000)
     spof_threshold = kwargs.get("spof_threshold", 3000)
+    graph_type = kwargs.get("graph_type", "full_weighted")
     task_celery = kwargs.get("task_celery", False)
 
     os.makedirs(export_dir, exist_ok=True)
@@ -1049,6 +1053,7 @@ def ring_supervised(
             spof_threshold=spof_threshold,
             cable_cost=cable_cost,
             sep=sep,
+            graph_type=graph_type,
             task_celery=task_celery,
         )
         return paths, points
@@ -1314,6 +1319,7 @@ def main_supervised(
     fo_expand: gpd.GeoDataFrame = None,
     boq: bool = False,
     spof_threshold: int = 3000,
+    graph_type: str = "full_weighted",
     **kwargs,
 ):
     """Main supervised pipeline: per-area processing, compile, export KMZ/Excel."""
@@ -1373,6 +1379,7 @@ def main_supervised(
                 fo_expand=fo_expand,
                 cable_cost=cable_cost,
                 sep=sep,
+                graph_type=graph_type,
                 spof_threshold=spof_threshold,
                 task_celery=task_celery
             )

@@ -1365,6 +1365,7 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             segment_name = row['name']
             near_end = row['near_end']
             far_end = row['far_end']
+
             seg_length = row['geometry'].length
             seg_core = row.get('core', 24)
 
@@ -1390,6 +1391,15 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             seg_odp_96 = seg_odp[seg_odp['core'] == 96].copy()
             seg_odp_120 = seg_odp[seg_odp['core'] == 120].copy()
             seg_odp_144 = seg_odp[seg_odp['core'] == 144].copy()
+
+            if seg_odp.empty:
+                print(f"Ring: {ring_name} | Segment {segment_name} | NE: {near_end} | FE: {far_end}")
+                print(f"ODP empty: \n {ring_odp}")
+                print(f"\n Ring Lines \n")
+                print(ring_lines[['segment', 'near_end', 'far_end']])
+                raise NotImplementedError(f"Debug Error ODP")
+            else:
+                print(f"Ring: {ring_name} | Segment {segment_name} | NE: {near_end} | FE: {far_end} 🟢")
 
             seg_closure = ring_closure[ring_closure['segment'] == segment_name].copy()
             seg_closure_new = seg_closure[seg_closure['ext_note'] == 0].copy()

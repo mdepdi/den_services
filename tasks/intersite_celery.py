@@ -179,6 +179,8 @@ def task_unsupervised(self, data: dict):
         drop_existings = parsed_data.get("drop_existings", False)
         program = parsed_data.get("program", 'Supervised Intersite')
         sep = parsed_data.get("sep", '-')
+        graph_type = parsed_data.get("graph_type", "full_weighted")
+
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -207,6 +209,7 @@ def task_unsupervised(self, data: dict):
             drop_existings=drop_existings,
             boq=boq,
             sep=sep,
+            graph_type=graph_type,
             program=program,
             task_celery=self
         )
@@ -251,7 +254,8 @@ def task_fixroute(self, data: dict):
         template_path = parsed_data.get("template_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
-        sep = parsed_data.get("sep", False)
+        sep = parsed_data.get("sep", "-")
+        graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Fix Route Fiberization')
         
         if DOCKER:
@@ -271,6 +275,7 @@ def task_fixroute(self, data: dict):
             program=program,
             boq=boq,
             sep=sep,
+            graph_type=graph_type,
             spof_threshold=spof_threshold,
             task_celery=self
         )
@@ -318,6 +323,7 @@ def task_polygon_intersite(self, data: dict):
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
+        graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Polygon Based Fiberization')
         
         if DOCKER:
@@ -339,6 +345,7 @@ def task_polygon_intersite(self, data: dict):
             program=program,
             boq=boq,
             sep=sep,
+            graph_type=graph_type,
             spof_threshold=spof_threshold,
             task_celery=self
         )
@@ -388,6 +395,7 @@ def task_topology_intersite(self, data: dict):
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
+        graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Topology Based Fiberization')
         
         if DOCKER:
@@ -410,6 +418,7 @@ def task_topology_intersite(self, data: dict):
             program=program,
             boq=boq,
             sep=sep,
+            graph_type=graph_type,
             task_celery=self
         )
 

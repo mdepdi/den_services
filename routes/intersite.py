@@ -60,6 +60,10 @@ class Operator(str, Enum):
     SURGE = "surge"
     TSEL = "tsel"
 
+class RoutePreference(str, Enum):
+    FIBER = "existing_fiber"
+    SHORTEST = "shortest_route"
+
 # ========
 # ROUTER
 # ========
@@ -202,6 +206,7 @@ async def supervised_ring(
     program: str = Form("Fiberization", description="Program name if needed."),
     boq:bool = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design based on **Supervised Alghorithm**, you need to define the cluster first.  
@@ -239,9 +244,16 @@ async def supervised_ring(
             sep = ";"
         case _:
             sep = "-"
+
+    match route_preference:
+        case RoutePreference.FIBER:
+            graph_type = "full_weighted"
+        case _:
+            graph_type = "route"
     
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
+    print(f"ℹ️ Operator          : {operator}")
+    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Route Preference  : {route_preference}")
     
     date_today = datetime.now().strftime("%Y%m%d")
     supervised_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Supervised")
@@ -270,7 +282,8 @@ async def supervised_ring(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep
+            "sep": sep,
+            "graph_type": graph_type
         }
         data = dumps(data, default=str)
         celery_task = task_supervised.apply_async(args=[data])
@@ -295,6 +308,7 @@ async def unsupervised_ring(
     drop_existings:bool = Form(False, description="Drop ring if not conatining new site."),
     boq:bool = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design based on **Unsupervised Alghorithm**, the clustering based on our service.  
@@ -327,9 +341,16 @@ async def unsupervised_ring(
             sep = ";"
         case _:
             sep = "-"
+
+    match route_preference:
+        case RoutePreference.FIBER:
+            graph_type = "full_weighted"
+        case _:
+            graph_type = "route"
     
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
+    print(f"ℹ️ Operator          : {operator}")
+    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
     # LOAD DATA
@@ -372,7 +393,8 @@ async def unsupervised_ring(
             "program": program,
             "spof_threshold": spof_threshold,
             "boq": boq,
-            "sep": sep
+            "sep": sep,
+            "graph_type": graph_type
         }
         data = dumps(data, default=str)
         celery_task = task_unsupervised.apply_async(args=[data])
@@ -394,6 +416,7 @@ async def fixroute_ring(
     program: Optional[str] = Form(None, description="Program name if not defined"),
     boq: Optional[bool] = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design based on **Fix Route Alghorithm**.  
@@ -423,9 +446,16 @@ async def fixroute_ring(
             sep = ";"
         case _:
             sep = "-"
+
+    match route_preference:
+        case RoutePreference.FIBER:
+            graph_type = "full_weighted"
+        case _:
+            graph_type = "route"
     
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
+    print(f"ℹ️ Operator          : {operator}")
+    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
     # LOAD DATA
@@ -447,7 +477,8 @@ async def fixroute_ring(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep
+            "sep": sep,
+            "graph_type": graph_type
         }
         data = dumps(data, default=str)
         celery_task = task_fixroute.apply_async(args=[data])
@@ -469,6 +500,7 @@ async def polygon_intersite(
     program: Optional[str] = Form("Fiberization", description="Program name if needed."),
     boq: Optional[bool] = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design **Polygon Based**.  
@@ -507,10 +539,17 @@ async def polygon_intersite(
             sep = ";"
         case _:
             sep = "-"
+
+    match route_preference:
+        case RoutePreference.FIBER:
+            graph_type = "full_weighted"
+        case _:
+            graph_type = "route"
     
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
-    
+    print(f"ℹ️ Operator          : {operator}")
+    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Route Preference  : {route_preference}")
+
     try:
         suffix = os.path.splitext(polygon_file.filename)[1].lower()
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_fiber:
@@ -544,7 +583,8 @@ async def polygon_intersite(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep
+            "sep": sep,
+            "graph_type": graph_type
         }
         data = dumps(data, default=str)
         celery_task = task_polygon_intersite.apply_async(args=[data])
@@ -566,6 +606,7 @@ async def topology_intersite(
     program: Optional[str] = Form("Fiberization", description="Program name if needed."),
     boq:Optional[bool] = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design **Topology Based**.  
@@ -591,9 +632,16 @@ async def topology_intersite(
             sep = ";"
         case _:
             sep = "-"
+
+    match route_preference:
+        case RoutePreference.FIBER:
+            graph_type = "full_weighted"
+        case _:
+            graph_type = "route"
     
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
+    print(f"ℹ️ Operator          : {operator}")
+    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Route Preference  : {route_preference}")
 
     # Read Excel file
     if excel_file is None:
@@ -642,7 +690,8 @@ async def topology_intersite(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep
+            "sep": sep,
+            "graph_type": graph_type
         }
         data = dumps(data, default=str)
         celery_task = task_topology_intersite.apply_async(args=[data])
