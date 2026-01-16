@@ -152,7 +152,7 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
 
     Args:
         roads_gdf (GeoDataFrame): GeoDataFrame containing road geometries.
-        graph_type (str): Type of graph to build. Options are ['route', 'fiber', 'full_fiber', 'full_weighted'].
+        graph_type (str): Type of graph to build. Options are ['route', 'fiber', 'full_fiber', 'weighted_road', 'full_weighted'].
         cable_cost(int, optional): Cost of cable to build. Defaults to 35000.
 
     Returns:

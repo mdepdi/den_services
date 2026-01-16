@@ -62,7 +62,7 @@ class Operator(str, Enum):
 
 class RoutePreference(str, Enum):
     FIBER = "existing_fiber"
-    ROAD = "weigthed_road"
+    ROAD = "weighted_road"
     SHORTEST = "shortest_route"
 
 # ========
