@@ -805,8 +805,8 @@ async def boq_intersite(
     Create BOQ Report based on Implementation KMZ.  
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List', 'Route Backbone', 'Route Akses', 'Pole Eksisting', 'FO Existing', and so on].
 
-    **Input Design Sample**  
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    **Input KMZ Implementation Sample**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Implementation_Sample.kmz)
     
     **Note:**
     - IOH Operator  : Separator will be '-'
@@ -828,7 +828,7 @@ async def boq_intersite(
     print(f"ℹ️ Separator : {sep}")
     
     suffix = os.path.splitext(ipl_file.filename)[1].lower()
-    filename = os.path.splitext(ipl_file.filename)[0].lower()
+    filename = os.path.splitext(ipl_file.filename)[0]
     
     if suffix not in ['.kml', '.kmz']:
         return {"error": f"Unsupported format: {suffix}"}
@@ -850,7 +850,7 @@ async def boq_intersite(
             raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
 
         try:
-            out_base = f"BOQ_{filename}"
+            out_base = f"BOQ_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
             zip_path = os.path.join(export_loc, f"{out_base}.zip")
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, _, files in os.walk(export_loc):
