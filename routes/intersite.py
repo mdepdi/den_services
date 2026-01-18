@@ -159,7 +159,7 @@ async def insert_ring(
 
     kmz_path = os.path.join(
         upload_dir,
-        f"{uuid4().hex}_design_{datetime.now().strftime('%Y/%m/%d_%H%M%S')}{kmz_suffix}"
+        f"{uuid4().hex}_design_{datetime.now().strftime('%Y%m%d_%H%M%S')}{kmz_suffix}"
     )
 
     with open(kmz_path, "wb") as f:
@@ -172,7 +172,7 @@ async def insert_ring(
 
     insert_path = os.path.join(
         upload_dir,
-        f"{uuid4().hex}_insert_{datetime.now().strftime('%Y/%m/%d_%H%M%S')}{excel_suffix}"
+        f"{uuid4().hex}_insert_{datetime.now().strftime('%Y%m%d_%H%M%S')}{excel_suffix}"
     )
     with open(insert_path, "wb") as f:
         f.write(await insert_list.read())
@@ -277,7 +277,7 @@ async def supervised_ring(
         site_data = site_data.drop(columns=['index_right'])
 
     # SAVE AS PARQUET
-    temp_parquet_path = os.path.join(supervised_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
+    temp_parquet_path = os.path.join(supervised_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     print(f"📥 Temporary site data saved to: {temp_parquet_path}")
 
@@ -383,8 +383,8 @@ async def unsupervised_ring(
         site_data = site_data.drop(columns=['index_right'])
 
     # SAVE AS PARQUET
-    temp_parquet_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
-    temp_hub_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_hub_data_{uuid4().hex}.parquet")
+    temp_parquet_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
+    temp_hub_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_hub_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     hubs_data.to_parquet(temp_hub_path, index=False)
     print(f"📥 Temporary site data saved to : {temp_parquet_path}")
@@ -476,7 +476,7 @@ async def fixroute_ring(
 
 
     # SAVE DATA
-    excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
+    excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
     fixroute_input.to_excel(excel_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
 
@@ -576,8 +576,8 @@ async def polygon_intersite(
         return {"error": f"Failed to read polygon file: {str(e)}"}
 
     # SAVE DATA
-    excel_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_template_{uuid4().hex}.xlsx")
-    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_polygon_{uuid4().hex}.parquet")
+    excel_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_template_{uuid4().hex}.xlsx")
+    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_polygon_{uuid4().hex}.parquet")
     
     with pd.ExcelWriter(excel_path) as xls:
         hubs.to_excel(xls, sheet_name='hubs')
@@ -685,8 +685,8 @@ async def topology_intersite(
         return {"error": f"Failed to read topology file: {str(e)}"}
 
     # SAVE DATA
-    excel_path = os.path.join(topology_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_template_{uuid4().hex}.xlsx")
-    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_topology_{uuid4().hex}.parquet")
+    excel_path = os.path.join(topology_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_template_{uuid4().hex}.xlsx")
+    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_topology_{uuid4().hex}.parquet")
     
     with pd.ExcelWriter(excel_path) as xls:
         sitelist.to_excel(xls, sheet_name='sitelist')
@@ -766,8 +766,8 @@ async def implementation_intersite(
         return {"error": f"Failed to read topology file: {str(e)}"}
 
     # SAVE DATA
-    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_points_kmz_{uuid4().hex}.parquet")
-    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_lines_kmz_{uuid4().hex}.parquet")
+    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_points_kmz_{uuid4().hex}.parquet")
+    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_lines_kmz_{uuid4().hex}.parquet")
 
     point_kmz.to_parquet(points_path, index=False)
     line_kmz.to_parquet(lines_path, index=False)
@@ -833,7 +833,7 @@ async def boq_intersite(
     if suffix not in ['.kml', '.kmz']:
         return {"error": f"Unsupported format: {suffix}"}
 
-    kmz_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_{filename}_{uuid4().hex}.{suffix}")
+    kmz_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}.{suffix}")
     with kmz_path.open("wb") as buffer:
         shutil.copyfileobj(ipl_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
@@ -841,7 +841,7 @@ async def boq_intersite(
     extracted_ipl = validate_kmz_ipl(kmz_path, sep=sep)
     if extracted_ipl is not None:
         date_today = datetime.now().strftime("%Y%m%d")
-        export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
         os.makedirs(export_loc, exist_ok=True)
         
         try:
