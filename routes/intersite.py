@@ -833,8 +833,8 @@ async def boq_intersite(
     if suffix not in ['.kml', '.kmz']:
         return {"error": f"Unsupported format: {suffix}"}
 
-    kmz_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}.{suffix}")
-    with kmz_path.open("wb") as buffer:
+    kmz_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}{suffix}")
+    with open(kmz_path, "wb") as buffer:
         shutil.copyfileobj(ipl_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
 
@@ -855,10 +855,11 @@ async def boq_intersite(
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, _, files in os.walk(export_loc):
                     for export_file in files:
-                        if not export_file.endswith(".zip") or "Checkpoint" not in export_file:
-                            export_file_path = os.path.join(root, export_file)
-                            arcname = os.path.relpath(export_file_path, export_loc)
-                            zipf.write(export_file_path, arcname)
+                        if export_file.endswith(".zip") or "Checkpoint" in export_file:
+                            continue
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
             print(f"📦 Result files zipped.")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
