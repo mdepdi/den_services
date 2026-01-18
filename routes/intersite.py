@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import tempfile
 import zipfile
+import shutil
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from json import loads, dumps
@@ -17,7 +18,7 @@ from datetime import datetime
 
 from core.config import settings
 from modules.data import read_gdf
-from modules.kml import read_kml, validate_kmz_design
+from modules.kml import read_kml, validate_kmz_design, validate_kmz_ipl
 from modules.table import sanitize_header
 
 from service.intersite.ring_algorithm import supervised_validation
@@ -26,6 +27,7 @@ from service.intersite.fixroute_algorithm import validate_fixroute
 from service.intersite.topology_algorithm import validate_topology
 from service.intersite.poligonized_algorithm import validate_poligonize
 from service.intersite.insert_algorithm import validate_insert
+from service.intersite.boq_algorithm import boq_generation
 from tasks.intersite_celery import task_insertring, task_supervised, task_unsupervised, task_fixroute, task_polygon_intersite, task_topology_intersite, task_boq
 
 # EXPORT DIR
@@ -157,7 +159,7 @@ async def insert_ring(
 
     kmz_path = os.path.join(
         upload_dir,
-        f"{uuid4().hex}_design_{datetime.now().strftime('%H%M%S')}{kmz_suffix}"
+        f"{uuid4().hex}_design_{datetime.now().strftime('%Y/%m/%d_%H%M%S')}{kmz_suffix}"
     )
 
     with open(kmz_path, "wb") as f:
@@ -170,7 +172,7 @@ async def insert_ring(
 
     insert_path = os.path.join(
         upload_dir,
-        f"{uuid4().hex}_insert_{datetime.now().strftime('%H%M%S')}{excel_suffix}"
+        f"{uuid4().hex}_insert_{datetime.now().strftime('%Y/%m/%d_%H%M%S')}{excel_suffix}"
     )
     with open(insert_path, "wb") as f:
         f.write(await insert_list.read())
@@ -275,7 +277,7 @@ async def supervised_ring(
         site_data = site_data.drop(columns=['index_right'])
 
     # SAVE AS PARQUET
-    temp_parquet_path = os.path.join(supervised_upload, f"{datetime.now().strftime('%H%M%S')}_site_data_{uuid4().hex}.parquet")
+    temp_parquet_path = os.path.join(supervised_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     print(f"📥 Temporary site data saved to: {temp_parquet_path}")
 
@@ -381,8 +383,8 @@ async def unsupervised_ring(
         site_data = site_data.drop(columns=['index_right'])
 
     # SAVE AS PARQUET
-    temp_parquet_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%H%M%S')}_site_data_{uuid4().hex}.parquet")
-    temp_hub_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%H%M%S')}_hub_data_{uuid4().hex}.parquet")
+    temp_parquet_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_site_data_{uuid4().hex}.parquet")
+    temp_hub_path = os.path.join(unsupervised_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_hub_data_{uuid4().hex}.parquet")
     site_data.to_parquet(temp_parquet_path, index=False)
     hubs_data.to_parquet(temp_hub_path, index=False)
     print(f"📥 Temporary site data saved to : {temp_parquet_path}")
@@ -474,7 +476,7 @@ async def fixroute_ring(
 
 
     # SAVE DATA
-    excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
+    excel_path = os.path.join(fixroute_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_fixroute_{uuid4().hex}.xlsx")
     fixroute_input.to_excel(excel_path, index=False)
     print(f"📥 Temporary Excel data saved to: {excel_path}")
 
@@ -574,8 +576,8 @@ async def polygon_intersite(
         return {"error": f"Failed to read polygon file: {str(e)}"}
 
     # SAVE DATA
-    excel_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_template_{uuid4().hex}.xlsx")
-    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%H%M%S')}_polygon_{uuid4().hex}.parquet")
+    excel_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_template_{uuid4().hex}.xlsx")
+    polygon_path = os.path.join(polygon_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_polygon_{uuid4().hex}.parquet")
     
     with pd.ExcelWriter(excel_path) as xls:
         hubs.to_excel(xls, sheet_name='hubs')
@@ -683,8 +685,8 @@ async def topology_intersite(
         return {"error": f"Failed to read topology file: {str(e)}"}
 
     # SAVE DATA
-    excel_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_template_{uuid4().hex}.xlsx")
-    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%H%M%S')}_topology_{uuid4().hex}.parquet")
+    excel_path = os.path.join(topology_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_template_{uuid4().hex}.xlsx")
+    topology_path = os.path.join(topology_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_topology_{uuid4().hex}.parquet")
     
     with pd.ExcelWriter(excel_path) as xls:
         sitelist.to_excel(xls, sheet_name='sitelist')
@@ -717,17 +719,17 @@ async def topology_intersite(
 
 
 # ================
-# GENERATE BOQ
+# GENERATE KMZ IPL
 # ================
-@router.post("/boq", tags=["Intersite"])
-async def boq_intersite(
+@router.post("/implementation-intersite", tags=["Intersite"])
+async def implementation_intersite(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
-    program: Optional[str] = Form("BOQ", description="Program name if 'program' column not provided."),
-    operator: Optional[Operator] = Form(Operator.IOH, description="Operator to BOQ algorithm."),
+    program: Optional[str] = Form("Implementation", description="Program name if 'program' column not provided."),
+    operator: Optional[Operator] = Form(Operator.IOH, description="Operator to generate implementation KMZ algorithm."),
 ):
     """
-    Create Intersite Bill of Quantity .  
-    KMZ file must be containing ['Topology', 'Route', 'FO Hub', 'Site List'].
+    Create Intersite Implementation KMZ with BOQ Report.  
+    KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List'].
 
     **Input Design Sample**  
     [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
@@ -746,6 +748,7 @@ async def boq_intersite(
             sep = ";"
         case _:
             sep = "-"
+    
     print(f"ℹ️ Operator  : {operator}")
     print(f"ℹ️ Separator : {sep}")
     
@@ -763,8 +766,8 @@ async def boq_intersite(
         return {"error": f"Failed to read topology file: {str(e)}"}
 
     # SAVE DATA
-    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_points_kmz_{uuid4().hex}.parquet")
-    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%H%M%S')}_lines_kmz_{uuid4().hex}.parquet")
+    points_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_points_kmz_{uuid4().hex}.parquet")
+    lines_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_lines_kmz_{uuid4().hex}.parquet")
 
     point_kmz.to_parquet(points_path, index=False)
     line_kmz.to_parquet(lines_path, index=False)
@@ -783,9 +786,86 @@ async def boq_intersite(
         celery_task = task_boq.apply_async(args=[data])
 
         return {
-            "message": "BOQ task has been initiated.",
+            "message": "Implementation KMZ and BOQ Report task has been initiated.",
             "task_id": celery_task.id,
             "task_status_url": f"/tasks/status/{celery_task.id}"
         }
     except Exception as e:
         return {"error": f"Failed to process data: {str(e)}"}
+    
+# ================
+# GENERATE BOQ
+# ================
+@router.post("/boq-intersite", tags=["Intersite"])
+async def boq_intersite(
+    ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml)."),
+    operator: Optional[Operator] = Form(Operator.IOH, description="Operator to generate implementation KMZ algorithm."),
+):
+    """
+    Create BOQ Report based on Implementation KMZ.  
+    KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List', 'Route Backbone', 'Route Akses', 'Pole Eksisting', 'FO Existing', and so on].
+
+    **Input Design Sample**  
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    
+    **Note:**
+    - IOH Operator  : Separator will be '-'
+    - XL Operator   : Separator will be ';'
+    """
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
+    os.makedirs(boq_upload, exist_ok=True)
+
+
+    match operator:
+        case "xl":
+            sep = ";"
+        case _:
+            sep = "-"
+    
+    print(f"ℹ️ Operator  : {operator}")
+    print(f"ℹ️ Separator : {sep}")
+    
+    suffix = os.path.splitext(ipl_file.filename)[1].lower()
+    filename = os.path.splitext(ipl_file.filename)[0].lower()
+    
+    if suffix not in ['.kml', '.kmz']:
+        return {"error": f"Unsupported format: {suffix}"}
+
+    kmz_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_{filename}_{uuid4().hex}.{suffix}")
+    with kmz_path.open("wb") as buffer:
+        shutil.copyfileobj(ipl_file.file, buffer)
+        print(f"ℹ️ File copied into local storage.")
+
+    extracted_ipl = validate_kmz_ipl(kmz_path, sep=sep)
+    if extracted_ipl is not None:
+        date_today = datetime.now().strftime("%Y%m%d")
+        export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y/%m/%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        os.makedirs(export_loc, exist_ok=True)
+        
+        try:
+            boq_generation(kmz_path=kmz_path, export_dir=export_loc, sep=sep, operator=operator)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
+
+        try:
+            out_base = f"BOQ_{filename}"
+            zip_path = os.path.join(export_loc, f"{out_base}.zip")
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, _, files in os.walk(export_loc):
+                    for export_file in files:
+                        if not export_file.endswith(".zip") or "Checkpoint" not in export_file:
+                            export_file_path = os.path.join(root, export_file)
+                            arcname = os.path.relpath(export_file_path, export_loc)
+                            zipf.write(export_file_path, arcname)
+            print(f"📦 Result files zipped.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
+
+        # --- FileResponse ---
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename=os.path.basename(zip_path),
+        )

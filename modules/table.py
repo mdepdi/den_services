@@ -57,9 +57,6 @@ def sanitize_header(df:pd.DataFrame, preview_row = 5, lowercase=False):
     df.columns = [col.strip().replace('\n', '') for col in df.columns]
     df.columns = df.columns.str.replace("*", "")
 
-    if lowercase:
-        df.columns = df.columns.str.lower().str.strip().str.replace(" ", "_")
-    
     # Clean duplicate columns
     duplicated_cols = df.columns[df.columns.duplicated()].tolist()
     if duplicated_cols:
@@ -79,6 +76,11 @@ def sanitize_header(df:pd.DataFrame, preview_row = 5, lowercase=False):
         df.columns = new_columns
     else:
         print("No duplicate columns found.")
+
+    if lowercase:
+        df.columns = df.columns.str.lower().str.strip().str.replace(" ", "_")
+        df.columns = df.columns.drop_duplicates()
+    
     return df
 
 def detect_week(date_str):

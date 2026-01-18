@@ -12,6 +12,9 @@ from time import time
 from modules.geometry import point_coordinates
 from modules.utils import auto_group
 from modules.data import read_gdf
+from core.config import settings
+
+MAINDATA_DIR = settings.MAINDATA_DIR
 
 def graphhopper_routing(start: Point, end: Point, endpoint="http://10.83.10.16:8989", profile='car'):
     url = f"{endpoint}/route"
@@ -183,7 +186,7 @@ def distance_fiber(source_gdf:gpd.GeoDataFrame, export_dir:str, max_distance=100
         points_fiber['long'] = points_fiber.geometry.x
         points_fiber['lat'] = points_fiber.geometry.y
     else:
-        fiber = r"D:\JACOBS\DATA\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
+        fiber = fr"{MAINDATA_DIR}\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
         dirname = os.path.dirname(fiber)
         basename = os.path.basename(fiber).split(".")[0]
         point_path = os.path.join(dirname, f"Points_{basename}.parquet")

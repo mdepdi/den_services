@@ -10,6 +10,7 @@ import numpy as np
 import shapely
 import simplekml
 import zipfile
+import shutil
 from tqdm import tqdm
 from datetime import datetime
 from shapely.strtree import STRtree
@@ -17,6 +18,8 @@ from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points
 from shapely.ops import linemerge
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from openpyxl import load_workbook
+from openpyxl.formula.translate import Translator
 
 sys.path.append(r"D:\JACOBS\SERVICE\API")
 
@@ -542,11 +545,10 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
         ne = str(row["near_end"]).strip()
         fe = str(row["far_end"]).strip()
 
-        # --- try direct lookup ---
         ne_row = points_idx.loc[ne] if ne in points_idx.index else None
         fe_row = points_idx.loc[fe] if fe in points_idx.index else None
 
-        # --- CASE 1: NE missing, FE found -> assume reversed ---
+        # Near End missing Far End found
         if ne_row is None and fe_row is not None:
             logger.warning(
                 f"⚠️ NE '{ne}' not found but FE '{fe}' found; "
@@ -555,7 +557,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
             ne, fe = fe, ne
             ne_row, fe_row = fe_row, None   # FE becomes "ring" / non-site
 
-        # --- CASE 2: both missing -> give up for this line, but don't crash ---
+        # Both Missing
         if ne_row is None and fe_row is None:
             logger.error(
                 f"❌ Neither NE '{ne}' nor FE '{fe}' found in points for line idx={idx}. "
@@ -566,7 +568,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
             lines.at[idx, "access_fe"] = None
             continue
 
-        # if there are duplicates -> take first row
+        # Duplicate > First row
         if isinstance(ne_row, gpd.GeoDataFrame):
             ne_row = ne_row.iloc[0]
         if isinstance(fe_row, gpd.GeoDataFrame):
@@ -1303,7 +1305,7 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
             logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written.")
     logger.info("✅ Save Excel file BOQ Done.")
 
-def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
+def boq_generation(kmz_path:str, export_dir:str, sep="-", operator="surge"):
     import math
 
     validated_kmz = validate_kmz_ipl(kmz_path, sep=sep)
@@ -1351,7 +1353,12 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
     compiled_boq_records = []
     for ring_name, group in route_grouped:
         ring_lines = group.drop_duplicates().copy()
-        ring_points = points_data[points_data['ring_name'] == ring_name].copy()
+        ring_sitelist = sitelist[sitelist['ring_name'] == ring_name].copy()
+        
+        # Metadata
+        program = ring_sitelist['program'].mode()[0]
+        region = ring_sitelist['region'].mode()[0]
+
         ring_backbone = backbone[backbone['ring_name'] == ring_name].copy()
         ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring_name].copy()
         ring_pole_exist = pole_exist[pole_exist['ring_name'] == ring_name].copy()
@@ -1459,6 +1466,9 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
 
             # Compile Data
             record = {
+                "program": program,
+                "operator": "SURGE",
+                "region": region,
                 "ring_name": ring_name,
                 "segment_name": segment_name,
                 "near_end": near_end,
@@ -1504,15 +1514,67 @@ def boq_surge(kmz_path:str, export_dir:str, sep="-", operator="surge"):
             }
             compiled_boq_records.append(record)
     boq_df = pd.DataFrame(compiled_boq_records)
+
+    template_path = os.path.join(DATA_DIR, 'template', 'Template_BOQ_Surge.xlsx')
     excel_path = os.path.join(export_dir, f"BOQ Surge Report.xlsx")
-    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+
+    if not os.path.exists(template_path):
+        raise ValueError(f"BOQ Surge template file not found in template directory.")
+    
+    shutil.copy2(template_path, excel_path)
+    with pd.ExcelWriter(excel_path, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
         if not boq_df.empty:
-            sheet_name = "BOQ Surge"
+            sheet_name = "Pivot Data"
             boq_df = boq_df.reset_index(drop=True)
             excel_styler(boq_df).to_excel(writer, sheet_name=sheet_name, index=False)
             logger.info(f"📊 Excel sheet '{sheet_name}' with {len(boq_df):,} records written.")
         else:
             logger.info("❌ No BOQ Surge data to write.")
+
+    # TRIM FORMULA
+    wb = load_workbook(excel_path)
+    ws = wb['BOQ']
+
+    # Column
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    last_col = "JC"
+    formula_column = [a for a in alphabet]
+    for i in alphabet:
+        for j in alphabet:
+            col = i+j
+            formula_column.append(col)
+            if col == last_col:
+                break
+        if col == last_col:
+            break
+    
+    # Row
+    last_row = len(boq_df)
+    start_row = 8
+    end_row = start_row + last_row - 1
+    template_last_row = 1000
+
+    if last_row > template_last_row:
+        logger.info(f"ℹ️ BOQ records more than formula template, copy formula to row {last_row:,}.")
+        for row in range(template_last_row + 1, last_row + 1):
+            # Copy formula
+            for col in formula_column:
+                src = f"{col}{template_last_row}"
+                dest = f"{col}{row}"
+
+                ws[dest] = Translator(
+                    ws[src].value,
+                    origin=src
+                ).translate_formula(dest)
+    elif last_row < template_last_row:
+        logger.info(f"ℹ️ BOQ records less than template, trim formula to row {last_row:,}.")
+        for row in range(end_row+1, template_last_row+1):
+            for col in formula_column:
+                ws[f"{col}{row}"] = None
+    else:
+        logger.info(f"ℹ️ BPQ records same with template {last_row:,}.")
+    wb.save(excel_path)
+    logger.info(f"✅ Trim template done.")
     logger.info("✅ Save Excel file BOQ Surge Done.")
 
 def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, boq_data:tuple, folder:str, device_in_site="OTB", **kwargs):
@@ -1756,7 +1818,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
     # BOQ FORMAT RESULT
     start_time = time.time()
-    boq_surge(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
+    boq_generation(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
     end_time = time.time()
 
     logger.info(f"✅ All BOQ Process Done.")
@@ -1770,9 +1832,9 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 if __name__ == "__main__":
     kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Use Case Design Jawa Tengah.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Jawa Tengah"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Jawa Tengah Trial BOQ"
     os.makedirs(export_dir, exist_ok=True)
-    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="xl", device_in_site="OTB")
+    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="surge", device_in_site="OTB")
 
     # ZIPFILE
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"

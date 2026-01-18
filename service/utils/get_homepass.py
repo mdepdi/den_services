@@ -9,6 +9,9 @@ from tqdm import tqdm
 from datetime import datetime
 from modules.h3_route import identify_hexagon, retrieve_building
 from modules.data import read_gdf
+from core.config import settings
+
+MAINDATA_DIR = settings.MAINDATA_DIR
 
 def get_homepass(data_gdf:gpd.GeoDataFrame=None, admin_dict:dict=None, one_unit=False, centroid=True):    
     
@@ -39,11 +42,11 @@ def get_homepass(data_gdf:gpd.GeoDataFrame=None, admin_dict:dict=None, one_unit=
         kecamatan = admin_dict.get('kecamatan', [])
 
         if len(kecamatan) > 0:
-            data_gdf = gpd.read_parquet(r"D:\JACOBS\DATA\01. Admin\Admin_2024_v3_Kecamatan.parquet")
+            data_gdf = gpd.read_parquet(fr"{MAINDATA_DIR}\01. Admin\Admin_2024_v3_Kecamatan.parquet")
             data_gdf = data_gdf.to_crs(epsg=3857).reset_index()
             print(data_gdf.columns)
         else:
-            data_gdf = gpd.read_parquet(r"D:\JACOBS\DATA\01. Admin\Admin_2024_Kabkot.parquet")
+            data_gdf = gpd.read_parquet(fr"{MAINDATA_DIR}\01. Admin\Admin_2024_Kabkot.parquet")
             data_gdf = data_gdf.to_crs(epsg=3857)
         
         if len(provinsi) > 0:

@@ -1,9 +1,6 @@
-import sys
 import os
 from pathlib import Path
 from pydantic_settings import BaseSettings
-
-sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 docker = os.getenv("DOCKER", "False").lower() in ("true", "1", "t")
 BASE_DIR = Path(__file__).resolve().parents[1]
