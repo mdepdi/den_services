@@ -20,6 +20,7 @@ from shapely.ops import linemerge
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from openpyxl import load_workbook
 from openpyxl.formula.translate import Translator
+from openpyxl.styles import Border, Side
 
 sys.path.append(r"D:\JACOBS\SERVICE\API")
 
@@ -1554,6 +1555,19 @@ def boq_generation(kmz_path:str, export_dir:str, sep="-", operator="surge"):
     end_row = start_row + last_row - 1
     template_last_row = 1000
 
+    # Style
+    style = Side(
+        style="thin",
+        border_style="thin"
+    )
+    border = Border(
+        left=style,
+        right=style,
+        top=style,
+        bottom=style,
+    )
+
+
     if last_row > template_last_row:
         logger.info(f"ℹ️ BOQ records more than formula template, copy formula to row {last_row:,}.")
         for row in range(template_last_row + 1, last_row + 1):
@@ -1566,11 +1580,15 @@ def boq_generation(kmz_path:str, export_dir:str, sep="-", operator="surge"):
                     ws[src].value,
                     origin=src
                 ).translate_formula(dest)
+                ws[dest].border = border
+
     elif last_row < template_last_row:
         logger.info(f"ℹ️ BOQ records less than template, trim formula to row {last_row:,}.")
         for row in range(end_row+1, template_last_row+1):
             for col in formula_column:
                 ws[f"{col}{row}"] = None
+                ws[f"{col}{row}"].border = Border()
+
     else:
         logger.info(f"ℹ️ BPQ records same with template {last_row:,}.")
     wb.save(excel_path)
@@ -1817,9 +1835,12 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     kmz_time = round((end_time-start_time)/60,2)
 
     # BOQ FORMAT RESULT
-    start_time = time.time()
-    boq_generation(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
-    end_time = time.time()
+    try:
+        start_time = time.time()
+        boq_generation(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
+        end_time = time.time()
+    except Exception as e:
+        logger.error(f"Error in BOQ Report generation: {e}")
 
     logger.info(f"✅ All BOQ Process Done.")
     logger.info(f"ℹ️ Time Consumed:")
@@ -1830,11 +1851,11 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Use Case Design Jawa Tengah.kmz"
-    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Jawa Tengah Trial BOQ"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Intersite Design_Fix Route.kmz"
+    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export"
     os.makedirs(export_dir, exist_ok=True)
-    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep=";", operator="surge", device_in_site="OTB")
+    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep="-", operator="tsel", device_in_site="OTB")
 
     # ZIPFILE
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"

@@ -478,7 +478,7 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     points_data['program']      = points_data['Program'] if "Program" in points_data.columns else points_data['folders'].str.extract(r';([A-Za-z0-9_-]{6,});')
     points_data['region']       = points_data['Region'] if "Region" in points_data.columns else points_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
     points_data['program']      = points_data['program'].fillna("NA")
-    points_data['region']      = points_data['region'].fillna("NA")
+    points_data['region']       = points_data['region'].fillna("NA")
     points_data = points_data.dropna(how='all', axis=1)
 
     # LINES DATA
@@ -492,7 +492,7 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     lines_extracted['near_end'] = lines_extracted['near_end'].str.strip()
     lines_extracted['far_end']  = lines_extracted['far_end'].str.strip()
     if 'core' in lines_extracted.columns:
-        lines_extracted['core'] = lines_extracted['core'].fillna(24).astype(int)
+        lines_extracted['core'] = (pd.to_numeric(lines_extracted['core'], errors='coerce').fillna(24).astype(int))
     else:
         lines_extracted['core'] = 24
 
@@ -544,20 +544,29 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     sites_data = points_data[points_data['folder_name'].str.lower().str.contains('site') | points_data['folder_name'].str.lower().str.contains('hub')].copy()
     fo_hub = sites_data[sites_data['folder_name'].str.lower().str.contains('hub')].copy()
     sitelist = sites_data[sites_data['folder_name'].str.lower().str.contains('site')].copy()
+    ring_list = set(sitelist['ring_name'].astype(str))
 
     near_set = set(route['near_end'].astype(str))
-    mask_fhub = fo_hub[fo_hub['site_id'].astype(str).isin(near_set)].copy()
+    far_set = set(route['far_end'].astype(str))
+    union_near_far = near_set | far_set
 
-    route["hub_ring_id"] = route["ring_name"].astype(str) + "_" + route["near_end"].astype(str)
-    mask_fhub = fo_hub.loc[
-        fo_hub["site_id"].astype(str).isin(route["near_end"].astype(str)),
-        ["site_id", "ring_name"]
-    ].copy()
+    mask_hub_ne = fo_hub.loc[fo_hub["site_id"].astype(str).isin(near_set), ["site_id", "ring_name"]].copy()
+    mask_hub_fe = fo_hub.loc[fo_hub["site_id"].astype(str).isin(far_set), ["site_id", "ring_name"]].copy()
+    mask_hub_ne["hub_ring_id"] = mask_hub_ne["ring_name"].astype(str) + "_" + mask_hub_ne["site_id"].astype(str)
+    mask_hub_fe["hub_ring_id"] = mask_hub_fe["ring_name"].astype(str) + "_" + mask_hub_fe["site_id"].astype(str)
+    hub_unidentified = fo_hub.loc[~(fo_hub["site_id"].astype(str).isin(union_near_far)), ["site_id", "ring_name"]].copy()
+    valid_ids = set(mask_hub_ne["hub_ring_id"]) | set(mask_hub_fe["hub_ring_id"])
 
-    mask_fhub["hub_ring_id"] = mask_fhub["ring_name"].astype(str) + "_" + mask_fhub["site_id"].astype(str)
-    valid_ids = set(mask_fhub["hub_ring_id"])
+    if len(hub_unidentified) > 0:
+        print(f"Ring {(",").join(hub_unidentified['ring_name'])} hubs not identified in route Near End or Far End.")
+
+    route["hub_ring_id"] = np.where(
+        route['near_end'].astype(str).isin(mask_hub_ne['site_id']), 
+        route["ring_name"].astype(str) + "_" + route["near_end"].astype(str), 
+        route["ring_name"].astype(str) + "_" + route["far_end"].astype(str)
+    )
+
     route["is_first"] = np.where(route["hub_ring_id"].isin(valid_ids), 1, 0)
-    
     sites_data['is_first'] = np.where(
         (sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'near_end'].dropna())) |
         (sites_data['site_id'].isin(route.loc[route['is_first'] == 1, 'far_end'].dropna())), 1, 0
@@ -565,15 +574,20 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
 
     first_points = sites_data[sites_data['is_first'] == 1].copy()
     first_route = route[route['is_first'] == 1].copy()
+
+    if first_points.empty or first_route.empty:
+        print(f"Sites Data:  \n {sites_data}")
+        print(f"Valid IDS: {valid_ids}")
+        print(f"First Points \n {first_points}")
+        print(f"First Route \n {first_route}")
+
     first_points = first_points.drop_duplicates(subset=['ring_name', 'site_type'])
     first_route = first_route.drop_duplicates(subset=['ring_name', 'segment'])
-    first_points['first_id'] = first_points['ring_name'].astype(str) + "_" + first_points['name'].astype(str)
-    first_route['first_id'] = first_route['ring_name'].astype(str) + "_" + first_route['segment'].astype(str)
+    first_points['first_id'] = first_points['ring_name'].astype(str) + "_" + first_points['name'].astype(str).str.strip()
+    first_route['first_id'] = first_route['ring_name'].astype(str) + "_" + first_route['segment'].astype(str).str.strip()
 
-    first_point_ids = set(first_points['first_id'].astype(str))
-    first_route_ids = set(first_route['first_id'].astype(str))
-    print(f"First Points \n {first_points}")
-    print(f"First Route \n {first_route}")
+    first_point_ids = set(first_points['first_id'].astype(str).str.strip())
+    first_route_ids = set(first_route['first_id'].astype(str).str.strip())
 
     # DEVICES DATA
     devices = ['odp', 'otb', 'closure']
