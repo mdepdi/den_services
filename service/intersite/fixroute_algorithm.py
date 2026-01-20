@@ -273,6 +273,8 @@ def validate_fixroute(df: pd.DataFrame):
     logger.info(f"ℹ️ Converting to GeoDataFrame...")
     gdf_ne = gpd.GeoDataFrame(df_ne, geometry=geom_ne, crs="EPSG:4326").to_crs(epsg=3857)
     gdf_fe = gpd.GeoDataFrame(df_fe, geometry=geom_fe, crs="EPSG:4326").to_crs(epsg=3857)
+    gdf_ne["site_id"] = gdf_ne['site_id'].astype(str)
+    gdf_fe["site_id"] = gdf_fe['site_id'].astype(str)
     gdf_ne["site_name"] = gdf_ne['site_name'].astype(str)
     gdf_fe["site_name"] = gdf_fe['site_name'].astype(str)
     gdf_ne["point_type"] = "NE"
@@ -349,10 +351,10 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\Debug Fix Route\20251208_173611_Topology_Task\20251208\Summary Report_Intersite_Topology Based.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Topology Based\Export\Debug Star"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Template_Fixed_Route.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Fix Route MC 200126"
     boq = False
-    program ="Q1NewSite2026"
+    program ="FWA Surge"
     spof_threshold = 3000
 
 
@@ -366,7 +368,8 @@ if __name__ == "__main__":
         export_dir=export_dir,
         boq=boq,
         program=program,
-        spof_threshold=spof_threshold
+        spof_threshold=spof_threshold,
+        graph_type="full_weighted"
     )
     end_time = time()
     elapsed_time = end_time - start_time
