@@ -1851,9 +1851,9 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Intersite Design_Fix Route.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Intersite Design_Fix Route Part 2.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export\Debug Part 2"
     os.makedirs(export_dir, exist_ok=True)
     main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep="-", operator="tsel", device_in_site="OTB")
 
