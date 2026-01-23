@@ -103,6 +103,8 @@ def task_supervised(self, data: dict):
         method = parsed_data.get("method", "Supervised")
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
+        device_in_site = parsed_data.get("device_in_site", 'OTB')
+        device_in_branch = parsed_data.get("device_in_branch", 'ODP')
         sep = parsed_data.get("sep", '-')
 
         if DOCKER:
@@ -127,6 +129,8 @@ def task_supervised(self, data: dict):
             boq=boq,
             sep=sep,
             program=program,
+            device_in_branch=device_in_branch,
+            device_in_site=device_in_site,
             task_celery=self
         )
 
@@ -182,7 +186,8 @@ def task_unsupervised(self, data: dict):
         program = parsed_data.get("program", 'Supervised Intersite')
         sep = parsed_data.get("sep", '-')
         graph_type = parsed_data.get("graph_type", "full_weighted")
-
+        device_in_site = parsed_data.get("device_in_site", 'OTB')
+        device_in_branch = parsed_data.get("device_in_branch", 'ODP')
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -213,6 +218,8 @@ def task_unsupervised(self, data: dict):
             sep=sep,
             graph_type=graph_type,
             program=program,
+            device_in_branch=device_in_branch,
+            device_in_site=device_in_site,
             task_celery=self
         )
         
@@ -256,11 +263,13 @@ def task_fixroute(self, data: dict):
         parsed_data = loads(data)
         template_path = parsed_data.get("template_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
+        program = parsed_data.get("program", 'Fix Route Fiberization')
         boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
-        program = parsed_data.get("program", 'Fix Route Fiberization')
-        
+        device_in_site = parsed_data.get("device_in_site", "OTB")
+        device_in_branch = parsed_data.get("device_in_branch", "ODP")
+
         if DOCKER:
             if "/mnt/" not in template_path:
                 template_path = template_path.replace("uploads", "/mnt/uploads").replace("\\", "/")
@@ -280,6 +289,8 @@ def task_fixroute(self, data: dict):
             sep=sep,
             graph_type=graph_type,
             spof_threshold=spof_threshold,
+            device_in_site=device_in_site,
+            device_in_branch=device_in_branch,
             task_celery=self
         )
 
@@ -329,6 +340,8 @@ def task_polygon_intersite(self, data: dict):
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Polygon Based Fiberization')
+        device_in_site = parsed_data.get("device_in_site", "OTB")
+        device_in_branch = parsed_data.get("device_in_branch", "ODP")
         
         if DOCKER:
             if "/mnt/" not in excel_path:
@@ -351,6 +364,8 @@ def task_polygon_intersite(self, data: dict):
             sep=sep,
             graph_type=graph_type,
             spof_threshold=spof_threshold,
+            device_in_site=device_in_site,
+            device_in_branch=device_in_branch,
             task_celery=self
         )
 
@@ -402,6 +417,8 @@ def task_topology_intersite(self, data: dict):
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Topology Based Fiberization')
+        device_in_site = parsed_data.get("device_in_site", "OTB")
+        device_in_branch = parsed_data.get("device_in_branch", "ODP")
         
         if DOCKER:
             if "/mnt/" not in excel_path:
@@ -424,6 +441,8 @@ def task_topology_intersite(self, data: dict):
             boq=boq,
             sep=sep,
             graph_type=graph_type,
+            device_in_site=device_in_site,
+            device_in_branch=device_in_branch,
             task_celery=self
         )
 
@@ -475,6 +494,8 @@ def task_boq(self, data: dict):
         operator = parsed_data.get("operator", "ioh")
         vendor = parsed_data.get("vendor", "TBG")
         sep = parsed_data.get("sep", "-")
+        device_in_site = parsed_data.get("device_in_site", "OTB")
+        device_in_branch = parsed_data.get("device_in_branch", "ODP")
 
         if DOCKER:
             if "/mnt/" not in points_path:
@@ -499,6 +520,8 @@ def task_boq(self, data: dict):
             operator=operator,
             program=program,
             vendor=vendor,
+            device_in_site=device_in_site,
+            device_in_branch=device_in_branch,
             task_celery=self
         )
 

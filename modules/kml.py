@@ -394,6 +394,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
 
     # POINT EXISTING
     points_existing['site_id'] = points_existing['name'].str.strip()
+    points_existing['site_id'] = points_existing['site_id'].str.extract(r'^(?P<site_id>.*?)\s*\[.*\]$')['site_id']
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_name'] = np.where(points_existing['site_name'].isna(), points_existing['site_id'], points_existing['site_name'])
     points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
@@ -410,7 +411,7 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     # LINES EXISTING
     sep_re = re.escape(sep)
     lines_existing['segment'] = lines_existing['name'].str.strip().str.replace(
-        fr"^(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)$",
+        fr"^(?P<near>.+?)\s*{sep_re}\s*(?P<far>.+?)(?P<bracket>\s*\[.*\])?$",
         fr"\g<near>{sep}\g<far>",
         regex=True
     )
@@ -468,6 +469,7 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
 
     # POINT DATA
     points_data['site_id']      = points_data['name'].str.strip().astype(str)
+    points_data['site_id']      = points_data['site_id'].str.extract(r'^(?P<site_id>.*?)\s*\[.*\]$')['site_id']
     points_data['site_name']    = points_data['Site_Name'] if "Site_Name" in points_data.columns else points_data['name']
     points_data['site_type']    = points_data['folders'].str.split(";").str[-1]
     points_data['site_type']    = np.where(points_data['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
@@ -485,10 +487,8 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     sep_re = re.escape(sep)
     lines_data['bb_fiber'] = lines_data['name'].str.split("/").str[-1]
     lines_data['name'] = lines_data['name'].str.split("/").str[0]
-    lines_extracted = lines_data['name'].str.strip().str.extract(
-        fr"^(?P<data_type>BB|Akses)?\s*(?P<near_end>[A-Za-z0-9 -_]+)\s*{sep_re}\s*(?P<far_end>[A-Za-z0-9 -_]+)(\_FO(?P<core>\d{{2}}))?$",
-        expand=True
-    )
+    lines_data['name'] = lines_data['name'].str.extract(r'^(?P<site_id>.*?)\s*\[.*\]$')['site_id']
+    lines_extracted = lines_data['name'].str.strip().str.extract(fr"^(?P<data_type>BB|Akses)?\s*(?P<near_end>[A-Za-z0-9 -_]+)\s*{sep_re}\s*(?P<far_end>[A-Za-z0-9 -_]+)(\_FO(?P<core>\d{{2}}))?(?P<bracket>\s*\[.*\])?$", expand=True)
     lines_extracted['near_end'] = lines_extracted['near_end'].str.strip()
     lines_extracted['far_end']  = lines_extracted['far_end'].str.strip()
     if 'core' in lines_extracted.columns:
@@ -709,9 +709,9 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     obstacle["segment"]  = obstacle["near_end"] + sep + obstacle["far_end"]
     
     # METADATA
-    odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('ext_'), 1, 0)
-    otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('ext_'), 1, 0)
-    closure['ext_note'] = np.where(closure['name'].str.lower().str.contains('ext_'), 1, 0)
+    odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('_ext'), 1, 0)
+    otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('_ext'), 1, 0)
+    closure['ext_note'] = np.where(closure['name'].str.lower().str.contains('_ext'), 1, 0)
 
     data_compiled = [points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
                      topology, route, backbone, access, fo_exist, pole_exist, obstacle]

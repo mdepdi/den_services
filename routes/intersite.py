@@ -66,6 +66,10 @@ class RoutePreference(str, Enum):
     FIBER = "existing_fiber"
     ROAD = "weighted_road"
     SHORTEST = "shortest_route"
+    
+class DeviceType(str, Enum):
+    OTB = "OTB"
+    ODP = "ODP"
 
 # ========
 # ROUTER
@@ -210,6 +214,8 @@ async def supervised_ring(
     boq:bool = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
     route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite design based on **Supervised Alghorithm**, you need to define the cluster first.  
@@ -288,7 +294,9 @@ async def supervised_ring(
             "program": program,
             "boq": boq,
             "sep": sep,
-            "graph_type": graph_type
+            "graph_type": graph_type,
+            "device_in_site": device_in_site,
+            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_supervised.apply_async(args=[data])
@@ -314,6 +322,8 @@ async def unsupervised_ring(
     boq:bool = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
     route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite design based on **Unsupervised Alghorithm**, the clustering based on our service.  
@@ -401,7 +411,9 @@ async def unsupervised_ring(
             "spof_threshold": spof_threshold,
             "boq": boq,
             "sep": sep,
-            "graph_type": graph_type
+            "graph_type": graph_type,
+            "device_in_site": device_in_site,
+            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_unsupervised.apply_async(args=[data])
@@ -424,6 +436,8 @@ async def fixroute_ring(
     boq: Optional[bool] = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
     route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite design based on **Fix Route Alghorithm**.  
@@ -487,7 +501,9 @@ async def fixroute_ring(
             "program": program,
             "boq": boq,
             "sep": sep,
-            "graph_type": graph_type
+            "graph_type": graph_type,
+            "device_in_site": device_in_site,
+            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_fixroute.apply_async(args=[data])
@@ -510,6 +526,8 @@ async def polygon_intersite(
     boq: Optional[bool] = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
     route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite design **Polygon Based**.  
@@ -595,7 +613,9 @@ async def polygon_intersite(
             "program": program,
             "boq": boq,
             "sep": sep,
-            "graph_type": graph_type
+            "graph_type": graph_type,
+            "device_in_site": device_in_site,
+            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_polygon_intersite.apply_async(args=[data])
@@ -618,6 +638,8 @@ async def topology_intersite(
     boq:Optional[bool] = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to define separator of near end far end from 'Route' folders."),
     route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite design **Topology Based**.  
@@ -704,7 +726,9 @@ async def topology_intersite(
             "program": program,
             "boq": boq,
             "sep": sep,
-            "graph_type": graph_type
+            "graph_type": graph_type,
+            "device_in_site": device_in_site,
+            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_topology_intersite.apply_async(args=[data])
@@ -726,12 +750,14 @@ async def implementation_intersite(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
     program: Optional[str] = Form("Implementation", description="Program name if 'program' column not provided."),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to generate implementation KMZ algorithm."),
+    device_in_site: Optional[Operator] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[Operator] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite Implementation KMZ with BOQ Report.  
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List'].
 
-    **Input Design Sample**  
+    **Input Design Sample** 
     [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
     
     **Note:**
@@ -780,8 +806,11 @@ async def implementation_intersite(
             "lines_path": lines_path,
             "program": program,
             "operator": operator,
-            "sep": sep
+            "sep": sep,
+            "device_in_site": device_in_site,
+            "device_in_branch": device_in_branch,
         }
+
         data = dumps(data, default=str)
         celery_task = task_boq.apply_async(args=[data])
 

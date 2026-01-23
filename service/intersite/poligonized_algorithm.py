@@ -181,6 +181,8 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Poligon Based")
     sep = kwargs.get("sep", "-")
+    device_in_site = kwargs.get("device_in_site", "OTB")
+    device_in_branch = kwargs.get("device_in_branch", "ODP")
     task_celery = kwargs.get("task_celery", None)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
@@ -213,6 +215,8 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
         sep=sep,
         graph_type=graph_type,
         spof_threshold=spof_threshold,
+        device_in_branch=device_in_branch,
+        device_in_site=device_in_site,
         task_celery=task_celery
     )
 

@@ -298,6 +298,8 @@ def main_fixroute(
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Fix Route")
+    device_in_site = kwargs.get("device_in_site", "OTB")
+    device_in_branch = kwargs.get("device_in_branch", "ODP")
     task_celery = kwargs.get("task_celery", False)
     design_type = 'Bill of Quantity' if boq else 'Design'
 
@@ -341,7 +343,7 @@ def main_fixroute(
     # EXPORT
     if boq:
         logger.info("🧩 Running BOQ Calculation...")
-        main_boq(updated_points, updated_routes, export_dir=export_dir, sep=sep)
+        main_boq(updated_points, updated_routes, export_dir=export_dir, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
     else:
         # TOPOLOGY CHECK
         logger.info("🧩 Save Design Information")

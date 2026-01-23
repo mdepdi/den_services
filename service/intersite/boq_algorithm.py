@@ -962,10 +962,7 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
         )
     return topology_gdf
 
-def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str="-", **kwargs):
-
-    device_in_site = kwargs.get("device_in_site", "OTB")
-    device_in_branch = kwargs.get("device_in_branch", "ODP")
+def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str="-", device_in_branch:str="ODP", device_in_site:str="OTB"):
 
     # BILL OF QUANTITY
     # Lines Based
@@ -1006,8 +1003,6 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
         access_fe = access_fe.to_crs(epsg=4326)
 
     # Points Based
-    lines_ne_index = lines_boq.set_index('near_end')
-    lines_fe_index = lines_boq.set_index('far_end')
     odp = points_boq[['site_id', 'site_type','ring_name','odp', 'odp_type', 'geometry']].copy()
     odp = odp.rename(columns={'odp_type': 'core'})
     odp = odp.dropna(subset=['odp'])
@@ -1106,7 +1101,7 @@ def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str
         obstacle_toll['lat'] = obstacle_toll.geometry.y
     return odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll
 
-def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, device_in_site:str="OTB", **kwargs):
+def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, device_in_site:str="OTB", device_in_branch:str="ODP", **kwargs):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
     sep = kwargs.get("sep", "-")
@@ -1156,7 +1151,7 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     route["name"] = route["near_end"] + sep + route["far_end"]
 
     # BOQ
-    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site)
+    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
     odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
 
     # SUMMARY
@@ -1764,7 +1759,7 @@ def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir
     logger.info(f"✅ Save BOQ Parquet Done.")
 
 
-def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", operator="ioh", device_in_site="OTB", **kwargs):
+def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", operator="ioh", device_in_branch="ODP", device_in_site="OTB", **kwargs):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Not Defined")
     task_celery = kwargs.get("task_celery", False)
@@ -1782,7 +1777,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     
     # EXCEL FILE
     start_time = time.time()
-    excel_boq(points_boq, lines_boq, boq_dir, sep=sep, operator=operator)
+    excel_boq(points_boq, lines_boq, boq_dir, sep=sep, operator=operator, device_in_branch=device_in_branch, device_in_site=device_in_site)
     end_time = time.time()
     excel_time = round((end_time-start_time)/60, 2)
 
@@ -1791,7 +1786,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     ring_names = sorted(points_boq['ring_name'].dropna().unique().tolist())
     output_kmz = os.path.join(boq_dir, "BOQ KMZ Design.kmz")
 
-    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site)
+    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
     odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
 
     main_kmz = simplekml.Kml()
@@ -1809,7 +1804,7 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
         ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring].copy()
         ring_pole_exist = pole_exist[pole_exist['ring_name'] == ring].copy()
         ring_obstacle_railway = obstacle_railway[obstacle_railway['ring_name'] == ring].copy()
-        ring_obstacle_toll = obstacle_railway[obstacle_railway['ring_name'] == ring].copy()
+        ring_obstacle_toll = obstacle_toll[obstacle_toll['ring_name'] == ring].copy()
         boq_data = (ring_odp, ring_otb, ring_closure, ring_backbone, ring_access_ne, ring_access_fe, ring_fo_exist, ring_pole_exist, ring_obstacle_railway, ring_obstacle_toll)
 
         if 'region' in ring_points.columns:
@@ -1855,7 +1850,7 @@ if __name__ == "__main__":
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
     export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export\Debug Part 2"
     os.makedirs(export_dir, exist_ok=True)
-    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep="-", operator="tsel", device_in_site="OTB")
+    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep="-", operator="tsel", device_in_site="OTB", device_in_branch="ODP")
 
     # ZIPFILE
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"

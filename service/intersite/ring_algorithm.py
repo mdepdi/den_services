@@ -1329,6 +1329,8 @@ def main_supervised(
     method = kwargs.get("method", "Supervised")
     task_celery = kwargs.get("task_celery", None)
     sep = kwargs.get("sep", "-")
+    device_in_site = kwargs.get("device_in_site", "OTB")
+    device_in_branch = kwargs.get("device_in_branch", "ODP")
     design_type = 'Bill of Quantity' if boq else 'Design'
 
     if "site_id" in site_data.columns:
@@ -1412,7 +1414,7 @@ def main_supervised(
     # EXPORT
     if boq:
         logger.info("🧩 Running BOQ calculation...")
-        main_boq(all_points, all_paths, export_dir=export_dir, sep=sep)
+        main_boq(all_points, all_paths, export_dir=export_dir, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
     else:
         logger.info("🧩 Save Design Information")
         save_intersite(all_points, all_paths, export_dir, method)

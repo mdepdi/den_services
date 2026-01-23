@@ -60,13 +60,14 @@ def get_homepass(data_gdf:gpd.GeoDataFrame=None, admin_dict:dict=None, one_unit=
             data_gdf = data_gdf[data_gdf['Kecamatan'].isin(kecamatan)].copy()
 
         # IDENTIFY HEXAGONS
-        hex_list = identify_hexagon(data_gdf, type='single', buffer=100)
+        hex_list = identify_hexagon(data_gdf, type='single', buffer=0)
         print(f"ℹ️ Total Hex to be processed: {len(hex_list)}\n")
 
         # PROCESS BUILDING
-        homepass_all = retrieve_building(hex_list, type='single', one_unit=one_unit)
+        homepass_all = retrieve_building(hex_list, type='single', one_unit=one_unit, centroid=centroid)
         homepass_all = homepass_all.to_crs(epsg=3857)
         homepass_all = gpd.sjoin(homepass_all, data_gdf[['geometry']], how='inner', predicate='within').drop(columns=['index_right'])
+        print(f"ℹ️ Total Building retrieved: {len(homepass_all):,} records.")
     return homepass_all
 
 if __name__ == "__main__":

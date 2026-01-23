@@ -742,7 +742,7 @@ def clean_sectors_overlaps(
         site_score = compute_priority_score(
             row,
             score_map=score_map,
-            numeric_cols={"hp_site": 1, "total_homepass" : 1},
+            numeric_cols={"hp_site": 3, "total_homepass" : 1},
         )
         sector_score = (int(row['__protected']), *site_score)
         return sector_score
@@ -810,6 +810,22 @@ def parallel_region(
     """
     region = region_data["region"].mode().values[0]
     print(f"🧩 Region {region} | {len(region_data):,} sites")
+
+
+    checkpoint_dir = os.path.join(export_path, "Checkpoint")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    sites_path = os.path.join(checkpoint_dir, f"Sitelist_Region_{region}.parquet")
+    sectors_path = os.path.join(checkpoint_dir, f"Sectors_Region_{region}.parquet")
+    building_path = os.path.join(checkpoint_dir, f"Buildings_Region_{region}.parquet")
+
+    if os.path.exists(building_path) and os.path.exists(sectors_path) and os.path.exists(sites_path):
+        print(f"🟢 Output already exists. Load existing data.")
+        building_join = gpd.read_parquet(building_path)
+        sectors = gpd.read_parquet(sectors_path)
+        region_calc = gpd.read_parquet(sites_path)
+        return region_calc, sectors, building_join
+
 
     try:
         # 1) Get buildings by hex coverage
@@ -1101,28 +1117,14 @@ if __name__ == "__main__":
     max_workers = 16 
 
     score_map = {
-        "batch_list": {
-            "Batch 1": 10,
-            "Batch 2": 10,
-            # "Not Yet": 5,
-            # "Non TBG":2,
-            "__default__":1
-        },
-        "status_sites_2": {
-            "Ready for Integration (RFI)": 10,
-            "Construction in Progress (CIP)": 7,
-            "Ready for Construction (RFC) - Sitac": 5,
-            "Ready for Construction (RFC) - Alfa​": 3,
-            "Non TBG": 2,
-            "Ready for Construction (RFC) - Non Alfa": 1,
-            "Dismantle": 1,
-            "__default__":1
-        },
-        "tower_type": {
-            "SST": 5,
-            "MONO_POLE": 1,
-            "MONOPOLE": 1,
-            "POLE":1,
+        "company": {
+            "TBG":5,
+            "PKP": 3,
+            "GIHON": 3,
+            "PROTELINDO":2,
+            "CMI":2,
+            "DMT":2,
+            "PKP (ALFA)": 1,
             "__default__":1
         },
         "site_type": {
@@ -1131,20 +1133,37 @@ if __name__ == "__main__":
             "ROOF TOP": 1,
             "__default__":1
         },
-        "remark_data": {
-            "Sitelist 37k": 3,
-            "STIP TBG 2025": 2,
-            "STIP PKP 2025": 2,
-            "Plan B2S (FWA)": 0,
-            "__default__":1
-        },
-        "company": {
-            "TBG":5,
-            "PKP": 2,
-            "PKP (ALFA)": 2,
-            "GIHON": 2,
-            "__default__":1
-        },
+        # "batch_list": {
+        #     "Batch 1": 10,
+        #     "Batch 2": 10,
+        #     # "Not Yet": 5,
+        #     # "Non TBG":2,
+        #     "__default__":1
+        # },
+        # "status_sites_2": {
+        #     "Ready for Integration (RFI)": 10,
+        #     "Construction in Progress (CIP)": 7,
+        #     "Ready for Construction (RFC) - Sitac": 5,
+        #     "Non TBG": 4,
+        #     "Ready for Construction (RFC) - Alfa​": 3,
+        #     "Ready for Construction (RFC) - Non Alfa": 1,
+        #     "Dismantle": 1,
+        #     "__default__":1
+        # },
+        # "tower_type": {
+        #     "SST": 5,
+        #     "MONO_POLE": 1,
+        #     "MONOPOLE": 1,
+        #     "POLE":1,
+        #     "__default__":1
+        # },
+        # "remark_data": {
+        #     "Sitelist 37k": 3,
+        #     "STIP TBG 2025": 2,
+        #     "STIP PKP 2025": 2,
+        #     "Plan B2S (FWA)": 0,
+        #     "__default__":1
+        # },
         # "remark_sitelist": {
         #     "Main Selected": 10,
         #     "Overlaping with Others": 1,
@@ -1164,15 +1183,15 @@ if __name__ == "__main__":
 
     # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Sites Clutter\FWA_45k_v7_Joined Clutter"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Alfamart 9k Asessment Potential\MYREP"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\Sites Clutter\Sitelist FWA_45k_v7_Joined Clutter.parquet"
+    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Alfamart 9k Asessment Potential\Sitelist to Process\Sitelist MyRep v2.parquet"
     sitelist = read_gdf(sitelist_path, sheet_name='Sitelist')
     sitelist = sanitize_header(sitelist, lowercase=True)
     print(sitelist.columns)
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
-    sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
+    # sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y

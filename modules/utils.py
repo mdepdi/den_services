@@ -1,4 +1,5 @@
 import sys
+import os
 import pandas as pd
 import geopandas as gpd
 import networkx as nx
@@ -541,3 +542,95 @@ def fiber_utilization(data_gdf: gpd.GeoDataFrame, tolerance:int=20) -> gpd.GeoDa
         compiled = compiled.sort_values('ring_name')
 
     return compiled
+
+def clutter_identification(
+    sitelist: gpd.GeoDataFrame,
+    buffer: int = 500,
+    id_col: str = "site_id",
+    clutter_dir: str = r"D:\JACOBS\DATA\14. Grid\Buy V2\200m",
+    clutter_crs_epsg: int = 3857,
+):
+    sitelist = sitelist.copy()
+    sitelist = sitelist.to_crs(epsg=clutter_crs_epsg)
+
+    if "Island" not in sitelist.columns:
+        raise ValueError("Island column is not provided.")
+    if id_col not in sitelist.columns:
+        raise ValueError(f"{id_col} column is not provided in sitelist.")
+
+    # Prepare output columns
+    if "building_count" not in sitelist.columns:
+        sitelist["building_count"] = pd.NA
+    if "clutter_class" not in sitelist.columns:
+        sitelist["clutter_class"] = pd.NA
+
+    # Buffer only for spatial matching
+    sitelist_buffered = sitelist[[id_col, "Island", "geometry"]].copy()
+    sitelist_buffered["geometry"] = sitelist_buffered.buffer(buffer)
+
+    for island, buf_island in sitelist_buffered.groupby("Island"):
+        print(f"ℹ️ Clutter identification {island}.")
+
+        fpath = os.path.join(clutter_dir, f"building_density_{island}_V2.parquet")
+        if not os.path.exists(fpath):
+            print(f"⚠️ Missing clutter file for {island}: {fpath} (skipping)")
+            continue
+
+        clutter_island = gpd.read_parquet(fpath, columns=['building_count', 'geometry'])
+
+        # Ensure same CRS
+        if clutter_island.crs is None:
+            clutter_island = clutter_island.set_crs(epsg=clutter_crs_epsg)
+        elif clutter_island.crs.to_epsg() != clutter_crs_epsg:
+            clutter_island = clutter_island.to_crs(epsg=clutter_crs_epsg)
+
+        joined = gpd.sjoin(
+            clutter_island,
+            buf_island[[id_col, "geometry"]],
+            how="inner",
+            predicate="intersects",
+        )
+
+        summary = (joined.groupby(id_col, as_index=False)["building_count"].mean())
+        summary["building_count"] = round(summary["building_count"] * (1000**2 / 200**2), 3)
+
+        # Classify
+        bins = [-float("inf"), 519, 1559, 3639, float("inf")]
+        labels = ["Rural", "Sub Urban", "Urban", "Dense Urban"]
+        summary["clutter_class"] = pd.cut(
+            summary["building_count"],
+            bins=bins,
+            labels=labels,
+            include_lowest=True,
+        )
+
+        # Write results back to the original sitelist rows for this island via id_col
+        # (merge just the island subset, then assign by index)
+        island_idx = sitelist.index[sitelist["Island"] == island]
+        island_df = sitelist.loc[island_idx, [id_col]].merge(summary, on=id_col, how="left")
+        sitelist.loc[island_idx, "building_count"] = island_df["building_count"].values
+        sitelist.loc[island_idx, "clutter_class"] = island_df["clutter_class"].values
+
+        print(f"🟢 Clutter identification {island} done.")
+
+    print("✅ Clutter identification finish.")
+    return sitelist
+
+
+def admin_information(data_gdf:gpd.GeoDataFrame):
+    admin = gpd.read_parquet(r"D:\JACOBS\DATA\01. Admin\Admin_2024_Trimmed.parquet")
+    admin_col = ['Island','Provinsi','Kabkot', 'Kecamatan', 'Desa']
+    admin = admin.dropna(subset=['Provinsi', 'Kabkot', 'Kecamatan', 'Desa'], how="all")
+    for col in admin_col:
+        if col in data_gdf.columns:
+            data_gdf = data_gdf.drop(columns=col)
+
+    # CRS
+    admin = admin.to_crs(epsg=3857)
+    data_gdf = data_gdf.to_crs(epsg=3857)
+
+    if 'index_right' in data_gdf.columns:
+        data_gdf =  data_gdf.drop(columns="index_right")
+    admin_cols = admin_col + ['geometry']
+    data_filled = gpd.sjoin_nearest(data_gdf, admin[admin_cols]).drop(columns=["index_right"])
+    return data_filled

@@ -176,7 +176,7 @@ def validate_longlat(df:pd.DataFrame, lon_col="long", lat_col="lat"):
         print(f"❌ Coord Invalid    : {n_invalid:,}")
         print(
             f"Found {n_invalid} invalid coordinate rows (outside Indonesia bbox). "
-            f"Sample:\n{bad_rows[[lon_col, lat_col]].to_string(index=False)}"
+            f"Sample:\n{bad_rows.to_string(index=False)}"
         )
         df = df[~invalid_mask]
         df = df.reset_index(drop=True)
@@ -213,6 +213,7 @@ def read_gdf(file: str = None, **kwargs):
                     df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
                     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                     print(f"Identified long column: {long_col}, lat column: {lat_col}")
+                    print(f"🟢 Read dataframe done.")
                 except Exception as e:
                     try:
                         long_col = find_best_match("longitude", df.columns.tolist(), 0.6)
@@ -222,6 +223,7 @@ def read_gdf(file: str = None, **kwargs):
                         df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
                         gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                         print(f"Identified long column: {long_col}, lat column: {lat_col}")
+                        print(f"🟢 Read dataframe done.")
                     except Exception as e:
                         raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
             elif extension == "csv":
@@ -239,6 +241,7 @@ def read_gdf(file: str = None, **kwargs):
                     df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
                     gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                     print(f"Identified long column: {long_col}, lat column: {lat_col}")
+                    print(f"🟢 Read dataframe done.")
                 except Exception as e:
                     try:
                         long_col = find_best_match("longitude", df.columns.tolist(), 0.6)
@@ -248,6 +251,7 @@ def read_gdf(file: str = None, **kwargs):
                         df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
                         gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
                         print(f"Identified long column: {long_col}, lat column: {lat_col}")
+                        print(f"🟢 Read dataframe done.")
                     except Exception as e:
                         raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
             elif extension in ["kmz", "kml"]:

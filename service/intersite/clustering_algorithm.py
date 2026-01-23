@@ -861,8 +861,8 @@ def unsupervised_validation(sitelist, hubs):
 
     required = ["site_id", "site_name", "lat", "long"]
     missing = [c for c in required if c not in sitelist_df.columns]
-    if missing:
-        raise ValueError(f"Missing sitelist columns: {missing}")
+    if len(missing) > 0:
+        raise ValueError(f"Missing sitelist columns: {missing}. Column in dataset {sitelist_df.columns}")
 
     # HUBS
     if isinstance(hubs, pd.DataFrame):
@@ -902,6 +902,8 @@ def unsupervised_validation(sitelist, hubs):
 
     if "region" not in sitelist_gdf.columns:
         group = auto_group(sitelist_gdf, distance=10000)
+        sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
+        hubs_gdf = hubs_gdf.to_crs(epsg=3857)
         sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['geometry','region']]).drop(columns='index_right')
         hubs_gdf = gpd.sjoin(hubs_gdf, group[['geometry','region']]).drop(columns='index_right')
 
@@ -1018,8 +1020,8 @@ def main_unsupervised(
 # 10) DIRECT EXECUTION
 # ------------------------------------------------------
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Surge Sitelist\Surge_Sitelist & Hub 343_27112025.xlsx"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 4\Surge Sitelist"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Unsupervised\template unsupervised.xlsx"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Unsupervised\Export"
     area_col = 'region'
     cluster_col = 'ring_name'
     member_expectation = 8
@@ -1033,7 +1035,7 @@ if __name__ == "__main__":
 
     site_data = sanitize_header(site_data)
     hubs_data = sanitize_header(hubs_data)
-
+    print(site_data.head())
     site_data, hubs_data = unsupervised_validation(site_data, hubs_data)
     fo_expand = None
 
