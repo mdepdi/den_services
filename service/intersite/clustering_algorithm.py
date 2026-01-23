@@ -591,7 +591,7 @@ def main_clustering(
     # 5) Sequential reindex + add region prefix
     sites_clustered = sequential_cluster(sites_iter, cluster_col=col)
     sites_clustered["ring_name"] = (
-        sites_clustered["region"] + "_" + sites_clustered["ring_name"].astype(str)
+        sites_clustered["region"].astype(str) + "_" + sites_clustered["ring_name"].astype(str)
     )
     sites_clustered = sites_clustered.reset_index(drop=True)
 
@@ -953,7 +953,6 @@ def main_unsupervised(
         site_data = site_data.drop(columns=["index_right"])
 
     area_list = sorted(site_data[area_col].unique().tolist())
-
     output_point = os.path.join(checkpoint_dir, "Clustered_Points.parquet")
 
     if os.path.exists(output_point):
