@@ -11,6 +11,8 @@ import shapely
 import simplekml
 import zipfile
 import shutil
+import math
+
 from tqdm import tqdm
 from datetime import datetime
 from shapely.strtree import STRtree
@@ -21,12 +23,13 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from openpyxl import load_workbook
 from openpyxl.formula.translate import Translator
 from openpyxl.styles import Border, Side
+from enum import Enum
 
 sys.path.append(r"D:\JACOBS\SERVICE\API")
 
 from modules.kml import export_kml, sanitize_kml, validate_kmz_design, validate_kmz_ipl
 from modules.table import excel_styler
-from modules.utils import auto_group
+from modules.utils import auto_group, admin_information
 from modules.geometry import relative_intersection
 from core.config import settings
 
@@ -37,11 +40,34 @@ DATA_DIR = settings.DATA_DIR
 # LOGGER
 # ------------------------------------------------------
 from core.logger import create_logger
+
 logger = create_logger(__file__)
 
-def detect_turn(nodes_gdf: gpd.GeoDataFrame,
-                     edges_gdf: gpd.GeoDataFrame,
-                     angle_thresh_deg: float = 150.0):
+
+# ENUMS
+# ------------------------------------------------------
+class Operator(str, Enum):
+    IOH = "ioh"
+    XL = "xl"
+    SURGE = "surge"
+    TSEL = "tsel"
+
+
+class DeviceType(str, Enum):
+    OTB = "OTB"
+    ODP = "ODP"
+
+
+class ConnectorType(str, Enum):
+    SC = "SC"
+    FC = "FC"
+
+
+def detect_turn(
+    nodes_gdf: gpd.GeoDataFrame,
+    edges_gdf: gpd.GeoDataFrame,
+    angle_thresh_deg: float = 150.0,
+):
     """
     Faster turn detection using only topology and angles.
 
@@ -55,7 +81,7 @@ def detect_turn(nodes_gdf: gpd.GeoDataFrame,
     nodes = nodes_gdf.copy().reset_index(drop=True)
     nodes["turn_note"] = "straight"
     nodes["turn_isec"] = 0
-    nodes["turn_ratio"] = 1.0    # not really used anymore
+    nodes["turn_ratio"] = 1.0  # not really used anymore
     nodes["area_count"] = 1
 
     # build map: node_id -> list of direction vectors (dx, dy)
@@ -134,6 +160,7 @@ def detect_turn(nodes_gdf: gpd.GeoDataFrame,
 
     return nodes
 
+
 def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     """
     Generate nodes and edges (u, v) from LineString/MultiLineString geometries.
@@ -163,14 +190,18 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
             coords = list(line.coords)
             for i in range(len(coords) - 1):
                 u = Point(round(coords[i][0], decimals), round(coords[i][1], decimals))
-                v = Point(round(coords[i + 1][0], decimals), round(coords[i + 1][1], decimals))
-                edges.append({
-                    "id_line": row["id_line"],
-                    "geometry": LineString([u, v]),
-                    "u": u,
-                    "v": v,
-                    **{k: v for k, v in row.items()}
-                })
+                v = Point(
+                    round(coords[i + 1][0], decimals), round(coords[i + 1][1], decimals)
+                )
+                edges.append(
+                    {
+                        "id_line": row["id_line"],
+                        "geometry": LineString([u, v]),
+                        "u": u,
+                        "v": v,
+                        **{k: v for k, v in row.items()},
+                    }
+                )
     edges_gdf = gpd.GeoDataFrame(edges, geometry="geometry", crs=gdf.crs)
 
     # --- BUILD NODES ---
@@ -184,10 +215,15 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     nodes_gdf["y"] = nodes_gdf.geometry.y.round(decimals)
     nodes_gdf["coord_key"] = list(zip(nodes_gdf["x"], nodes_gdf["y"]))
     node_counts = nodes_gdf.groupby("coord_key").size().rename("count")
-    nodes_gdf = nodes_gdf.drop_duplicates("coord_key").merge(node_counts, left_on="coord_key", right_index=True, how="left").reset_index(drop=True)
+    nodes_gdf = (
+        nodes_gdf.drop_duplicates("coord_key")
+        .merge(node_counts, left_on="coord_key", right_index=True, how="left")
+        .reset_index(drop=True)
+    )
 
     # --- MAP NODE IDs ---
     nodes_gdf["node_id"] = [f"N{i+1:07d}" for i in range(len(nodes_gdf))]
+
     def find_node(pt):
         key = (round(pt.x, decimals), round(pt.y, decimals))
         match = nodes_gdf[nodes_gdf["coord_key"] == key]
@@ -197,13 +233,23 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     edges_gdf["node_end"] = edges_gdf["v"].apply(find_node)
     edges_gdf["length"] = edges_gdf.geometry.length
 
-
     # --- TURN ---
     nodes_gdf = detect_turn(nodes_gdf, edges_gdf, angle_thresh_deg=150)
 
     # --- CLEAN OUTPUT ---
     edges_gdf = edges_gdf.drop(columns=["u", "v"])
-    nodes_gdf = nodes_gdf[["node_id", "x", "y", "count", "turn_isec","turn_ratio", "turn_note", "geometry"]]
+    nodes_gdf = nodes_gdf[
+        [
+            "node_id",
+            "x",
+            "y",
+            "count",
+            "turn_isec",
+            "turn_ratio",
+            "turn_note",
+            "geometry",
+        ]
+    ]
 
     # CRS
     nodes_gdf = nodes_gdf.to_crs(crs_input)
@@ -212,8 +258,9 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
     return nodes_gdf, edges_gdf
 
 
-def snap_geom(g1:LineString|MultiLineString, g2:shapely.Geometry, threshold:float):
+def snap_geom(g1: LineString | MultiLineString, g2: shapely.Geometry, threshold: float):
     from shapely.ops import nearest_points
+
     coordinates = []
     geom_type = g1.geom_type
     if geom_type == "LineString":
@@ -237,10 +284,13 @@ def snap_geom(g1:LineString|MultiLineString, g2:shapely.Geometry, threshold:floa
     return LineString(coordinates)
 
 
-def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def substring_overlay(
+    source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame
+) -> gpd.GeoDataFrame:
     import geopandas as gpd
     from shapely.ops import substring
     from shapely.geometry import Point, LineString, MultiLineString, MultiPoint
+
     """
     For each source line, extract the full segment that lies between its first and last
     intersection with any reference line. Works with LineString/MultiLineString and
@@ -253,12 +303,11 @@ def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -
     if source_gdf.crs.to_epsg() != 3857:
         source_gdf = source_gdf.to_crs(3857)
 
-
     # CANDIDATE
     candidates = gpd.sjoin(source_gdf, ref_gdf, how="inner", predicate="intersects")
-    candidates['length'] = candidates.geometry.length
-    candidates = candidates.sort_values('length', ascending=False)
-    candidates = candidates.drop_duplicates('geometry')
+    candidates["length"] = candidates.geometry.length
+    candidates = candidates.sort_values("length", ascending=False)
+    candidates = candidates.drop_duplicates("geometry")
     if candidates.empty:
         return gpd.GeoDataFrame(columns=list(source_gdf.columns), crs=source_gdf.crs)
 
@@ -300,19 +349,18 @@ def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -
 
         # if len(anchors) < 2:
         #     continue
-        
+
         # # ANCHOR MAPPING DISTANCE
         # dists = [src_geom.project(pt) for pt in anchors]
         # start_d, end_d = min(dists), max(dists)
         # if end_d - start_d <= 0:
         #     continue
-        
+
         # # SEGMENT
         # seg = substring(src_geom, start_d, end_d)
         seg, new_line = relative_intersection(src_geom, ref_geom, tolerance=20)
 
-        
-        # DIFF 
+        # DIFF
         diff = shapely.difference(src_geom, ref_geom)
         if isinstance(diff, MultiLineString):
             for geom in diff.geoms:
@@ -339,15 +387,18 @@ def substring_overlay(source_gdf: gpd.GeoDataFrame, ref_gdf: gpd.GeoDataFrame) -
     logger.info(f"🟢 Substring overlay success")
     return result
 
-def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):    
+
+def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):
     lines_gdf = lines_gdf.copy()
     lines_gdf["line_id"] = lines_gdf.index
 
-    ring_name = lines_gdf['ring_name'].mode()[0]
-    osm_railway = gpd.read_parquet(f"{MAINDATA_DIR}/03. Road Network/railway_osm.parquet")
+    ring_name = lines_gdf["ring_name"].mode()[0]
+    osm_railway = gpd.read_parquet(
+        f"{MAINDATA_DIR}/03. Road Network/railway_osm.parquet"
+    )
     osm_toll = gpd.read_parquet(f"{MAINDATA_DIR}/03. Road Network/toll.parquet")
-    osm_railway = osm_railway.rename(columns={'name':'rail_name'})
-    osm_toll = osm_toll.rename(columns={'name':'toll_name'})
+    osm_railway = osm_railway.rename(columns={"name": "rail_name"})
+    osm_toll = osm_toll.rename(columns={"name": "toll_name"})
 
     lines_gdf = lines_gdf.to_crs(epsg=3857)
     osm_railway = osm_railway.to_crs(epsg=3857)
@@ -359,36 +410,59 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):
 
     # RAILWAY
     if not osm_railway.empty:
-        isec_rail = gpd.overlay(lines_gdf, osm_railway[['rail_name','geometry']], how="intersection", keep_geom_type=False)
-        isec_rail['geometry'] = isec_rail.geometry.representative_point()
-        isec_rail['remark'] = isec_rail['near_end'] + sep + isec_rail['far_end']
-        isec_rail['obstacle_railway'] = isec_rail.geometry.to_wkt()
+        isec_rail = gpd.overlay(
+            lines_gdf,
+            osm_railway[["rail_name", "geometry"]],
+            how="intersection",
+            keep_geom_type=False,
+        )
+        isec_rail["geometry"] = isec_rail.geometry.representative_point()
+        isec_rail["remark"] = isec_rail["near_end"] + sep + isec_rail["far_end"]
+        isec_rail["obstacle_railway"] = isec_rail.geometry.to_wkt()
 
         group = auto_group(isec_rail, distance=100)
-        group = group.rename(columns={'region':'group'})
-        isec_rail = gpd.sjoin(isec_rail, group[['group', 'geometry']]).drop(columns='index_right')
-        isec_rail = isec_rail.drop_duplicates(subset='group')
+        group = group.rename(columns={"region": "group"})
+        isec_rail = gpd.sjoin(isec_rail, group[["group", "geometry"]]).drop(
+            columns="index_right"
+        )
+        isec_rail = isec_rail.drop_duplicates(subset="group")
         logger.info(f"🟠 Found {len(isec_rail)} intersect with railway")
-        lines_gdf = lines_gdf.merge(isec_rail[['line_id', 'rail_name', 'obstacle_railway']], how='left', on='line_id')
+        lines_gdf = lines_gdf.merge(
+            isec_rail[["line_id", "rail_name", "obstacle_railway"]],
+            how="left",
+            on="line_id",
+        )
     else:
-        lines_gdf['obstacle_railway'] = None
+        lines_gdf["obstacle_railway"] = None
         logger.info(f"🟢 No railway obstacle in {ring_name}.")
 
     # TOLL
     if not osm_toll.empty:
-        isec_toll = gpd.overlay(lines_gdf, osm_toll[['toll_name','geometry']], how="intersection", keep_geom_type=False)
-        isec_toll['geometry'] = isec_toll.geometry.representative_point()
-        isec_toll['remark'] = isec_toll['near_end'] + sep + isec_toll['far_end']
-        isec_toll['obstacle_toll'] = isec_toll.geometry.to_wkt()
+        isec_toll = gpd.overlay(
+            lines_gdf,
+            osm_toll[["toll_name", "geometry"]],
+            how="intersection",
+            keep_geom_type=False,
+        )
+        isec_toll["geometry"] = isec_toll.geometry.representative_point()
+        isec_toll["remark"] = isec_toll["near_end"] + sep + isec_toll["far_end"]
+        isec_toll["obstacle_toll"] = isec_toll.geometry.to_wkt()
 
         group = auto_group(isec_toll, distance=100)
-        group = group.rename(columns={'region':'group'})
-        isec_toll = gpd.sjoin(isec_toll, group[['group', 'geometry']]).drop(columns='index_right')
-        isec_toll = isec_toll.drop_duplicates(subset='group')
+        group = group.rename(columns={"region": "group"})
+        isec_toll = gpd.sjoin(isec_toll, group[["group", "geometry"]]).drop(
+            columns="index_right"
+        )
+        isec_toll = isec_toll.drop_duplicates(subset="group")
         logger.info(f"🟠 Found {len(isec_toll)} intersect with highway")
-        lines_gdf = lines_gdf.merge(isec_toll[['line_id','toll_name', 'obstacle_toll']], how='left', left_index=True, right_index=True)
+        lines_gdf = lines_gdf.merge(
+            isec_toll[["line_id", "toll_name", "obstacle_toll"]],
+            how="left",
+            left_index=True,
+            right_index=True,
+        )
     else:
-        lines_gdf['obstacle_toll'] = None
+        lines_gdf["obstacle_toll"] = None
         logger.info(f"🟢 No highway obstacle in {ring_name}.")
 
     # # JOIN ADMIN
@@ -410,7 +484,9 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):
     return lines_gdf
 
 
-def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-", operator:str=None):
+def bill_of_quantity(
+    points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-", operator: str = None
+):
     import shapely
     from shapely.ops import split, snap, linemerge
     from shapely.geometry import LineString
@@ -421,7 +497,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     # =============================
     # LOAD FO REFERENCE GEOMETRY
     # =============================
-    fo_route_path = fr"{DATA_DIR}/FO TBG Only_01062025.parquet"
+    fo_route_path = rf"{DATA_DIR}/FO TBG Only_01062025.parquet"
     fo_route = gpd.read_parquet(fo_route_path)
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
@@ -429,9 +505,11 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
 
     # NORMALIZE OPERATOR
     operator = operator.lower().strip()
-    valid_operator = ['ioh', 'tsel', 'xl', 'surge']
+    valid_operator = ["ioh", "tsel", "xl", "surge"]
     if operator not in valid_operator:
-        raise ValueError(f"Invalid operator value. Should be {(",").join(valid_operator)} instead of '{operator}'.")
+        raise ValueError(
+            f"Invalid operator value. Should be {(",").join(valid_operator)} instead of '{operator}'."
+        )
 
     # =============================
     # PREPARE INPUT DATA
@@ -463,7 +541,9 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     # =============================
     # IDENTIFY TURN / BRANCH POINTS
     # =============================
-    turn_data = nodes[nodes["turn_note"].str.contains("turn|branch", case=False, na=False)].copy()
+    turn_data = nodes[
+        nodes["turn_note"].str.contains("turn|branch", case=False, na=False)
+    ].copy()
     turn_data = turn_data.rename(columns={"node_id": "turn_id"})
     branch = turn_data[turn_data["turn_isec"] > 2].copy()
     branch = branch.rename(columns={"turn_id": "branch_id"})
@@ -500,9 +580,15 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     points["dist_turn"] = points["dist_turn"].fillna(-1)
     points["dist_branch"] = points["dist_branch"].fillna(-1)
 
-    node_geom_map = {nid: geom.wkt for nid, geom in zip(nodes["node_id"], nodes.geometry)}
-    turn_geom_map = {tid: geom.wkt for tid, geom in zip(turn_data["turn_id"], turn_data.geometry)}
-    branch_geom_map = {bid: geom for bid, geom in zip(branch["branch_id"], branch.geometry)}
+    node_geom_map = {
+        nid: geom.wkt for nid, geom in zip(nodes["node_id"], nodes.geometry)
+    }
+    turn_geom_map = {
+        tid: geom.wkt for tid, geom in zip(turn_data["turn_id"], turn_data.geometry)
+    }
+    branch_geom_map = {
+        bid: geom for bid, geom in zip(branch["branch_id"], branch.geometry)
+    }
 
     # Assign OTB and ODP
     points["otb"] = points.geometry.to_wkt()
@@ -513,7 +599,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     for idx, row in points.iterrows():
         node_id = row["node_id"]
         turn_id = row["turn_id"]
-        site_type = row['site_type']
+        site_type = row["site_type"]
         dist_turn = row["dist_turn"]
         branch_id = row["branch_id"]
         dist_branch = row["dist_branch"]
@@ -530,7 +616,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
                 points.at[idx, "odp"] = geom_branch.wkt
 
         # IOH Hub Core 48
-        if operator == 'ioh'and ('hub' in str(site_type).lower()):
+        if operator == "ioh" and ("hub" in str(site_type).lower()):
             points.at[idx, "odp_type"] = 48
 
     # =============================
@@ -541,7 +627,11 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
 
     for idx, row in lines.iterrows():
         line_geom = row.geometry
-        line_geom = linemerge(line_geom) if line_geom.geom_type == "MultiLineString" else line_geom
+        line_geom = (
+            linemerge(line_geom)
+            if line_geom.geom_type == "MultiLineString"
+            else line_geom
+        )
 
         ne = str(row["near_end"]).strip()
         fe = str(row["far_end"]).strip()
@@ -556,7 +646,7 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
                 f"treating FE as NE (possible reversed) for line idx={idx}."
             )
             ne, fe = fe, ne
-            ne_row, fe_row = fe_row, None   # FE becomes "ring" / non-site
+            ne_row, fe_row = fe_row, None  # FE becomes "ring" / non-site
 
         # Both Missing
         if ne_row is None and fe_row is None:
@@ -627,20 +717,26 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     fo_route_clip["geometry"] = fo_route_clip.geometry.buffer(30)
 
     _ = substring_overlay(lines, fo_route_clip)
-    existing_route = gpd.overlay(lines, fo_route_clip, how="intersection", keep_geom_type=True)
+    existing_route = gpd.overlay(
+        lines, fo_route_clip, how="intersection", keep_geom_type=True
+    )
 
     lines["fo_exist"] = [{} for _ in range(len(lines))]
     lines["pole_exist"] = [{} for _ in range(len(lines))]
     lines["closure"] = [{} for _ in range(len(lines))]
-    
+
     if existing_route.empty:
         logger.info("⚠️ No existing FO intersections found.")
         lines = obstacle_detection(lines, sep=sep)
         return points, lines
 
-    existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(drop=True)
+    existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(
+        drop=True
+    )
     existing_route = existing_route.dissolve(["id_line", "fiber"]).reset_index()
-    existing_route["geometry"] = existing_route.geometry.apply(lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g)
+    existing_route["geometry"] = existing_route.geometry.apply(
+        lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g
+    )
     existing_route["length"] = existing_route.geometry.length
     existing_route = existing_route.sort_values("length", ascending=False)
 
@@ -649,7 +745,9 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
         if i in dropped:
             continue
         geom = row.geometry.buffer(5)
-        within_idx = existing_route[(existing_route.index != i) & (existing_route.within(geom))]
+        within_idx = existing_route[
+            (existing_route.index != i) & (existing_route.within(geom))
+        ]
         if not within_idx.empty:
             dropped.extend(within_idx.index.to_list())
 
@@ -701,22 +799,24 @@ def bill_of_quantity(points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-",
     lines = obstacle_detection(lines, sep=sep)
 
     # Surge Preference: Cross KAI use Core 96
-    if operator == 'surge':
+    if operator == "surge":
         points_idx = points.set_index(points["site_id"].astype(str), drop=False)
-        lines_intersected = lines[(lines['obstacle_railway'].notna())].copy()
-        lines.loc[lines.index.isin(lines_intersected.index), 'cable_type'] = 96
+        lines_intersected = lines[(lines["obstacle_railway"].notna())].copy()
+        lines.loc[lines.index.isin(lines_intersected.index), "cable_type"] = 96
         for idx, row in lines_intersected.iterrows():
-            ne = str(row['near_end'])
-            fe = str(row['far_end'])
-            mask_odp = points['site_id'].astype(str).isin([ne, fe])
-            points.loc[mask_odp, 'odp_type'] = 96
-            
+            ne = str(row["near_end"])
+            fe = str(row["far_end"])
+            mask_odp = points["site_id"].astype(str).isin([ne, fe])
+            points.loc[mask_odp, "odp_type"] = 96
+
     logger.info(f"🟢 {ring_name} BOQ Processing complete.\n")
     return points, lines
 
 
-def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, operator:str, **kwargs):
-    ringlist = set(points_gdf['ring_name'])
+def parallel_boq(
+    points_gdf: gpd.GeoDataFrame, lines_gdf: gpd.GeoDataFrame, operator: str, **kwargs
+):
+    ringlist = set(points_gdf["ring_name"])
     task_celery = kwargs.get("task_celery", False)
     sep = kwargs.get("sep", "-")
 
@@ -724,20 +824,23 @@ def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, operat
         points_gdf = points_gdf.drop(columns="index_right")
     if "index_right" in lines_gdf.columns:
         lines_gdf = lines_gdf.drop(columns="index_right")
-        
 
     with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {}
         for ring in ringlist:
-            points_ring = points_gdf[points_gdf['ring_name'] == ring].copy()
-            lines_ring = lines_gdf[lines_gdf['ring_name'] == ring].copy()
-            future = executor.submit(bill_of_quantity, points_ring, lines_ring, sep=sep, operator=operator)
+            points_ring = points_gdf[points_gdf["ring_name"] == ring].copy()
+            lines_ring = lines_gdf[lines_gdf["ring_name"] == ring].copy()
+            future = executor.submit(
+                bill_of_quantity, points_ring, lines_ring, sep=sep, operator=operator
+            )
             futures[future] = ring
-        
+
         points_compiled = []
         lines_compiled = []
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Process BOQ..."):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Process BOQ..."
+        ):
             ring = futures[future]
             try:
                 result = future.result()
@@ -749,7 +852,11 @@ def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, operat
                     if task_celery:
                         task_celery.update_state(
                             state="PROGRESS",
-                            meta={ "status": (f"Completed BOQ for {len(lines_compiled)}/{len(ringlist):,} rings")},
+                            meta={
+                                "status": (
+                                    f"Completed BOQ for {len(lines_compiled)}/{len(ringlist):,} rings"
+                                )
+                            },
                         )
             except Exception as e:
                 logger.error(f"🔴 Error BOQ in {ring}: {e}")
@@ -760,7 +867,8 @@ def parallel_boq(points_gdf:gpd.GeoDataFrame, lines_gdf:gpd.GeoDataFrame, operat
 
     return points_compiled, lines_compiled
 
-def compile_dict(data_gdf:gpd.GeoDataFrame, column:str):
+
+def compile_dict(data_gdf: gpd.GeoDataFrame, column: str):
     data_list = []
     for idx, row in data_gdf.iterrows():
         col_data = row[column]
@@ -772,61 +880,72 @@ def compile_dict(data_gdf:gpd.GeoDataFrame, column:str):
 
         for col_name, geom in col_data.items():
             segment = {
-                **{k: v for k, v in row.items() if k != 'geometry'},
+                **{k: v for k, v in row.items() if k != "geometry"},
                 column: col_name,
-                'geometry': shapely.from_wkt(geom)
+                "geometry": shapely.from_wkt(geom),
             }
             data_list.append(segment)
 
     if data_list:
-        data_gdf = gpd.GeoDataFrame(data_list, geometry='geometry', crs=data_gdf.crs)
+        data_gdf = gpd.GeoDataFrame(data_list, geometry="geometry", crs=data_gdf.crs)
     else:
-        data_gdf = gpd.GeoDataFrame(columns=data_gdf.columns, geometry='geometry', crs=data_gdf.crs)
+        data_gdf = gpd.GeoDataFrame(
+            columns=data_gdf.columns, geometry="geometry", crs=data_gdf.crs
+        )
     return data_gdf
+
 
 def identify_connection(
     ring: str,
     target_fiber: gpd.GeoDataFrame,
     target_point: gpd.GeoDataFrame,
-    start_column: str = 'near_end'
+    start_column: str = "near_end",
 ) -> tuple:
-    
+
     import numpy as np
     import geopandas as gpd
 
     # --- CRS normalize ---
-    if target_fiber.crs != 'EPSG:3857':
+    if target_fiber.crs != "EPSG:3857":
         target_fiber = target_fiber.to_crs(epsg=3857)
-    if target_point.crs != 'EPSG:3857':
+    if target_point.crs != "EPSG:3857":
         target_point = target_point.to_crs(epsg=3857)
 
     # --- Flatten any list/array values ---
-    for col in ['near_end', 'far_end']:
+    for col in ["near_end", "far_end"]:
         if col in target_fiber.columns:
             target_fiber[col] = target_fiber[col].apply(
                 lambda x: x[0] if isinstance(x, (list, tuple, np.ndarray)) else x
             )
 
     # --- Validate start column ---
-    if start_column == 'near_end':
-        opposite_column = 'far_end'
-    elif start_column == 'far_end':
-        opposite_column = 'near_end'
+    if start_column == "near_end":
+        opposite_column = "far_end"
+    elif start_column == "far_end":
+        opposite_column = "near_end"
     else:
         raise ValueError("start_column must be either 'near_end' or 'far_end'.")
 
     # --- Separate hub and site list ---
-    fo_hub = target_point[target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
-    site_list = target_point[~target_point['site_type'].str.lower().str.contains('hub')].drop_duplicates('geometry')
+    fo_hub = target_point[
+        target_point["site_type"].str.lower().str.contains("hub")
+    ].drop_duplicates("geometry")
+    site_list = target_point[
+        ~target_point["site_type"].str.lower().str.contains("hub")
+    ].drop_duplicates("geometry")
 
     # --- Identify starting hub ---
-    hub_ids = fo_hub['site_id'].astype(str).tolist()
-    start_hub = target_fiber[target_fiber[start_column].astype(str).isin(hub_ids)][start_column].values
+    hub_ids = fo_hub["site_id"].astype(str).tolist()
+    start_hub = target_fiber[target_fiber[start_column].astype(str).isin(hub_ids)][
+        start_column
+    ].values
     if len(start_hub) == 0:
-        start_hub = target_fiber[target_fiber[opposite_column].astype(str).isin(hub_ids)][opposite_column].values
+        start_hub = target_fiber[
+            target_fiber[opposite_column].astype(str).isin(hub_ids)
+        ][opposite_column].values
     if len(start_hub) == 0:
-        print(fo_hub['site_id'].tolist())
-        print(site_list['site_id'].tolist())
+        print(fo_hub["site_id"].tolist())
+        print(site_list["site_id"].tolist())
         print(hub_ids)
         raise ValueError(f"❌ No FO Hub found in ring {ring}")
 
@@ -842,7 +961,8 @@ def identify_connection(
 
         # find all fiber segments connected to this site
         matches = target_fiber[
-            (target_fiber[start_column] == current) | (target_fiber[opposite_column] == current)
+            (target_fiber[start_column] == current)
+            | (target_fiber[opposite_column] == current)
         ]
 
         for _, seg in matches.iterrows():
@@ -861,10 +981,12 @@ def identify_connection(
     points_sequential = []
     for site_id in connection:
         site_id = str(site_id)
-        if site_id in fo_hub['site_id'].astype(str).values:
-            row = fo_hub[fo_hub['site_id'].astype(str) == site_id].iloc[0].to_dict()
-        elif site_id in site_list['site_id'].astype(str).values:
-            row = site_list[site_list['site_id'].astype(str) == site_id].iloc[0].to_dict()
+        if site_id in fo_hub["site_id"].astype(str).values:
+            row = fo_hub[fo_hub["site_id"].astype(str) == site_id].iloc[0].to_dict()
+        elif site_id in site_list["site_id"].astype(str).values:
+            row = (
+                site_list[site_list["site_id"].astype(str) == site_id].iloc[0].to_dict()
+            )
         else:
             logger.info(f"⚠️ Site {site_id} not found.")
             continue
@@ -874,37 +996,52 @@ def identify_connection(
         logger.info(f"⚠️ No valid points found for ring {ring}")
         return None, None
 
-    points_sequential = gpd.GeoDataFrame(points_sequential, crs='EPSG:3857').reset_index(drop=True)
+    points_sequential = gpd.GeoDataFrame(
+        points_sequential, crs="EPSG:3857"
+    ).reset_index(drop=True)
     return points_sequential, connection
 
-def auto_sorter(df: pd.DataFrame|gpd.GeoDataFrame, column: str, sort_list: list):
+
+def auto_sorter(df: pd.DataFrame | gpd.GeoDataFrame, column: str, sort_list: list):
     from itertools import groupby
-    
+
     sort_list = [key for key, _ in groupby(sort_list)]
     order_map = {str(v): i for i, v in enumerate(sort_list)}
     if not df.empty:
-        df['order'] = df[column].astype(str).map(order_map)
-        df = df.sort_values('order', na_position='last').drop(columns='order')
+        df["order"] = df[column].astype(str).map(order_map)
+        df = df.sort_values("order", na_position="last").drop(columns="order")
     return df
 
-def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.GeoDataFrame:
-    if points_gdf.crs != 'EPSG:3857':
+
+def create_topology(
+    points_gdf: gpd.GeoDataFrame, merge: bool = True
+) -> gpd.GeoDataFrame:
+    if points_gdf.crs != "EPSG:3857":
         points_gdf = points_gdf.to_crs(epsg=3857)
 
-    points_gdf = points_gdf[points_gdf.geometry.notnull() & ~points_gdf.geometry.is_empty].copy()
+    points_gdf = points_gdf[
+        points_gdf.geometry.notnull() & ~points_gdf.geometry.is_empty
+    ].copy()
     points_gdf["geometry"] = points_gdf.geometry.force_2d()
 
-    ring_list = points_gdf['ring_name'].unique().tolist()
+    ring_list = points_gdf["ring_name"].unique().tolist()
     topology_records = []
 
     for ring in ring_list:
-        ring_points = points_gdf[points_gdf['ring_name'] == ring].reset_index(drop=True)
+        ring_points = points_gdf[points_gdf["ring_name"] == ring].reset_index(drop=True)
         if ring_points.empty:
             continue
 
-        region = next((x for x in ring_points.get('region', []) if pd.notna(x)), 'Unknown Region')
-        project = next((x for x in ring_points.get('project', []) if pd.notna(x)), 'Unknown Project')
-        fo_hub_count = len(ring_points[ring_points['site_type'].str.lower().str.contains('hub')])
+        region = next(
+            (x for x in ring_points.get("region", []) if pd.notna(x)), "Unknown Region"
+        )
+        project = next(
+            (x for x in ring_points.get("project", []) if pd.notna(x)),
+            "Unknown Project",
+        )
+        fo_hub_count = len(
+            ring_points[ring_points["site_type"].str.lower().str.contains("hub")]
+        )
 
         for i in range(len(ring_points)):
             start_point = ring_points.iloc[i]
@@ -923,7 +1060,9 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
                     if (i + 1) % len(ring_points) == 0:
                         continue
                 case _:
-                    raise ValueError(f"Ring {ring} has {fo_hub_count} FO Hubs, which is not supported.")
+                    raise ValueError(
+                        f"Ring {ring} has {fo_hub_count} FO Hubs, which is not supported."
+                    )
 
             try:
                 start_coords = list(start_point.geometry.coords)[0][:2]
@@ -934,174 +1073,298 @@ def create_topology(points_gdf: gpd.GeoDataFrame, merge: bool = True) -> gpd.Geo
                 continue
 
             record = {
-                'name': f"{start_point['site_id']}-{end_point['site_id']}",
-                'near_end': start_point['site_id'],
-                'far_end': end_point['site_id'],
-                'ring_name': ring,
-                'region': region,
-                'project': project,
-                'length': line_geom.length,
-                'route_type': 'Topology',
-                'fo_note': 'topology',
-                'geometry': line_geom
+                "name": f"{start_point['site_id']}-{end_point['site_id']}",
+                "near_end": start_point["site_id"],
+                "far_end": end_point["site_id"],
+                "ring_name": ring,
+                "region": region,
+                "project": project,
+                "length": line_geom.length,
+                "route_type": "Topology",
+                "fo_note": "topology",
+                "geometry": line_geom,
             }
             topology_records.append(record)
 
     if not topology_records:
         logger.info("⚠️ No topology records created.")
-        return gpd.GeoDataFrame(columns=['geometry'], geometry='geometry', crs='EPSG:3857')
+        return gpd.GeoDataFrame(
+            columns=["geometry"], geometry="geometry", crs="EPSG:3857"
+        )
 
-    topology_gdf = gpd.GeoDataFrame(topology_records, geometry='geometry', crs='EPSG:3857')
+    topology_gdf = gpd.GeoDataFrame(
+        topology_records, geometry="geometry", crs="EPSG:3857"
+    )
 
     if merge and not topology_gdf.empty:
-        topology_gdf = topology_gdf.dissolve(by='ring_name')
-        topology_gdf = topology_gdf[['geometry', 'region', 'project']].reset_index()
-        topology_gdf['name'] = 'Connection'
-        topology_gdf['geometry'] = topology_gdf['geometry'].apply(
-            lambda geom: linemerge(geom) if geom.geom_type == 'MultiLineString' else geom
+        topology_gdf = topology_gdf.dissolve(by="ring_name")
+        topology_gdf = topology_gdf[["geometry", "region", "project"]].reset_index()
+        topology_gdf["name"] = "Connection"
+        topology_gdf["geometry"] = topology_gdf["geometry"].apply(
+            lambda geom: (
+                linemerge(geom) if geom.geom_type == "MultiLineString" else geom
+            )
         )
     return topology_gdf
 
-def compile_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, sep:str="-", device_in_branch:str="ODP", device_in_site:str="OTB"):
+
+def compile_boq(
+    points_boq: gpd.GeoDataFrame,
+    lines_boq: gpd.GeoDataFrame,
+    sep: str = "-",
+    device_in_branch: str = "ODP",
+    device_in_site: str = "OTB",
+):
 
     # BILL OF QUANTITY
     # Lines Based
     lines_boq = lines_boq.copy()
-    lines_boq['near_end'] = lines_boq['near_end'].astype(str).str.strip()
-    lines_boq['far_end'] = lines_boq['far_end'].astype(str).str.strip()
-    lines_boq['segment_name'] = lines_boq['near_end'] + sep + lines_boq['far_end']
-    backbone = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'backbone', 'cable_type', 'geometry']].copy()
-    backbone = backbone.rename(columns={'cable_type': 'core'})
-    backbone = backbone.dropna(subset=['backbone'])
+    lines_boq["near_end"] = lines_boq["near_end"].astype(str).str.strip()
+    lines_boq["far_end"] = lines_boq["far_end"].astype(str).str.strip()
+    lines_boq["segment_name"] = lines_boq["near_end"] + sep + lines_boq["far_end"]
+    backbone = lines_boq[
+        [
+            "segment_name",
+            "near_end",
+            "far_end",
+            "ring_name",
+            "backbone",
+            "cable_type",
+            "geometry",
+        ]
+    ].copy()
+    backbone = backbone.rename(columns={"cable_type": "core"})
+    backbone = backbone.dropna(subset=["backbone"])
     if not backbone.empty:
-        backbone['geometry'] = backbone['backbone'].apply(lambda geom:shapely.from_wkt(geom))
-        backbone["segment_name"] = backbone['near_end'] + sep + backbone['far_end']
-        backbone['name'] = "BB " + backbone['segment_name']
-        backbone['name'] = np.where(backbone['core'] == 96, backbone['name'] + "_FO" + backbone["core"].astype(str) + "C", backbone['name'])
-        backbone['geometry'] = backbone['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
-        backbone = backbone.drop(columns='backbone')
+        backbone["geometry"] = backbone["backbone"].apply(
+            lambda geom: shapely.from_wkt(geom)
+        )
+        backbone["segment_name"] = backbone["near_end"] + sep + backbone["far_end"]
+        backbone["name"] = "BB " + backbone["segment_name"]
+        backbone["name"] = np.where(
+            backbone["core"] == 96,
+            backbone["name"] + "_FO" + backbone["core"].astype(str) + "C",
+            backbone["name"],
+        )
+        backbone["geometry"] = backbone["geometry"].apply(
+            lambda geom: (
+                linemerge(geom) if geom.geom_type == "MultiLineString" else geom
+            )
+        )
+        backbone = backbone.drop(columns="backbone")
         backbone = backbone.to_crs(epsg=4326)
 
-    access_ne = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'access_ne', 'geometry']].copy()
-    access_ne = access_ne.dropna(subset=['access_ne'])
+    access_ne = lines_boq[
+        ["segment_name", "near_end", "far_end", "ring_name", "access_ne", "geometry"]
+    ].copy()
+    access_ne = access_ne.dropna(subset=["access_ne"])
     if not access_ne.empty:
-        access_ne['geometry'] = access_ne['access_ne'].apply(lambda geom:shapely.from_wkt(geom))
-        access_ne['segment_name'] = access_ne['near_end'] + sep + access_ne['far_end']
-        access_ne['name'] = "Akses " + access_ne['segment_name']
-        access_ne['geometry'] = access_ne['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
-        access_ne = access_ne.drop(columns='access_ne')
+        access_ne["geometry"] = access_ne["access_ne"].apply(
+            lambda geom: shapely.from_wkt(geom)
+        )
+        access_ne["segment_name"] = access_ne["near_end"] + sep + access_ne["far_end"]
+        access_ne["name"] = "Akses " + access_ne["segment_name"]
+        access_ne["geometry"] = access_ne["geometry"].apply(
+            lambda geom: (
+                linemerge(geom) if geom.geom_type == "MultiLineString" else geom
+            )
+        )
+        access_ne = access_ne.drop(columns="access_ne")
         access_ne = access_ne.to_crs(epsg=4326)
 
-    access_fe = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'access_fe', 'geometry']].copy()
-    access_fe = access_fe.dropna(subset=['access_fe'])
+    access_fe = lines_boq[
+        ["segment_name", "near_end", "far_end", "ring_name", "access_fe", "geometry"]
+    ].copy()
+    access_fe = access_fe.dropna(subset=["access_fe"])
     if not access_fe.empty:
-        access_fe['geometry'] = access_fe['access_fe'].apply(lambda geom:shapely.from_wkt(geom))
-        access_fe['segment_name'] = access_fe['near_end'] + sep + access_fe['far_end']
-        access_fe['name'] = "Akses " + access_fe['segment_name']
-        access_fe['geometry'] = access_fe['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
-        access_fe = access_fe.drop(columns='access_fe')
+        access_fe["geometry"] = access_fe["access_fe"].apply(
+            lambda geom: shapely.from_wkt(geom)
+        )
+        access_fe["segment_name"] = access_fe["near_end"] + sep + access_fe["far_end"]
+        access_fe["name"] = "Akses " + access_fe["segment_name"]
+        access_fe["geometry"] = access_fe["geometry"].apply(
+            lambda geom: (
+                linemerge(geom) if geom.geom_type == "MultiLineString" else geom
+            )
+        )
+        access_fe = access_fe.drop(columns="access_fe")
         access_fe = access_fe.to_crs(epsg=4326)
 
     # Points Based
-    odp = points_boq[['site_id', 'site_type','ring_name','odp', 'odp_type', 'geometry']].copy()
-    odp = odp.rename(columns={'odp_type': 'core'})
-    odp = odp.dropna(subset=['odp'])
+    odp = points_boq[
+        ["site_id", "site_type", "ring_name", "odp", "odp_type", "geometry"]
+    ].copy()
+    odp = odp.rename(columns={"odp_type": "core"})
+    odp = odp.dropna(subset=["odp"])
 
     if not odp.empty:
-        odp['geometry'] = odp['odp'].map(shapely.from_wkt)
-        odp['name'] = f"{device_in_branch} " + odp['site_id'].astype(str)
+        odp["geometry"] = odp["odp"].map(shapely.from_wkt)
+        odp["name"] = f"{device_in_branch} " + odp["site_id"].astype(str)
 
-        mask_core = odp['core'].isin([48, 96])
-        odp.loc[mask_core, 'name'] = (f"{device_in_branch}_" + odp.loc[mask_core, 'core'].astype(str) + " " + odp.loc[mask_core, 'site_id'].astype(str))
-        odp['ext_note'] = odp['name'].duplicated().astype(int)
-        mask_ext = odp['ext_note'].eq(1)
-        odp.loc[mask_ext, 'name'] = (
-            odp.loc[mask_ext, 'name']
-            .str.replace(
-                r"^(?P<device>ODP|OTB|Closure)(?P<core>_\d{2})? (?P<site_id>\w+)$",
-                r"\g<device>\g<core>_EXT \g<site_id>",
-                regex=True
-            )
+        mask_core = odp["core"].isin([48, 96])
+        odp.loc[mask_core, "name"] = (
+            f"{device_in_branch}_"
+            + odp.loc[mask_core, "core"].astype(str)
+            + " "
+            + odp.loc[mask_core, "site_id"].astype(str)
+        )
+        odp["ext_note"] = odp["name"].duplicated().astype(int)
+        mask_ext = odp["ext_note"].eq(1)
+        odp.loc[mask_ext, "name"] = odp.loc[mask_ext, "name"].str.replace(
+            r"^(?P<device>ODP|OTB|Closure)(?P<core>_\d{2})? (?P<site_id>\w+)$",
+            r"\g<device>\g<core>_EXT \g<site_id>",
+            regex=True,
         )
 
-        odp = odp.drop(columns='odp')
+        odp = odp.drop(columns="odp")
         odp = odp.to_crs(epsg=4326)
-        odp['long'] = odp.geometry.x
-        odp['lat'] = odp.geometry.y
+        odp["long"] = odp.geometry.x
+        odp["lat"] = odp.geometry.y
 
-    otb = points_boq[['site_id', 'site_type','ring_name','otb', 'otb_type', 'geometry']].copy()
-    otb = otb.rename(columns={'otb_type': 'core'})
-    otb = otb.dropna(subset=['otb'])
+    otb = points_boq[
+        ["site_id", "site_type", "ring_name", "otb", "otb_type", "geometry"]
+    ].copy()
+    otb = otb.rename(columns={"otb_type": "core"})
+    otb = otb.dropna(subset=["otb"])
     if not otb.empty:
-        otb['geometry'] = otb['otb'].apply(lambda geom:shapely.from_wkt(geom))
-        otb['name'] = f"{device_in_site} " + otb['site_id']
-        mask_core = otb['core'].isin([48, 96])
-        otb.loc[mask_core, 'name'] = (f"{device_in_site}_" + otb.loc[mask_core, 'core'].astype(str) + " " + otb.loc[mask_core, 'site_id'].astype(str))
-        otb['ext_note'] = otb['name'].duplicated().astype(int)
-        mask_ext = otb['ext_note'].eq(1)
-        otb.loc[mask_ext, 'name'] = (
-            otb.loc[mask_ext, 'name']
-            .str.replace(
-                r"^(?P<device>ODP|OTB|Closure)(?P<core>_\d{2})? (?P<site_id>\w+)$",
-                r"\g<device>\g<core>_EXT \g<site_id>",
-                regex=True
+        otb["geometry"] = otb["otb"].apply(lambda geom: shapely.from_wkt(geom))
+        otb["name"] = f"{device_in_site} " + otb["site_id"]
+        mask_core = otb["core"].isin([48, 96])
+        otb.loc[mask_core, "name"] = (
+            f"{device_in_site}_"
+            + otb.loc[mask_core, "core"].astype(str)
+            + " "
+            + otb.loc[mask_core, "site_id"].astype(str)
+        )
+        otb["ext_note"] = otb["name"].duplicated().astype(int)
+        mask_ext = otb["ext_note"].eq(1)
+        otb.loc[mask_ext, "name"] = otb.loc[mask_ext, "name"].str.replace(
+            r"^(?P<device>ODP|OTB|Closure)(?P<core>_\d{2})? (?P<site_id>\w+)$",
+            r"\g<device>\g<core>_EXT \g<site_id>",
+            regex=True,
+        )
+        otb = otb.drop(columns="otb")
+        otb = otb.to_crs(epsg=4326)
+        otb["long"] = otb.geometry.x
+        otb["lat"] = otb.geometry.y
+
+    # DIVIDED BY INTERSECTION FIBER
+    fo_exist = lines_boq[
+        ["segment_name", "near_end", "far_end", "ring_name", "fo_exist", "geometry"]
+    ].copy()
+    fo_exist = compile_dict(fo_exist, "fo_exist")
+    if not fo_exist.empty:
+        fo_exist["name"] = (
+            fo_exist["segment_name"] + "/" + fo_exist["fo_exist"].astype(str)
+        )
+        fo_exist["geometry"] = fo_exist["geometry"].apply(
+            lambda geom: (
+                linemerge(geom) if geom.geom_type == "MultiLineString" else geom
             )
         )
-        otb = otb.drop(columns='otb')
-        otb = otb.to_crs(epsg=4326)
-        otb['long'] = otb.geometry.x
-        otb['lat'] = otb.geometry.y
-    
-    # DIVIDED BY INTERSECTION FIBER
-    fo_exist = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'fo_exist', 'geometry']].copy()
-    fo_exist = compile_dict(fo_exist, 'fo_exist')
-    if not fo_exist.empty:
-        fo_exist['name'] = fo_exist['segment_name'] + "/" + fo_exist['fo_exist'].astype(str)
-        fo_exist['geometry'] = fo_exist['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
         fo_exist = fo_exist.to_crs(epsg=4326)
 
-    pole_exist = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'pole_exist', 'geometry']].copy()
-    pole_exist = compile_dict(pole_exist, 'pole_exist')
+    pole_exist = lines_boq[
+        ["segment_name", "near_end", "far_end", "ring_name", "pole_exist", "geometry"]
+    ].copy()
+    pole_exist = compile_dict(pole_exist, "pole_exist")
     if not pole_exist.empty:
-        pole_exist['name'] = pole_exist['segment_name'] + "/POLE EXT"
-        pole_exist['geometry'] = pole_exist['geometry'].apply(lambda geom: linemerge(geom) if geom.geom_type == "MultiLineString" else geom)
+        pole_exist["name"] = pole_exist["segment_name"] + "/POLE EXT"
+        pole_exist["geometry"] = pole_exist["geometry"].apply(
+            lambda geom: (
+                linemerge(geom) if geom.geom_type == "MultiLineString" else geom
+            )
+        )
         pole_exist = pole_exist.to_crs(epsg=4326)
 
-    closure = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'closure', 'cable_type', 'geometry']].copy()
-    closure = closure.rename(columns={'cable_type': 'core'})
-    closure = compile_dict(closure, 'closure')
+    closure = lines_boq[
+        [
+            "segment_name",
+            "near_end",
+            "far_end",
+            "ring_name",
+            "closure",
+            "cable_type",
+            "geometry",
+        ]
+    ].copy()
+    closure = closure.rename(columns={"cable_type": "core"})
+    closure = compile_dict(closure, "closure")
     closure = closure.to_crs(epsg=4326)
     if not closure.empty:
         closure = closure.explode(ignore_index=True)
-        closure['name'] = "Closure " + closure['segment_name']
-        closure['ext_note'] = np.where(closure[['name', 'geometry']].duplicated(), 1, 0)
-        mask_ext = closure['ext_note'].eq(1)
-        closure.loc[mask_ext, 'name'] = "Closure_EXT " + closure.loc[mask_ext, 'segment_name']
-        closure['long'] = closure.geometry.x
-        closure['lat'] = closure.geometry.y
+        closure["name"] = "Closure " + closure["segment_name"]
+        closure["ext_note"] = np.where(closure[["name", "geometry"]].duplicated(), 1, 0)
+        mask_ext = closure["ext_note"].eq(1)
+        closure.loc[mask_ext, "name"] = (
+            "Closure_EXT " + closure.loc[mask_ext, "segment_name"]
+        )
+        closure["long"] = closure.geometry.x
+        closure["lat"] = closure.geometry.y
 
-    obstacle_railway = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'obstacle_railway', 'geometry']].copy()
-    obstacle_railway = obstacle_railway.dropna(subset=['obstacle_railway'])
+    obstacle_railway = lines_boq[
+        [
+            "segment_name",
+            "near_end",
+            "far_end",
+            "ring_name",
+            "obstacle_railway",
+            "geometry",
+        ]
+    ].copy()
+    obstacle_railway = obstacle_railway.dropna(subset=["obstacle_railway"])
     if not obstacle_railway.empty:
-        obstacle_railway['geometry'] = obstacle_railway['obstacle_railway'].apply(lambda geom:shapely.from_wkt(geom))
-        obstacle_railway = obstacle_railway.drop(columns='obstacle_railway')
+        obstacle_railway["geometry"] = obstacle_railway["obstacle_railway"].apply(
+            lambda geom: shapely.from_wkt(geom)
+        )
+        obstacle_railway = obstacle_railway.drop(columns="obstacle_railway")
         obstacle_railway = obstacle_railway.to_crs(epsg=4326)
-        obstacle_railway['long'] = obstacle_railway.geometry.x
-        obstacle_railway['lat'] = obstacle_railway.geometry.y
-        obstacle_railway['name'] = "Obstacle Rail " + obstacle_railway['segment_name']
+        obstacle_railway["long"] = obstacle_railway.geometry.x
+        obstacle_railway["lat"] = obstacle_railway.geometry.y
+        obstacle_railway["name"] = "Obstacle Rail " + obstacle_railway["segment_name"]
 
-    obstacle_toll = lines_boq[['segment_name', 'near_end', 'far_end', 'ring_name', 'obstacle_toll', 'geometry']].copy()
-    obstacle_toll = obstacle_toll.dropna(subset=['obstacle_toll'])
+    obstacle_toll = lines_boq[
+        [
+            "segment_name",
+            "near_end",
+            "far_end",
+            "ring_name",
+            "obstacle_toll",
+            "geometry",
+        ]
+    ].copy()
+    obstacle_toll = obstacle_toll.dropna(subset=["obstacle_toll"])
     if not obstacle_toll.empty:
-        obstacle_toll['geometry'] = obstacle_toll['obstacle_toll'].apply(lambda geom:shapely.from_wkt(geom))
-        obstacle_toll = obstacle_toll.drop(columns='obstacle_toll')
+        obstacle_toll["geometry"] = obstacle_toll["obstacle_toll"].apply(
+            lambda geom: shapely.from_wkt(geom)
+        )
+        obstacle_toll = obstacle_toll.drop(columns="obstacle_toll")
         obstacle_toll = obstacle_toll.to_crs(epsg=4326)
-        obstacle_toll['name'] = "Obstacle Toll " + obstacle_toll['segment_name']
-        obstacle_toll['long'] = obstacle_toll.geometry.x
-        obstacle_toll['lat'] = obstacle_toll.geometry.y
-    return odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll
+        obstacle_toll["name"] = "Obstacle Toll " + obstacle_toll["segment_name"]
+        obstacle_toll["long"] = obstacle_toll.geometry.x
+        obstacle_toll["lat"] = obstacle_toll.geometry.y
+    return (
+        odp,
+        otb,
+        closure,
+        backbone,
+        access_ne,
+        access_fe,
+        fo_exist,
+        pole_exist,
+        obstacle_railway,
+        obstacle_toll,
+    )
 
-def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, device_in_site:str="OTB", device_in_branch:str="ODP", **kwargs):
+
+def excel_boq(
+    points_boq: gpd.GeoDataFrame,
+    lines_boq: gpd.GeoDataFrame,
+    export_dir: str,
+    device_in_site: str = "OTB",
+    device_in_branch: str = "ODP",
+    **kwargs,
+):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
     sep = kwargs.get("sep", "-")
@@ -1109,13 +1372,13 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     lines_boq = lines_boq.copy()
     points_boq = points_boq.copy()
 
-    if 'long' not in points_boq.columns or 'lat' not in points_boq.columns:
-        points_boq['long'] = points_boq.geometry.to_crs(epsg=4326).x
-        points_boq['lat'] = points_boq.geometry.to_crs(epsg=4326).y
-    if 'vendor' not in points_boq.columns:
-        points_boq['vendor'] = vendor
-    if 'program' not in points_boq.columns:
-        points_boq['program'] = program
+    if "long" not in points_boq.columns or "lat" not in points_boq.columns:
+        points_boq["long"] = points_boq.geometry.to_crs(epsg=4326).x
+        points_boq["lat"] = points_boq.geometry.to_crs(epsg=4326).y
+    if "vendor" not in points_boq.columns:
+        points_boq["vendor"] = vendor
+    if "program" not in points_boq.columns:
+        points_boq["program"] = program
 
     # used_columns = {
     #     "ring_name": "Ring ID",
@@ -1130,44 +1393,74 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     #     }
 
     # available_col = [col for col in used_columns.keys() if col in points_boq.columns]
-    
+
     # -- Sitelist & Hub --
-    sitelist = points_boq[points_boq["site_type"].str.lower().str.contains('site')].copy()
-    hubs = points_boq[points_boq["site_type"].str.lower().str.contains('hub')].copy()
+    sitelist = points_boq[
+        points_boq["site_type"].str.lower().str.contains("site")
+    ].copy()
+    hubs = points_boq[points_boq["site_type"].str.lower().str.contains("hub")].copy()
 
     # sitelist = sitelist[available_col].rename(columns=used_columns)
     # hubs = hubs[available_col].rename(columns=used_columns)
 
-    sitelist = sitelist.drop_duplicates('geometry')
-    hubs = hubs.drop_duplicates('geometry')
+    sitelist = sitelist.drop_duplicates("geometry")
+    hubs = hubs.drop_duplicates("geometry")
     sitelist = sitelist.to_crs(epsg=3246)
     hubs = hubs.to_crs(epsg=3246)
 
     # -- Route --
     route = lines_boq.copy()
-    route['length'] = route.geometry.to_crs(epsg=3857).length
-    route_columns = [ "near_end", "far_end", "geometry", "ring_name", "length"]
+    route["length"] = route.geometry.to_crs(epsg=3857).length
+    route_columns = ["near_end", "far_end", "geometry", "ring_name", "length"]
     route = route[route_columns].copy()
     route["name"] = route["near_end"] + sep + route["far_end"]
 
     # BOQ
-    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
-    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
+    result_boq = compile_boq(
+        points_boq,
+        lines_boq,
+        sep=sep,
+        device_in_site=device_in_site,
+        device_in_branch=device_in_branch,
+    )
+    (
+        odp,
+        otb,
+        closure,
+        backbone,
+        access_ne,
+        access_fe,
+        fo_exist,
+        pole_exist,
+        obstacle_railway,
+        obstacle_toll,
+    ) = result_boq
 
     # SUMMARY
     # Columns for Points: site_id, site_name, ring_name, long, lat, region, vendor, program, type, geometry
     # Columns for Lines: near_end, far_end, ring_name, length, region, vendor, program, type, geometry
-    
+
     # -- Sitelist Summary --
-    sitelist['type'] = "Sitelist"
-    sitelist['long'] = sitelist.geometry.to_crs(epsg=4326).x
-    sitelist['lat'] = sitelist.geometry.to_crs(epsg=4326).y
-    
-    hubs['type'] = "FO Hub"
-    hubs['long'] = hubs.geometry.to_crs(epsg=4326).x
-    hubs['lat'] = hubs.geometry.to_crs(epsg=4326).y
-    cols_sitelist = ["site_id", "site_name", "site_type", "type", "algo", "region", "ring_name", "vendor", "program", "geometry"]
-    
+    sitelist["type"] = "Sitelist"
+    sitelist["long"] = sitelist.geometry.to_crs(epsg=4326).x
+    sitelist["lat"] = sitelist.geometry.to_crs(epsg=4326).y
+
+    hubs["type"] = "FO Hub"
+    hubs["long"] = hubs.geometry.to_crs(epsg=4326).x
+    hubs["lat"] = hubs.geometry.to_crs(epsg=4326).y
+    cols_sitelist = [
+        "site_id",
+        "site_name",
+        "site_type",
+        "type",
+        "algo",
+        "region",
+        "ring_name",
+        "vendor",
+        "program",
+        "geometry",
+    ]
+
     valid_col = []
     for col in cols_sitelist:
         if col in sitelist.columns and col in hubs.columns:
@@ -1175,100 +1468,106 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
     hubs = hubs[valid_col]
     sitelist = sitelist[valid_col]
 
-    sheet_sitelist = pd.concat([hubs, sitelist], join='inner')
-    sheet_sitelist = sheet_sitelist.sort_values('ring_name')
-    sheet_sitelist = sheet_sitelist.drop_duplicates(['ring_name', 'geometry'])
+    sheet_sitelist = pd.concat([hubs, sitelist], join="inner")
+    sheet_sitelist = sheet_sitelist.sort_values("ring_name")
+    sheet_sitelist = sheet_sitelist.drop_duplicates(["ring_name", "geometry"])
     sheet_sitelist = sheet_sitelist.drop(columns="geometry")
     sheet_sitelist.columns = sheet_sitelist.columns.str.lower().str.replace(" ", "_")
 
     # -- Device --
-    odp['type'] = "ODP"
+    odp["type"] = "ODP"
     odp = odp.to_crs(epsg=4326)
-    if not odp.empty and 'geometry' in odp:
-        odp['long'] = odp.geometry.to_crs(epsg=4326).x
-        odp['lat'] = odp.geometry.to_crs(epsg=4326).y
+    if not odp.empty and "geometry" in odp:
+        odp["long"] = odp.geometry.to_crs(epsg=4326).x
+        odp["lat"] = odp.geometry.to_crs(epsg=4326).y
 
-    otb['type'] = device_in_site
+    otb["type"] = device_in_site
     otb = otb.to_crs(epsg=4326)
-    if not otb.empty and 'geometry' in otb:
-        otb['long'] = otb.geometry.to_crs(epsg=4326).x
-        otb['lat'] = otb.geometry.to_crs(epsg=4326).y
+    if not otb.empty and "geometry" in otb:
+        otb["long"] = otb.geometry.to_crs(epsg=4326).x
+        otb["lat"] = otb.geometry.to_crs(epsg=4326).y
 
-    closure['type'] = "CL"
+    closure["type"] = "CL"
     closure = closure.to_crs(epsg=4326)
-    if not closure.empty and 'geometry' in closure:
-        closure['long'] = closure.geometry.to_crs(epsg=4326).x
-        closure['lat'] = closure.geometry.to_crs(epsg=4326).y
+    if not closure.empty and "geometry" in closure:
+        closure["long"] = closure.geometry.to_crs(epsg=4326).x
+        closure["lat"] = closure.geometry.to_crs(epsg=4326).y
 
-    sheet_devices = pd.concat([odp, otb, closure], join='inner')
-    sheet_devices = sheet_devices.sort_values('ring_name')
-    sheet_devices = sheet_devices.drop_duplicates(['ring_name', 'geometry'])
+    sheet_devices = pd.concat([odp, otb, closure], join="inner")
+    sheet_devices = sheet_devices.sort_values("ring_name")
+    sheet_devices = sheet_devices.drop_duplicates(["ring_name", "geometry"])
     sheet_devices = sheet_devices.drop(columns="geometry")
     sheet_devices.columns = sheet_devices.columns.str.lower().str.replace(" ", "_")
-    
+
     # -- Lines --
-    route['type'] = 'Route'
+    route["type"] = "Route"
     route = route.to_crs(epsg=4326)
-    if not route.empty and 'geometry' in route:
-        route['length'] = route.geometry.to_crs(epsg=3857).length
-    
-    backbone['type'] = "Backbone"
+    if not route.empty and "geometry" in route:
+        route["length"] = route.geometry.to_crs(epsg=3857).length
+
+    backbone["type"] = "Backbone"
     backbone = backbone.to_crs(epsg=4326)
-    if not backbone.empty and 'geometry' in backbone:
-        backbone['length'] = backbone.geometry.to_crs(epsg=3857).length
-    
-    access_fe['type'] = "Access"
+    if not backbone.empty and "geometry" in backbone:
+        backbone["length"] = backbone.geometry.to_crs(epsg=3857).length
+
+    access_fe["type"] = "Access"
     access_fe = access_fe.to_crs(epsg=4326)
-    if not access_fe.empty and 'geometry' in access_fe:
-        access_fe['length'] = access_fe.geometry.to_crs(epsg=3857).length
-    
-    fo_exist['type'] = "FO Existing"
+    if not access_fe.empty and "geometry" in access_fe:
+        access_fe["length"] = access_fe.geometry.to_crs(epsg=3857).length
+
+    fo_exist["type"] = "FO Existing"
     fo_exist = fo_exist.to_crs(epsg=4326)
-    if not fo_exist.empty and 'geometry' in fo_exist:
-        fo_exist['length'] = fo_exist.geometry.to_crs(epsg=3857).length
-    
-    pole_exist['type'] = "Pole Existing"
+    if not fo_exist.empty and "geometry" in fo_exist:
+        fo_exist["length"] = fo_exist.geometry.to_crs(epsg=3857).length
+
+    pole_exist["type"] = "Pole Existing"
     pole_exist = pole_exist.to_crs(epsg=4326)
-    if not pole_exist.empty and 'geometry' in pole_exist:
-        pole_exist['length'] = pole_exist.geometry.to_crs(epsg=3857).length
+    if not pole_exist.empty and "geometry" in pole_exist:
+        pole_exist["length"] = pole_exist.geometry.to_crs(epsg=3857).length
 
     sheet_routes = pd.concat([route, backbone, access_fe, fo_exist, pole_exist])
-    sheet_routes = sheet_routes.sort_values('ring_name')
-    sheet_routes = sheet_routes.drop_duplicates(['ring_name', 'geometry'])
+    sheet_routes = sheet_routes.sort_values("ring_name")
+    sheet_routes = sheet_routes.drop_duplicates(["ring_name", "geometry"])
     sheet_routes = sheet_routes.drop(columns="geometry")
     sheet_routes.columns = sheet_routes.columns.str.lower().str.replace(" ", "_")
 
     # -- Obstacle --
-    obstacle_railway['type'] = "Obstacle Railway"
+    obstacle_railway["type"] = "Obstacle Railway"
     obstacle_railway = obstacle_railway.to_crs(epsg=4326)
-    if not obstacle_railway.empty and 'geometry' in obstacle_railway:
-        obstacle_railway['long'] = obstacle_railway.geometry.x
-        obstacle_railway['lat'] = obstacle_railway.geometry.y
+    if not obstacle_railway.empty and "geometry" in obstacle_railway:
+        obstacle_railway["long"] = obstacle_railway.geometry.x
+        obstacle_railway["lat"] = obstacle_railway.geometry.y
 
-    obstacle_toll['type'] = "Obstacle Toll"
+    obstacle_toll["type"] = "Obstacle Toll"
     obstacle_toll = obstacle_toll.to_crs(epsg=4326)
-    if not obstacle_toll.empty and 'geometry' in obstacle_toll:
-        obstacle_toll['long'] = obstacle_toll.geometry.x
-        obstacle_toll['lat'] = obstacle_toll.geometry.y
+    if not obstacle_toll.empty and "geometry" in obstacle_toll:
+        obstacle_toll["long"] = obstacle_toll.geometry.x
+        obstacle_toll["lat"] = obstacle_toll.geometry.y
 
     sheet_obstacle = pd.concat([obstacle_railway, obstacle_toll])
-    sheet_obstacle = sheet_obstacle.sort_values('ring_name')
-    sheet_obstacle = sheet_obstacle.drop_duplicates(['ring_name', 'geometry'])
+    sheet_obstacle = sheet_obstacle.sort_values("ring_name")
+    sheet_obstacle = sheet_obstacle.drop_duplicates(["ring_name", "geometry"])
     sheet_obstacle = sheet_obstacle.drop(columns="geometry")
     sheet_obstacle.columns = sheet_obstacle.columns.str.lower().str.replace(" ", "_")
 
     # -- Summary --
-    summ_sitelist = sheet_sitelist.groupby(['ring_name', 'type']).size().unstack(fill_value=0)
-    summ_devices = sheet_devices.groupby(['ring_name', 'type']).size().unstack(fill_value=0)
-    summ_routes = sheet_routes.groupby(['ring_name', 'type'])['length'].sum().unstack(fill_value=0)
-    summ_obstacle = sheet_obstacle.groupby(['ring_name', 'type']).size().unstack(fill_value=0)
+    summ_sitelist = (
+        sheet_sitelist.groupby(["ring_name", "type"]).size().unstack(fill_value=0)
+    )
+    summ_devices = (
+        sheet_devices.groupby(["ring_name", "type"]).size().unstack(fill_value=0)
+    )
+    summ_routes = (
+        sheet_routes.groupby(["ring_name", "type"])["length"]
+        .sum()
+        .unstack(fill_value=0)
+    )
+    summ_obstacle = (
+        sheet_obstacle.groupby(["ring_name", "type"]).size().unstack(fill_value=0)
+    )
     summary_compiled = summ_sitelist.copy()
     summary_compiled = (
-        summ_sitelist
-        .join(summ_devices)
-        .join(summ_routes)
-        .join(summ_obstacle)
-        .fillna(0)
+        summ_sitelist.join(summ_devices).join(summ_routes).join(summ_obstacle).fillna(0)
     )
 
     # EXPORT EXCEL
@@ -1277,348 +1576,764 @@ def excel_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_di
         if not summary_compiled.empty:
             sheet_name = "Summary"
             summary_compiled = summary_compiled.reset_index()
-            excel_styler(summary_compiled).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(summary_compiled):,} records written.")
+            excel_styler(summary_compiled).to_excel(
+                writer, sheet_name=sheet_name, index=False
+            )
+            logger.info(
+                f"📊 Excel sheet '{sheet_name}' with {len(summary_compiled):,} records written."
+            )
         if not sheet_sitelist.empty:
             sheet_name = "Sitelist Information"
             sheet_sitelist = sheet_sitelist.reset_index(drop=True)
-            excel_styler(sheet_sitelist).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_sitelist):,} records written.")
+            excel_styler(sheet_sitelist).to_excel(
+                writer, sheet_name=sheet_name, index=False
+            )
+            logger.info(
+                f"📊 Excel sheet '{sheet_name}' with {len(sheet_sitelist):,} records written."
+            )
         if not sheet_devices.empty:
             sheet_name = "Devices Information"
             sheet_devices = sheet_devices.reset_index(drop=True)
-            excel_styler(sheet_devices).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_devices):,} records written.")
+            excel_styler(sheet_devices).to_excel(
+                writer, sheet_name=sheet_name, index=False
+            )
+            logger.info(
+                f"📊 Excel sheet '{sheet_name}' with {len(sheet_devices):,} records written."
+            )
         if not sheet_routes.empty:
             sheet_name = "Routes Information"
             sheet_routes = sheet_routes.reset_index(drop=True)
-            excel_styler(sheet_routes).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_routes):,} records written.")
+            excel_styler(sheet_routes).to_excel(
+                writer, sheet_name=sheet_name, index=False
+            )
+            logger.info(
+                f"📊 Excel sheet '{sheet_name}' with {len(sheet_routes):,} records written."
+            )
         if not sheet_obstacle.empty:
             sheet_name = "Obstacle"
             sheet_obstacle = sheet_obstacle.reset_index(drop=True)
-            excel_styler(sheet_obstacle).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written.")
+            excel_styler(sheet_obstacle).to_excel(
+                writer, sheet_name=sheet_name, index=False
+            )
+            logger.info(
+                f"📊 Excel sheet '{sheet_name}' with {len(sheet_obstacle):,} records written."
+            )
     logger.info("✅ Save Excel file BOQ Done.")
 
-def boq_generation(kmz_path:str, export_dir:str, sep="-", operator="surge"):
-    import math
 
-    validated_kmz = validate_kmz_ipl(kmz_path, sep=sep)
-    if validated_kmz is None:
-        logger.info(f"❌ BOQ Surge failed due to invalid KMZ: {kmz_path}")
+def boq_generation(
+    kmz_path: str,
+    export_dir: str,
+    sep: str = "-",
+    operator: Operator | str = Operator.IOH,
+    device_in_site: DeviceType = DeviceType.OTB,
+    device_in_branch: DeviceType = DeviceType.ODP,
+    connector_in_site: ConnectorType = ConnectorType.SC,
+    connector_in_branch: ConnectorType = ConnectorType.SC,
+):
+    def even_excel(x:float|int):
+        return math.ceil(x/2) * 2
+    
+    validated = validate_kmz_ipl(kmz_path, sep=sep)
+    if validated is None:
+        logger.info(f"❌ BOQ generation failed (invalid KMZ): {kmz_path}")
         return
 
-    points_data = validated_kmz['points_data']
-    lines_data = validated_kmz['lines_data']
+    # ---------------------------
+    # Inputs (GeoDataFrames)
+    # ---------------------------
+    gdf_points = validated["points_data"]
+    gdf_lines = validated["lines_data"]
 
-    # Points Data
-    fo_hub = validated_kmz['fo_hub']
-    sitelist = validated_kmz['sitelist']
-    odp = validated_kmz['odp']
-    otb = validated_kmz['otb']
-    closure = validated_kmz['closure']
-    topology = validated_kmz['topology']
+    gdf_hub = validated["fo_hub"]
+    gdf_sitelist = validated["sitelist"]
+    gdf_odp = validated["odp"]
+    gdf_otb = validated["otb"]
+    gdf_closure = validated["closure"]
+    gdf_topology = validated["topology"]
 
-    # Lines Data
-    route = validated_kmz['route']
-    backbone = validated_kmz['backbone']
-    access = validated_kmz['access']
-    fo_exist = validated_kmz['fo_exist']
-    pole_exist = validated_kmz['pole_exist']
-    obstacle = validated_kmz['obstacle']
+    gdf_route = validated["route"]
+    gdf_backbone = validated["backbone"]
+    gdf_access = validated["access"]
+    gdf_fo_exist = validated["fo_exist"]
+    gdf_pole_exist = validated["pole_exist"]
+    gdf_obstacle = validated["obstacle"]
 
-    # Convert to 3857
-    points_data = points_data.to_crs(epsg=3857)
-    lines_data = lines_data.to_crs(epsg=3857)
-    fo_hub = fo_hub.to_crs(epsg=3857)
-    sitelist = sitelist.to_crs(epsg=3857)
-    odp = odp.to_crs(epsg=3857)
-    otb = otb.to_crs(epsg=3857)
-    closure = closure.to_crs(epsg=3857)
-    topology = topology.to_crs(epsg=3857)
+    # ---------------------------
+    # Enrich Metadata and CRS normalize
+    # ---------------------------
+    gdf_hub = admin_information(gdf_hub, level="kabkot")
 
-    route = route.to_crs(epsg=3857)
-    backbone = backbone.to_crs(epsg=3857)
-    access = access.to_crs(epsg=3857)
-    fo_exist = fo_exist.to_crs(epsg=3857)
-    pole_exist = pole_exist.to_crs(epsg=3857)
-    obstacle = obstacle.to_crs(epsg=3857)
+    target_crs = 3857
+    gdf_points = gdf_points.to_crs(epsg=target_crs)
+    gdf_lines = gdf_lines.to_crs(epsg=target_crs)
 
-    route_grouped = route.groupby('ring_name')
-    compiled_boq_records = []
-    for ring_name, group in route_grouped:
-        ring_lines = group.drop_duplicates().copy()
-        ring_sitelist = sitelist[sitelist['ring_name'] == ring_name].copy()
-        
+    gdf_hub = gdf_hub.to_crs(epsg=target_crs)
+    gdf_sitelist = gdf_sitelist.to_crs(epsg=target_crs)
+    gdf_odp = gdf_odp.to_crs(epsg=target_crs)
+    gdf_otb = gdf_otb.to_crs(epsg=target_crs)
+    gdf_closure = gdf_closure.to_crs(epsg=target_crs)
+    gdf_topology = gdf_topology.to_crs(epsg=target_crs)
+
+    gdf_route = gdf_route.to_crs(epsg=target_crs)
+    gdf_backbone = gdf_backbone.to_crs(epsg=target_crs)
+    gdf_access = gdf_access.to_crs(epsg=target_crs)
+    gdf_fo_exist = gdf_fo_exist.to_crs(epsg=target_crs)
+    gdf_pole_exist = gdf_pole_exist.to_crs(epsg=target_crs)
+    gdf_obstacle = gdf_obstacle.to_crs(epsg=target_crs)
+
+    # ---------------------------
+    # Compile BOQ records
+    # ---------------------------
+    piv_records: list[dict] = []
+    boq_records: list[dict] = []
+    recorded_segment = set()
+    num = 1
+    gdf_route = gdf_route.reset_index(drop=True)
+    for ring_name, gdf_ring_route in gdf_route.groupby("ring_name"):
+        gdf_ring_segments = gdf_ring_route.drop_duplicates().copy()
+        gdf_ring_sites = gdf_sitelist[gdf_sitelist["ring_name"] == ring_name].copy()
+        gdf_ring_hubs = gdf_hub[gdf_hub["ring_name"] == ring_name].copy()
+
         # Metadata
-        program = ring_sitelist['program'].mode()[0]
-        region = ring_sitelist['region'].mode()[0]
+        program = (
+            gdf_ring_sites["program"].mode().iloc[0]
+            if "program" in gdf_ring_sites.columns and not gdf_ring_sites.empty
+            else None
+        )
+        region = (
+            gdf_ring_sites["region"].mode().iloc[0]
+            if "region" in gdf_ring_sites.columns and not gdf_ring_sites.empty
+            else None
+        )
+        city = (
+            gdf_ring_hubs["Kabkot"].mode().iloc[0]
+            if "Kabkot" in gdf_ring_sites.columns and not gdf_ring_sites.empty
+            else None
+        )
+        
+        is_otb = DeviceType.OTB in [device_in_site, device_in_branch]
+        is_odp = DeviceType.ODP in [device_in_site, device_in_branch]
+        is_sc = ConnectorType.SC in [connector_in_branch, connector_in_site]
+        is_fc = ConnectorType.FC in [connector_in_branch, connector_in_site]
 
-        ring_backbone = backbone[backbone['ring_name'] == ring_name].copy()
-        ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring_name].copy()
-        ring_pole_exist = pole_exist[pole_exist['ring_name'] == ring_name].copy()
-        ring_access = access[access['ring_name'] == ring_name].copy()
-        ring_otb = otb[otb['ring_name'] == ring_name].copy()
-        ring_odp = odp[odp['ring_name'] == ring_name].copy()
-        ring_closure = closure[closure['ring_name'] == ring_name].copy()
-        ring_obstacle = obstacle[obstacle['ring_name'] == ring_name].copy()
+        # Ring-level slices
+        gdf_ring_backbone = gdf_backbone[gdf_backbone["ring_name"] == ring_name].copy()
+        gdf_ring_access = gdf_access[gdf_access["ring_name"] == ring_name].copy()
+        gdf_ring_fo_exist = gdf_fo_exist[gdf_fo_exist["ring_name"] == ring_name].copy()
+        gdf_ring_pole_exist = gdf_pole_exist[
+            gdf_pole_exist["ring_name"] == ring_name
+        ].copy()
+        gdf_ring_otb = gdf_otb[gdf_otb["ring_name"] == ring_name].copy()
+        gdf_ring_odp = gdf_odp[gdf_odp["ring_name"] == ring_name].copy()
+        gdf_ring_closure = gdf_closure[gdf_closure["ring_name"] == ring_name].copy()
+        gdf_ring_obstacle = gdf_obstacle[gdf_obstacle["ring_name"] == ring_name].copy()
 
-        for idx, row in ring_lines.iterrows():
-            segment_name = row['name']
-            near_end = row['near_end']
-            far_end = row['far_end']
+        is_first = True
+        for idx, seg_row in gdf_ring_segments.iterrows():
+            seg_name = seg_row["name"]
+            seg_ne = seg_row["near_end"]
+            seg_fe = seg_row["far_end"]
+            seg_ctx = f"ring={ring_name} seg={seg_name} ne={seg_ne} fe={seg_fe}"
 
-            seg_length = row['geometry'].length
-            seg_core = row.get('core', 24)
-
-            # BOQ Data
-            seg_backbone = ring_backbone[(ring_backbone['near_end'] == near_end) & (ring_backbone['far_end'] == far_end)].copy()
-            backbone_core = seg_backbone['name'].iloc[0].split("_FO")[-1].replace("C", "") if not seg_backbone.empty else "24"
-            backbone_core = int(backbone_core) if backbone_core.isdigit() else 24
+            len_route_m = (
+                round(float(seg_row.geometry.length), 3)
+                if seg_row.geometry is not None
+                else 0.0
+            )
+            seg_core = int(seg_row.get("core", 24) or 24)
             
-            seg_access = ring_access[(ring_access['near_end'] == near_end) & (ring_access['far_end'] == far_end)].copy()
-            seg_fo_exist = ring_fo_exist[(ring_fo_exist['near_end'] == near_end) & (ring_fo_exist['far_end'] == far_end)].copy()
-            seg_pole_exist = ring_pole_exist[(ring_pole_exist['near_end'] == near_end) & (ring_pole_exist['far_end'] == far_end)].copy()
-
-            seg_otb = ring_otb[ring_otb['segment'] == segment_name].copy()
-            seg_otb_new = seg_otb[seg_otb['ext_note'] == 0].copy()
-            seg_otb_ext = seg_otb[seg_otb['ext_note'] == 1].copy()
-
-            seg_odp = ring_odp[ring_odp['segment'] == segment_name].copy()
-            seg_odp_new = seg_odp[seg_odp['ext_note'] == 0].copy()
-            seg_odp_ext = seg_odp[seg_odp['ext_note'] == 1].copy()
-            seg_odp_24 = seg_odp[seg_odp['core'] == 24].copy()
-            seg_odp_48 = seg_odp[seg_odp['core'] == 48].copy()
-            seg_odp_72 = seg_odp[seg_odp['core'] == 72].copy()
-            seg_odp_96 = seg_odp[seg_odp['core'] == 96].copy()
-            seg_odp_120 = seg_odp[seg_odp['core'] == 120].copy()
-            seg_odp_144 = seg_odp[seg_odp['core'] == 144].copy()
-
-            if seg_odp.empty:
-                print(f"Ring: {ring_name} | Segment {segment_name} | NE: {near_end} | FE: {far_end}")
-                print(f"ODP empty: \n {ring_odp}")
-                print(f"\n Ring Lines \n")
-                print(ring_lines[['segment', 'near_end', 'far_end']])
-                raise NotImplementedError(f"Debug Error ODP")
+            # Previous Route
+            if idx == 0:
+                prev_ring = None
+                len_prev_access_m = 0
+                len_prev_access_ext_m = 0
             else:
-                print(f"Ring: {ring_name} | Segment {segment_name} | NE: {near_end} | FE: {far_end} 🟢")
+                prev_seg = gdf_route.loc[idx-1, :]
+                prev_ring = prev_seg['ring_name']
+                prev_ne = prev_seg['near_end']
+                prev_fe = prev_seg['far_end']
+                prev_df_access = gdf_ring_access[
+                    (gdf_ring_access["near_end"] == prev_ne)
+                    & (gdf_ring_access["far_end"] == prev_fe)
+                ].copy()
+                len_prev_access_m = (
+                    float(prev_df_access.geometry.iloc[0].length) if not prev_df_access.empty else 0.0
+                )
+                len_prev_access_ext_m = 0
 
-            seg_closure = ring_closure[ring_closure['segment'] == segment_name].copy()
-            seg_closure_new = seg_closure[seg_closure['ext_note'] == 0].copy()
-            seg_closure_ext = seg_closure[seg_closure['ext_note'] == 1].copy()
+            # ---------------------------
+            # Segment slices (df_*)
+            # ---------------------------
+            df_bb = gdf_ring_backbone[
+                (gdf_ring_backbone["near_end"] == seg_ne)
+                & (gdf_ring_backbone["far_end"] == seg_fe)
+            ].copy()
+            df_access = gdf_ring_access[
+                (gdf_ring_access["near_end"] == seg_ne)
+                & (gdf_ring_access["far_end"] == seg_fe)
+            ].copy()
+            df_overlap = gdf_ring_fo_exist[
+                (gdf_ring_fo_exist["near_end"] == seg_ne)
+                & (gdf_ring_fo_exist["far_end"] == seg_fe)
+            ].copy()
+            df_pole = gdf_ring_pole_exist[
+                (gdf_ring_pole_exist["near_end"] == seg_ne)
+                & (gdf_ring_pole_exist["far_end"] == seg_fe)
+            ].copy()
+
+            df_otb = gdf_ring_otb[gdf_ring_otb["segment"] == seg_name].copy()
+            df_otb_new = df_otb[df_otb["ext_note"] == 0].copy()
+            df_otb_ext = df_otb[df_otb["ext_note"] == 1].copy()
+
+            df_odp = gdf_ring_odp[gdf_ring_odp["segment"] == seg_name].copy()
+            df_odp_new = df_odp[df_odp["ext_note"] == 0].copy()
+            df_odp_ext = df_odp[df_odp["ext_note"] == 1].copy()
+
+            if df_odp.empty:
+                raise ValueError(
+                    f"[ODP_NOT_FOUND] {seg_ctx}\n"
+                    f"Segment snapshot:\n"
+                    f"{gdf_ring_segments[['segment', 'near_end', 'far_end']].head(10).to_string(index=False)}"
+                )
+
+            logger.info(f"🟢 Processing {seg_ctx}")
+
+            df_closure = gdf_ring_closure[gdf_ring_closure["segment"] == seg_name].copy()
+            df_closure_new = df_closure[df_closure["ext_note"] == 0].copy()
+            df_closure_ext = df_closure[df_closure["ext_note"] == 1].copy()
+
+            df_obs_seg = gdf_ring_obstacle[(gdf_ring_obstacle["near_end"] == seg_ne) & (gdf_ring_obstacle["far_end"] == seg_fe)].copy()
+            df_obs_toll = df_obs_seg[df_obs_seg["obstacle_type"].str.contains("toll", case=False, na=False)].copy()
+            df_obs_rail = df_obs_seg[df_obs_seg["obstacle_type"].str.contains("rail", case=False, na=False)].copy()
+            df_obs_bridge = df_obs_seg[df_obs_seg["obstacle_type"].str.contains("bridge", case=False, na=False)].copy()
+
+            # ---------------------------
+            # Core parsing
+            # ---------------------------
+            core_bb = 24
+            if not df_bb.empty and "name" in df_bb.columns:
+                raw_name = str(df_bb["name"].iloc[0])
+                tail = raw_name.split("_FO")[-1].replace("C", "")
+                core_bb = int(tail) if tail.isdigit() else 24
+
+            # ---------------------------
+            # Length metrics
+            # ---------------------------
+            len_bb_m = float(df_bb.geometry.iloc[0].length) if not df_bb.empty else 0.0
+            len_access_m = (
+                float(df_access.geometry.iloc[0].length) if not df_access.empty else 0.0
+            )
+            len_overlap_m = (
+                float(df_overlap.geometry.iloc[0].length)
+                if not df_overlap.empty
+                else 0.0
+            )
+            len_pole_m = (float(df_pole.geometry.iloc[0].length) if not df_pole.empty else 0.0)
+            len_access_ext_m = 0.0
+
+            # Cable length by backbone core
+            len_cable_by_core_m = {c: (len_route_m if core_bb == c else 0.0) for c in (24, 48, 72, 96, 120, 144)}
             
-            seg_obstacle_toll = ring_obstacle[(ring_obstacle['near_end'] == near_end) & (ring_obstacle['far_end'] == far_end) & (ring_obstacle['obstacle_type'].str.lower().str.contains('toll'))].copy()
-            seg_obstacle_railway = ring_obstacle[(ring_obstacle['near_end'] == near_end) & (ring_obstacle['far_end'] == far_end) & (ring_obstacle['obstacle_type'].str.lower().str.contains('rail'))].copy()
-            seg_obstacle_bridge = ring_obstacle[(ring_obstacle['near_end'] == near_end) & (ring_obstacle['far_end'] == far_end) & (ring_obstacle['obstacle_type'].str.lower().str.contains('bridge'))].copy()
+            # ---------------------------
+            # Quantity metrics
+            # ---------------------------
+            qty_otb = len(df_otb)
+            qty_otb_new = len(df_otb_new)
+            qty_otb_ext = len(df_otb_ext)
 
-            # Qty Length
-            route_qty = None
-            bb_qty = None
-            access_qty = None
-            overlap_qty = None
-            pole_qty = None
-            access_ext_qty = None
-            route_length = seg_length if not seg_length is None else 0
-            bb_length = seg_backbone['geometry'].iloc[0].length if not seg_backbone.empty else 0
-            access_length = seg_access['geometry'].iloc[0].length if not seg_access.empty else 0
-            overlap_length = seg_fo_exist['geometry'].iloc[0].length if not seg_fo_exist.empty else 0
-            pole_length = seg_pole_exist['geometry'].iloc[0].length if not seg_pole_exist.empty else 0
-            access_ext_length = 0
+            qty_odp = len(df_odp)
+            qty_odp_new = len(df_odp_new)
+            qty_odp_ext = len(df_odp_ext)
 
-            # Qty
-            otb_qty = len(seg_otb)
-            otb_new_qty = len(seg_otb_new)
-            otb_ext_qty = len(seg_otb_ext)
-            odp_qty = len(seg_odp)
-            odp_new_qty = len(seg_odp_new)
-            odp_ext_qty = len(seg_odp_ext)
-            odp_24_qty = len(seg_odp_24)
-            odp_48_qty = len(seg_odp_48)
-            odp_72_qty = len(seg_odp_72)
-            odp_96_qty = len(seg_odp_96)
-            odp_120_qty = len(seg_odp_120)
-            odp_144_qty = len(seg_odp_144)
-            closure_qty = len(seg_closure)
-            closure_new_qty = len(seg_closure_new)
-            closure_ext_qty = len(seg_closure_ext)
-            obstacle_toll_qty = len(seg_obstacle_toll)
-            obstacle_railway_qty = len(seg_obstacle_railway)
-            obstacle_bridge_qty = len(seg_obstacle_bridge)
-            cable_24 = seg_length if backbone_core == 24 else 0
-            cable_48 = seg_length if backbone_core == 48 else 0
-            cable_72 = seg_length if backbone_core == 72 else 0
-            cable_96 = seg_length if backbone_core == 96 else 0
-            cable_120 = seg_length if backbone_core == 120 else 0
-            cable_144 = seg_length if backbone_core == 144 else 0
-            otb_96 = len(seg_otb[seg_otb['core'] == 96])
-
-            # Calculate
-            # PU Permission
-            permission_pu = math.ceil((bb_length + access_length + pole_length + cable_96))
-            fo_factor = 1.15 if operator == "xl" else 1.1 
-            fo_cable = math.ceil(math.ceil(bb_length + access_length) * fo_factor / 100) * 100
-            total_overlap = overlap_length + access_ext_length
-
-            # Compile Data
-            record = {
-                "program": program,
-                "operator": "SURGE",
-                "region": region,
-                "ring_name": ring_name,
-                "segment_name": segment_name,
-                "near_end": near_end,
-                "far_end": far_end,
-                "route_qty": route_qty,
-                "route_length_m": route_length,
-                "bb_qty": bb_qty,
-                "bb_length_m": bb_length,
-                "access_qty": access_qty,
-                "access_length_m": access_length,
-                "access_ext_qty": access_ext_qty,
-                "access_ext_length_m": access_ext_length,
-                "overlap_qty": overlap_qty,
-                "overlap_length_m": total_overlap,
-                "pole_ext_length_m": pole_length,
-                "otb_qty": otb_qty,
-                "otb_new_qty": otb_new_qty,
-                "otb_ext_qty": otb_ext_qty,
-                "odp_qty": odp_qty,
-                "odp_new_qty": odp_new_qty,
-                "odp_ext_qty": odp_ext_qty,
-                "odp_24_qty": odp_24_qty,
-                "odp_48_qty": odp_48_qty,
-                "odp_72_qty": odp_72_qty,
-                "odp_96_qty": odp_96_qty,
-                "odp_120_qty": odp_120_qty,
-                "odp_144_qty": odp_144_qty,
-                "closure_qty": closure_qty,
-                "closure_new_qty": closure_new_qty,
-                "closure_ext_qty": closure_ext_qty,
-                "obstacle_toll_qty": obstacle_toll_qty,
-                "obstacle_railway_qty": obstacle_railway_qty,
-                "obstacle_bridge_qty": obstacle_bridge_qty,
-                "permission_pu": permission_pu,
-                "fo_cable_m": fo_cable,
-                "total_overlap_m": total_overlap,
-                "cable_24_m": cable_24,
-                "cable_48_m": cable_48,
-                "cable_72_m": cable_72,
-                "cable_96_m": cable_96,
-                "cable_120_m": cable_120,
-                "cable_144_m": cable_144,
+            df_otb_by_core = {
+                c: df_otb[df_otb["core"] == c] for c in (24, 48, 72, 96, 120, 144)
             }
-            compiled_boq_records.append(record)
-    boq_df = pd.DataFrame(compiled_boq_records)
+            df_odp_by_core = {
+                c: df_odp[df_odp["core"] == c] for c in (24, 48, 72, 96, 120, 144)
+            }
+            qty_otb_by_core = {c: len(df_) for c, df_ in df_otb_by_core.items()}
+            qty_odp_by_core = {c: len(df_) for c, df_ in df_odp_by_core.items()}
 
-    template_path = os.path.join(DATA_DIR, 'template', 'Template_BOQ_Surge.xlsx')
-    excel_path = os.path.join(export_dir, f"BOQ Surge Report.xlsx")
+            qty_closure = len(df_closure)
+            qty_closure_new = len(df_closure_new)
+            qty_closure_ext = len(df_closure_ext)
+
+            qty_obs_toll = len(df_obs_toll)
+            qty_obs_rail = len(df_obs_rail)
+            qty_obs_bridge = len(df_obs_bridge)
+
+            # ---------------------------
+            # Calculations
+            # ---------------------------
+            fo_factor = 1.15 if operator.lower() == "xl" else 1.10
+            calc_permission_pu = math.ceil(len_bb_m + len_access_m + len_pole_m + len_cable_by_core_m[96])
+            calc_fo_cable_m = (math.ceil(math.ceil(len_bb_m + len_access_m) * fo_factor / 100) * 100)
+            calc_closure_24_qty = qty_closure_new + (math.floor(calc_fo_cable_m / 4000) if calc_fo_cable_m >= 4000 else 0)
+            calc_total_overlap_m = round(
+                (len_overlap_m + len_access_ext_m + len_prev_access_m + len_prev_access_ext_m if ring_name == prev_ring 
+                else len_overlap_m + len_access_ext_m) * fo_factor, 0)
+
+            # Material
+            calc_mat_hdpe_subduct_32_27_qty = 20 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 20 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0) + 70 * qty_obs_rail
+            calc_mat_gi_pipe_1p5in_qty = 3 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 3 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0) + 3 * (2 * qty_obs_rail)
+            calc_mat_pole_fo_9m_3step_qty = even_excel((calc_permission_pu/80)*0.05) if calc_permission_pu/80 <3 else 0 #=IF((S10/80)<3;0;EVEN(((S10)/80)*0,05))
+            calc_mat_pole_fo_7m_2step_qty = even_excel(calc_permission_pu/70) if calc_permission_pu < 0 else 0 #=IF((S10)<0;0;EVEN(((S10)/70)-DV10))
+            calc_mat_slack_support_70x70x3_qty = 1 + math.floor((calc_mat_pole_fo_7m_2step_qty + calc_mat_pole_fo_9m_3step_qty)/4) if calc_mat_pole_fo_7m_2step_qty + calc_mat_pole_fo_9m_3step_qty > 0 else 0 # =IF(SUM(DU10;DV10)>0;1+ROUNDDOWN(SUM(DU10;DV10)/4;0);0)
+            
+            # Services
+            otb_factor = (is_otb and (is_sc or is_fc))
+            is_sc_odp = (is_sc and is_odp)
+
+            calc_splicing_fusion = (
+                (calc_closure_24_qty + (qty_odp_by_core.get(24, 0) if is_sc_odp else 0)) * 24
+                + (qty_odp_by_core.get(48, 0) if is_sc_odp else 0) * 48
+                + (qty_odp_by_core.get(4, 0)  if is_sc_odp else 0) * 4
+                + (qty_odp_by_core.get(8, 0)  if is_sc_odp else 0) * 8
+                + (qty_odp_by_core.get(16, 0) if is_sc_odp else 0) * 16
+            )
+
+            calc_termination_fusion = sum(
+            (qty_otb_by_core.get(core, 0) if otb_factor else 0) * core
+            for core in (12, 24, 48, 96, 144, 288)
+            )
+
+            calc_svc_splicing_fusion_qty = 24 if (calc_splicing_fusion == 0 and calc_fo_cable_m > 0) else calc_splicing_fusion
+            calc_svc_termination_fusion_qty = calc_termination_fusion
+            
+            # Testing
+            calc_test_otdr_2lambda_2way_ls = (calc_svc_termination_fusion_qty if calc_svc_termination_fusion_qty > 0 else 96
+                                              if len_cable_by_core_m.get(96, 0) > 0 else 48
+                                              if len_cable_by_core_m.get(48, 0) > 0 else 24
+                                              )
+
+            # ---------------------------
+            # Pivot record
+            # ---------------------------
+            piv_record = {
+                "program": program,
+                "operator": operator.upper(),
+                "region": region,
+                "city": city,
+                "ring_name": ring_name,
+                "segment_name": seg_name,
+                "near_end": seg_ne,
+                "far_end": seg_fe,
+                "route_qty": None,
+                "route_length_m": len_route_m,
+                "bb_qty": None,
+                "bb_length_m": len_bb_m,
+                "access_qty": None,
+                "access_length_m": len_access_m,
+                "access_ext_qty": None,
+                "access_ext_length_m": len_access_ext_m,
+                "overlap_qty": None,
+                "overlap_length_m": len_overlap_m,
+                "pole_ext_length_m": len_pole_m,
+                "otb_qty": qty_otb,
+                "otb_new_qty": qty_otb_new,
+                "otb_ext_qty": qty_otb_ext,
+                "odp_qty": qty_odp,
+                "odp_new_qty": qty_odp_new,
+                "odp_ext_qty": qty_odp_ext,
+                "odp_24_qty": qty_odp_by_core.get(24, 0),
+                "odp_48_qty": qty_odp_by_core.get(48, 0),
+                "odp_72_qty": qty_odp_by_core.get(72, 0),
+                "odp_96_qty": qty_odp_by_core.get(96, 0),
+                "odp_120_qty": qty_odp_by_core.get(120, 0),
+                "odp_144_qty": qty_odp_by_core.get(144, 0),
+                "closure_qty": qty_closure,
+                "closure_new_qty": qty_closure_new,
+                "closure_ext_qty": qty_closure_ext,
+                "obstacle_toll_qty": qty_obs_toll,
+                "obstacle_railway_qty": qty_obs_rail,
+                "obstacle_bridge_qty": qty_obs_bridge,
+                "permission_pu": calc_permission_pu,
+                "fo_cable_m": calc_fo_cable_m,
+                "total_overlap_m": calc_total_overlap_m,
+                "cable_24_m": len_cable_by_core_m[24],
+                "cable_48_m": len_cable_by_core_m[48],
+                "cable_72_m": len_cable_by_core_m[72],
+                "cable_96_m": len_cable_by_core_m[96],
+                "cable_120_m": len_cable_by_core_m[120],
+                "cable_144_m": len_cable_by_core_m[144],
+            }
+            piv_records.append(piv_record)
+
+            # BOQ Record
+            seg_record = {
+                # Segment Info
+                "no": num,
+                "site_type": program,
+                "stip_category": None,
+                "operator": operator.upper(),
+                "spk_wo": None,
+                "segment_type": "Segment",
+                "sonumb": None,
+                "ring_id": ring_name,
+                "segment_id": seg_name,
+                "area_city": city,
+                "program": region,
+                "work_code": None,
+                "region_procurement": None,
+                "e2e_distance_m": len_route_m,
+                "boq_id": None,
+                "subset_separator": None,
+
+                # PREPARATION
+                "prep_a1_rambu_papan": int(is_first),
+                "prep_a2_direksi_keet": int(is_first),
+                "prep_a3_koordinasi_pu_m": calc_permission_pu,
+                "prep_a4_koordinasi_pjka": qty_obs_rail,
+                "prep_a5_koordinasi_toll": qty_obs_toll,
+                "prep_a6_koordinasi_private_supervise": None,
+                "prep_a7_survey_abd": 1,
+                "prep_a8_mobilisasi_transpor": int(is_first),
+
+                # MATERIAL SUPPLY
+                # Fo Cable
+                "mat_fo_aerial_12_m": None,
+                "mat_fo_aerial_24_m": None,
+                "mat_fo_aerial_48_m": None,
+                "mat_fo_aerial_72_m": None,
+                "mat_fo_aerial_96_m": None,
+                "mat_fo_aerial_144_m": None,
+                "mat_fo_adss_12_m": len_cable_by_core_m.get(12, None),
+                "mat_fo_adss_24_m": len_cable_by_core_m.get(24, 100) if calc_fo_cable_m is None else calc_fo_cable_m,
+                "mat_fo_adss_48_m": len_cable_by_core_m.get(48, None),
+                "mat_fo_adss_72_m": len_cable_by_core_m.get(72, None),
+                "mat_fo_adss_96_m": len_cable_by_core_m.get(96, None),
+                "mat_fo_adss_144_m": len_cable_by_core_m.get(144, None),
+                "mat_fo_db_sj_12_m": None,
+                "mat_fo_db_sj_24_m": None,
+                "mat_fo_db_sj_48_m": None,
+                "mat_fo_db_sj_72_m": None,
+                "mat_fo_db_sj_96_m": None,
+                "mat_fo_db_sj_144_m": None,
+                "mat_fo_db_sj_264_m": None,
+                "mat_fo_db_sj_288_m": None,
+                "mat_fo_duct_12_m": None,
+                "mat_fo_duct_24_m": None,
+                "mat_fo_duct_48_m": None,
+                "mat_fo_duct_72_m": None,
+                "mat_fo_duct_96_m": None,
+                "mat_fo_duct_144_m": None,
+                "mat_fo_duct_264_m": None,
+                "mat_fo_duct_288_m": None,
+                "mat_fo_micro_24_m": None,
+                "mat_fo_micro_48_m": None,
+                "mat_fo_micro_96_m": None,
+                "mat_fo_micro_144_m": None,
+                "mat_fo_micro_288_m": None,
+                "mat_fo_dropwire_1_m": None,
+                "mat_fo_dropwire_2_m": None,
+                "mat_closure_dome_24_qty": calc_closure_24_qty,
+                "mat_closure_dome_48_qty": None,
+                "mat_closure_dome_144_qty": None,
+                "mat_closure_dome_96_qty": None,
+                "mat_closure_dome_864_hd_qty": None,
+                "mat_closure_inline_24_qty": None,
+                "mat_closure_inline_48_qty": None,
+                "mat_closure_inline_96_qty": None,
+                "mat_closure_inline_144_qty": None,
+                "mat_closure_inline_288_qty": None,
+                "mat_otb_12_sc_upc_qty": qty_otb_by_core.get(12, 0) if (is_sc and is_otb) else None,
+                "mat_otb_12_fc_upc_qty": qty_otb_by_core.get(12, 0) if (is_fc and is_otb) else None,
+                "mat_otb_24_sc_upc_qty": qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else None,
+                "mat_otb_24_fc_upc_qty": qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else None,
+                "mat_otb_48_sc_upc_qty": qty_otb_by_core.get(48, 0) if (is_sc and is_otb) else None,
+                "mat_otb_96_sc_upc_qty": qty_otb_by_core.get(96, 0) if (is_sc and is_otb) else None,
+                "mat_otb_144_sc_upc_qty": qty_otb_by_core.get(144, 0) if (is_sc and is_otb) else None,
+                "mat_otb_288_sc_upc_qty": qty_otb_by_core.get(288, 0) if (is_sc and is_otb) else None,
+                "mat_otb_288_lc_upc_hd_qty": None,
+                "mat_odp_4_sc_upc_qty": qty_odp_by_core.get(4, 0) if (is_sc and is_odp) else None,
+                "mat_odp_8_sc_upc_qty": qty_odp_by_core.get(8, 0) if (is_sc and is_odp) else None,
+                "mat_odp_16_sc_upc_qty": qty_odp_by_core.get(16, 0) if (is_sc and is_odp) else None,
+                "mat_odp_24_sc_upc_qty": qty_odp_by_core.get(24, 0) if (is_sc and is_odp) else None,
+                "mat_odp_96_sc_upc_qty": qty_odp_by_core.get(96, 0) if (is_sc and is_odp) else None,
+                "mat_odp_pedestal_16_ug_qty": None,
+                "mat_splitter_1to2_sc_upc_qty": None,
+                "mat_splitter_1to4_sc_upc_qty": None,
+                "mat_splitter_1to8_sc_upc_qty": None,
+                "mat_splitter_1to16_sc_upc_qty": None,
+                "mat_splitter_1to32_sc_upc_qty": None,
+                "mat_rosset_2port_sc_upc_qty": None,
+                "mat_hdpe_subduct_32_27_qty": calc_mat_hdpe_subduct_32_27_qty,
+                "mat_hdpe_subduct_40_33_qty": None,
+                "mat_hdpe_subduct_50_43_qty": None,
+                "mat_hdpe_microduct_4way_12_10_qty": None,
+                "mat_hdpe_microduct_7way_12_10_qty": None,
+                "mat_hdpe_microduct_14way_12_10_qty": None,
+                "mat_hdpe_microduct_4way_18_14_qty": None,
+                "mat_hdpe_microduct_7way_18_14_qty": None,
+                "mat_hdpe_microduct_14way_18_14_qty": None,
+                "mat_gi_pipe_1in_qty": None,
+                "mat_gi_pipe_1p5in_qty": calc_mat_gi_pipe_1p5in_qty,
+                "mat_gi_pipe_2in_qty": None,
+                "mat_gi_pipe_3in_qty": None,
+                "mat_gi_pipe_4in_qty": None,
+                "mat_gi_pipe_5in_qty": None,
+                "mat_pvc_pipe_20mm_qty": None,
+                "mat_pvc_pipe_1p5in_qty": None,
+                "mat_pvc_pipe_2in_qty": None,
+                "mat_pvc_pipe_3in_qty": None,
+                "mat_pvc_pipe_4in_qty": None,
+                "mat_pvc_pipe_5in_qty": None,
+                "mat_flex_conduit_0p75in_qty": None,
+                "mat_flex_conduit_2in_qty": None,
+                "mat_flex_conduit_3in_qty": None,
+                "mat_flex_conduit_20mm_qty": None,
+                "mat_rack_open_42u_qty": None,
+                "mat_rack_closed_8u_450_qty": None,
+                "mat_rack_closed_20u_900_qty": None,
+                "mat_rack_closed_42u_900_qty": None,
+                "mat_rack_closed_42u_1150_qty": None,
+                "mat_odc_144_qty": None,
+                "mat_odc_288_qty": None,
+                "mat_odc_576_qty": None,
+                "mat_warning_tape_fo_6in_m": None,
+                "mat_pole_fo_7m_2step_qty": calc_mat_pole_fo_7m_2step_qty,
+                "mat_pole_fo_9m_3step_qty": calc_mat_pole_fo_9m_3step_qty,
+                "mat_slack_support_50x50x3_qty": None,
+                "mat_pole_fo_12m_3step_qty": None,
+                "mat_slack_support_70x70x3_qty": calc_mat_slack_support_70x70x3_qty,
+                "mat_patch_indoor_sm_sc_upc_sc_upc_5m": None,
+                "mat_patch_indoor_sm_sc_upc_sc_upc_20m": None,
+                "mat_patch_indoor_sm_sc_upc_lc_upc_5m": None,
+                "mat_patch_indoor_sm_sc_upc_lc_upc_20m": None,
+                "mat_patch_indoor_sm_lc_upc_lc_upc_5m": None,
+                "mat_patch_indoor_sm_lc_upc_lc_upc_20m": None,
+                "mat_patch_indoor_sm_fc_upc_lc_upc_5m": None,
+                "mat_patch_indoor_sm_fc_upc_lc_upc_20m": None,
+                "mat_patch_outdoor_sm_sc_upc_sc_upc_5m": 4 if seg_name not in recorded_segment else 2,
+                "mat_patch_outdoor_sm_sc_upc_sc_upc_20m": None,
+                "mat_patch_outdoor_sm_sc_upc_lc_upc_5m": None,
+                "mat_patch_outdoor_sm_sc_upc_lc_upc_20m": None,
+                "mat_patch_outdoor_sm_lc_upc_lc_upc_5m": None,
+                "mat_patch_outdoor_sm_lc_upc_lc_upc_20m": None,
+                "mat_patch_indoor_mm_lc_upc_lc_upc_5m": None,
+                "mat_patch_indoor_mm_lc_upc_lc_upc_20m": None,
+                "mat_pigtail_indoor_sc_upc_qty": None,
+                "mat_adapter_fc_fc_qty": None,
+                "mat_adapter_sc_sc_simplex_qty": None,
+                "mat_adapter_sc_sc_duplex_qty": None,
+                "mat_adapter_lc_lc_simplex_qty": None,
+                "mat_adapter_lc_lc_duplex_qty": None,
+                "mat_adapter_sc_lc_hybrid_qty": None,
+                "mat_adapter_fc_lc_hybrid_qty": None,
+                "mat_adapter_fc_sc_hybrid_qty": None,
+                "mat_clamp_omega_qty": None,
+                "mat_supporting_material_qty": int(is_first),
+
+                # SERVICES
+                "svc_trenching_reinstate_hotmix_m": None,
+                "svc_trenching_reinstate_asphalt_m": None,
+                "svc_trenching_reinstate_makadam_m": 20 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 20 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0),
+                "svc_trenching_reinstate_floor_cement_m": None,
+                "svc_trenching_reinstate_paving_m": None,
+                "svc_trenching_reinstate_agregat_sirtu_m": None,
+                "svc_trenching_reinstate_taman_m": None,
+                "svc_trenching_reinstate_tanah_biasa_m": None,
+                "svc_install_hdpe_subduct_32_27_m": calc_mat_hdpe_subduct_32_27_qty,
+                "svc_install_hdpe_subduct_40_33_m": None,
+                "svc_install_hdpe_subduct_50_43_m": None,
+                "svc_install_hdpe_microduct_4way_12_10_m": None,
+                "svc_install_hdpe_microduct_7way_12_10_m": None,
+                "svc_install_hdpe_microduct_14way_12_10_m": None,
+                "svc_install_hdpe_microduct_4way_18_14_m": None,
+                "svc_install_hdpe_microduct_7way_18_14_m": None,
+                "svc_install_hdpe_microduct_14way_18_14_m": None,
+                "svc_install_galvanized_1inch_m": None,
+                "svc_install_galvanized_1_5inch_m": None,
+                "svc_install_galvanized_2inch_m": None,
+                "svc_install_galvanized_3inch_m": None,
+                "svc_install_galvanized_4inch_m": None,
+                "svc_install_galvanized_5inch_m": None,
+                "svc_install_pvc_20mm_m": None,
+                "svc_install_pvc_1_5inch_m": None,
+                "svc_install_pvc_2inch_m": None,
+                "svc_install_pvc_3inch_m": None,
+                "svc_install_pvc_4inch_m": None,
+                "svc_install_pvc_5inch_m": None,
+                "svc_install_pole_7m_2step_unit": calc_mat_pole_fo_7m_2step_qty,
+                "svc_install_pole_9m_3step_unit": calc_mat_pole_fo_9m_3step_qty,
+                "svc_install_slack_support_50x50x3_qty": None,
+                "svc_install_slack_support_70x70x3_qty": calc_mat_slack_support_70x70x3_qty,
+                "svc_install_slack_support_additional_qty": None,
+                "svc_install_riser_galvanized_1_5inch_3m_qty": calc_mat_gi_pipe_1p5in_qty / 3,
+                "svc_install_riser_galvanized_2inch_3m_qty": None,
+                "svc_supply_install_temberang_tarik_unit": None,
+                "svc_supply_install_bridge_crossing_single_pole_unit": None,
+                "svc_supply_install_bridge_crossing_double_pole_unit": None,
+                "svc_install_galvanized_2inch_atb_m": 0, # Perlu cross bridge information
+                "svc_install_galvanized_4inch_atb_m": None,
+                "svc_install_galvanized_4inch_self_support_m": None,
+                "svc_boring_manual_subduct_m": None,
+                "svc_boring_manual_crossing_road_m": None,
+                "svc_boring_manual_crossing_toll_m": None,
+                "svc_boring_manual_crossing_railway_m": qty_obs_rail * 70,
+                "svc_boring_machine_crossing_railway_m": None,
+                "svc_boring_manual_crossing_river_m": None,
+                "svc_boring_machine_crossing_river_m": None,
+                "svc_supply_install_marking_post_unit": None,
+                "svc_install_manhole_100x100x120_unit": None,
+                "svc_install_handhole_80x80x120_unit": qty_obs_rail * 2,
+                "svc_install_handhole_60x60x120_unit": None,
+                "svc_install_odc_foundation_50x70x50_unit": None,
+                "svc_pulling_fo_aerial_incl_pole_m": (calc_fo_cable_m + len_cable_by_core_m.get(core_bb, 0) - len_pole_m - calc_mat_hdpe_subduct_32_27_qty + 0 ) if (calc_fo_cable_m + len_cable_by_core_m.get(core_bb, 0) >= 20) else 0,
+                "svc_pulling_fo_aerial_excl_pole_m": len_pole_m,
+                "svc_pulling_fo_burial_m": calc_mat_hdpe_subduct_32_27_qty,
+                "svc_pulling_fo_direct_buried_m": None,
+                "svc_air_blown_fo_m": None,
+                "svc_pulling_fo_drop_wire_m": None,
+                "svc_pulling_fo_inbuilding_m": None,
+                "svc_splicing_fusion_qty": calc_svc_splicing_fusion_qty, # Recheck Long Formula
+                "svc_termination_fusion_qty": calc_svc_termination_fusion_qty, # Recheck Long Formula
+                "svc_bobok_tembok_bor_qty": None,
+                "svc_install_patch_indoor_sc_sc_5m_qty": None,
+                "svc_install_patch_indoor_sc_sc_20m_qty": None,
+                "svc_install_patch_indoor_sc_lc_5m_qty": None,
+                "svc_install_patch_indoor_sc_lc_20m_qty": None,
+                "svc_install_patch_indoor_lc_lc_5m_qty": None,
+                "svc_install_patch_indoor_lc_lc_20m_qty": None,
+                "svc_install_patch_outdoor_sc_sc_5m_qty": 4 if seg_name not in recorded_segment else 2,
+                "svc_install_patch_outdoor_sc_sc_20m_qty": None,
+                "svc_install_patch_outdoor_sc_lc_5m_qty": None,
+                "svc_install_patch_outdoor_sc_lc_20m_qty": None,
+                "svc_install_patch_outdoor_lc_lc_5m_qty": None,
+                "svc_install_patch_outdoor_lc_lc_20m_qty": None,
+                "svc_install_patch_indoor_mm_lc_lc_5m_qty": None,
+                "svc_install_patch_indoor_mm_lc_lc_20m_qty": None,
+                "svc_install_pigtail_indoor_qty": None,
+                "svc_install_adapter_fc_fc_qty": None,
+                "svc_install_adapter_sc_sc_simplex_qty": None,
+                "svc_install_adapter_sc_sc_duplex_qty": None,
+                "svc_install_adapter_lc_lc_simplex_qty": None,
+                "svc_install_adapter_lc_lc_duplex_qty": None,
+                "svc_install_adapter_sc_lc_hybrid_qty": None,
+                "svc_install_adapter_fc_lc_hybrid_qty": None,
+                "svc_install_adapter_fc_sc_hybrid_qty": None,
+                "svc_install_otb_12c_sc_upc_qty": None,
+                "svc_install_otb_12c_fc_upc_qty": None,
+                "svc_install_otb_24c_sc_upc_qty": qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else None,
+                "svc_install_otb_24c_fc_upc_qty": qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else None,
+                "svc_install_otb_48c_sc_upc_qty": None,
+                "svc_install_otb_96c_sc_upc_qty": None,
+                "svc_install_otb_144c_sc_upc_qty": None,
+                "svc_install_otb_288c_sc_upc_qty": None,
+                "svc_install_otb_288c_lc_upc_hd_qty": None,
+                "svc_install_odp_4c_sc_upc_qty": qty_odp_by_core.get(4, 0) if (is_sc and is_odp) else None,
+                "svc_install_odp_8c_sc_upc_qty": qty_odp_by_core.get(8, 0) if (is_sc and is_odp) else None,
+                "svc_install_odp_12c_sc_upc_qty": qty_odp_by_core.get(12, 0) if (is_sc and is_odp) else None,
+                "svc_install_odp_24c_sc_upc_qty": qty_odp_by_core.get(24, 0) if (is_sc and is_odp) else None,
+                "svc_install_odp_96c_sc_upc_qty": qty_odp_by_core.get(96, 0) if (is_sc and is_odp) else None,
+                "svc_support_integration_qty": None,
+                "test_otdr_2lambda_2way_ls": calc_test_otdr_2lambda_2way_ls,
+                "test_opm_2lambda_2way_ls": calc_test_otdr_2lambda_2way_ls,
+                "doc_hardcopy_ls": int(is_first),
+                "doc_softcopy_ls": int(is_first),
+                "overlap_fo": calc_total_overlap_m,
+            }
+            
+            boq_records.append(seg_record)
+            recorded_segment.add(seg_name)
+            is_first = False
+            num += 1
+
+    piv_df = pd.DataFrame(piv_records)
+    boq_df = pd.DataFrame(boq_records)
+
+    # ---------------------------
+    # Write into Excel template
+    # ---------------------------
+    template_path = os.path.join(DATA_DIR, "template", "boq", "Template_BOQ_Report.xlsx")
+    output_path = os.path.join(export_dir, "BOQ Report.xlsx")
 
     if not os.path.exists(template_path):
-        raise ValueError(f"BOQ Surge template file not found in template directory.")
-    
-    shutil.copy2(template_path, excel_path)
-    with pd.ExcelWriter(excel_path, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
-        if not boq_df.empty:
-            sheet_name = "Pivot Data"
-            boq_df = boq_df.reset_index(drop=True)
-            excel_styler(boq_df).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"📊 Excel sheet '{sheet_name}' with {len(boq_df):,} records written.")
+        raise ValueError("BOQ template file not found in template directory.")
+
+    shutil.copy2(template_path, output_path)
+
+    with pd.ExcelWriter(output_path, engine="openpyxl", mode="a", if_sheet_exists="replace") as writer:
+        if boq_df.empty:
+            logger.info("❌ No BOQ records to write.")
         else:
-            logger.info("❌ No BOQ Surge data to write.")
+            boq_df = boq_df.reset_index(drop=True)
+            excel_styler(boq_df).to_excel(writer, sheet_name="Pivot Data", index=False)
+            logger.info(
+                f"📊 Excel sheet 'Pivot Data' written with {len(boq_df):,} records."
+            )
 
-    # TRIM FORMULA
-    wb = load_workbook(excel_path)
-    ws = wb['BOQ']
+    # ---------------------------
+    # PROCESS BOQ
+    # ---------------------------
+    wb = load_workbook(output_path)
+    ws = wb["BOQ"]
 
-    # Column
-    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    last_col = "JC"
-    formula_column = [a for a in alphabet]
-    for i in alphabet:
-        for j in alphabet:
-            col = i+j
-            formula_column.append(col)
-            if col == last_col:
-                break
-        if col == last_col:
-            break
-    
-    # Row
-    last_row = len(boq_df)
-    start_row = 8
-    end_row = start_row + last_row - 1
-    template_last_row = 1000
+    start_data_row = 8
+    col_index = {col: num for num, col in enumerate(boq_df.columns, start=1)}
 
-    # Style
-    style = Side(
-        style="thin",
-        border_style="thin"
-    )
-    border = Border(
-        left=style,
-        right=style,
-        top=style,
-        bottom=style,
-    )
+    style = Side(style="thin", border_style="thin")
+    border = Border(left=style, right=style, top=style, bottom=style)
+
+    for idx, record in enumerate(boq_df.to_dict("records")):
+        excel_row = start_data_row + idx
+
+        for key, value in record.items():
+            ws.cell(
+                row = excel_row,
+                column = col_index[key],
+                value = value
+            ).border = border
+            
+    wb.save(output_path)
+    logger.info("✅ BOQ Excel saved.")
 
 
-    if last_row > template_last_row:
-        logger.info(f"ℹ️ BOQ records more than formula template, copy formula to row {last_row:,}.")
-        for row in range(template_last_row + 1, last_row + 1):
-            # Copy formula
-            for col in formula_column:
-                src = f"{col}{template_last_row}"
-                dest = f"{col}{row}"
-
-                ws[dest] = Translator(
-                    ws[src].value,
-                    origin=src
-                ).translate_formula(dest)
-                ws[dest].border = border
-
-    elif last_row < template_last_row:
-        logger.info(f"ℹ️ BOQ records less than template, trim formula to row {last_row:,}.")
-        for row in range(end_row+1, template_last_row+1):
-            for col in formula_column:
-                ws[f"{col}{row}"] = None
-                ws[f"{col}{row}"].border = Border()
-
-    else:
-        logger.info(f"ℹ️ BPQ records same with template {last_row:,}.")
-    wb.save(excel_path)
-    logger.info(f"✅ Trim template done.")
-    logger.info("✅ Save Excel file BOQ Surge Done.")
-
-def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, boq_data:tuple, folder:str, device_in_site="OTB", **kwargs):
+def kmz_boq(
+    main_kml,
+    lines_boq: gpd.GeoDataFrame,
+    points_boq: gpd.GeoDataFrame,
+    boq_data: tuple,
+    folder: str,
+    device_in_site="OTB",
+    **kwargs,
+):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
     sep = kwargs.get("sep", "-")
-    
+
     lines_boq = lines_boq.copy()
     points_boq = points_boq.copy()
 
-
     def safe_get_geometry(site_id):
-        match = points_boq.loc[points_boq["site_id"].astype(str).str.strip() == str(site_id), "geometry"]
+        match = points_boq.loc[
+            points_boq["site_id"].astype(str).str.strip() == str(site_id), "geometry"
+        ]
         if not match.empty:
             return match.iloc[0]
         else:
-            logger.info(f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}.")
+            logger.info(
+                f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}."
+            )
             return None
 
-    lines_boq["start"] = lines_boq["near_end"].astype(str).str.strip().apply(safe_get_geometry)
-    lines_boq["end"]   = lines_boq["far_end"].astype(str).str.strip().apply(safe_get_geometry)
+    lines_boq["start"] = (
+        lines_boq["near_end"].astype(str).str.strip().apply(safe_get_geometry)
+    )
+    lines_boq["end"] = (
+        lines_boq["far_end"].astype(str).str.strip().apply(safe_get_geometry)
+    )
 
     lines_boq = lines_boq.reset_index(drop=True)
     filename = folder.replace("/", "-")
-    if 'long' not in points_boq.columns or 'lat' not in points_boq.columns:
-        points_boq['long'] = points_boq.geometry.to_crs(epsg=4326).x
-        points_boq['lat'] = points_boq.geometry.to_crs(epsg=4326).y
-    if 'vendor' not in points_boq.columns:
-        points_boq['vendor'] = vendor
-    if 'program' not in points_boq.columns:
-        points_boq['program'] = program
+    if "long" not in points_boq.columns or "lat" not in points_boq.columns:
+        points_boq["long"] = points_boq.geometry.to_crs(epsg=4326).x
+        points_boq["lat"] = points_boq.geometry.to_crs(epsg=4326).y
+    if "vendor" not in points_boq.columns:
+        points_boq["vendor"] = vendor
+    if "program" not in points_boq.columns:
+        points_boq["program"] = program
 
     used_columns = {
         "ring_name": "Ring ID",
@@ -1630,7 +2345,7 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, b
         "vendor": "Vendor" if "vendor" in points_boq.columns else "N/A",
         "program": "Program" if "program" in points_boq.columns else "N/A",
         "geometry": "geometry",
-        }
+    }
 
     available_col = [col for col in used_columns.keys() if col in points_boq.columns]
 
@@ -1639,7 +2354,9 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, b
     try:
         logger.info(f"ℹ️ Total Point {len(points_boq)}")
         ring = folder.split("/")[0]
-        point_conn, connection = identify_connection(ring=ring, target_fiber=lines_boq, target_point=points_boq)
+        point_conn, connection = identify_connection(
+            ring=ring, target_fiber=lines_boq, target_point=points_boq
+        )
     except Exception as e:
         logger.error(f"Failed identify connection: {e}")
         return main_kml
@@ -1651,38 +2368,46 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, b
 
     # -- Route --
     ring_route = lines_boq.copy()
-    ring_route['length'] = ring_route.geometry.to_crs(epsg=3857).length
-    route_columns = [ "near_end", "far_end", "geometry", "ring_name", "length"]
+    ring_route["length"] = ring_route.geometry.to_crs(epsg=3857).length
+    route_columns = ["near_end", "far_end", "geometry", "ring_name", "length"]
     ring_route = ring_route[route_columns].copy()
     ring_route["name"] = ring_route["near_end"] + sep + ring_route["far_end"]
-    
+
     sorted_route = []
     for num, ne in enumerate(connection, start=1):
-        near_end = ring_route[ring_route['near_end'].astype(str).str.strip() == str(ne).strip()].copy()
+        near_end = ring_route[
+            ring_route["near_end"].astype(str).str.strip() == str(ne).strip()
+        ].copy()
         if not near_end.empty:
             sorted_route.append(near_end)
         else:
-            far_end = ring_route[ring_route['far_end'].astype(str).str.strip() == str(ne).strip()].copy()
+            far_end = ring_route[
+                ring_route["far_end"].astype(str).str.strip() == str(ne).strip()
+            ].copy()
             if not far_end.empty:
                 logger.info(f"🟢 {ne} not found as NE, but found as FE")
                 sorted_route.append(far_end)
             else:
                 logger.info(f"🔴 {ne} not found in ring route.")
-                logger.info(ring_route[['near_end', 'far_end']])
-    
+                logger.info(ring_route[["near_end", "far_end"]])
+
     sorted_route = pd.concat(sorted_route)
-    sorted_route = sorted_route.drop_duplicates('geometry').reset_index(drop=True)
+    sorted_route = sorted_route.drop_duplicates("geometry").reset_index(drop=True)
     ring_route = sorted_route.copy()
 
     # -- Sitelist & Hub --
-    ring_sites = points_boq[~points_boq["site_type"].str.lower().str.contains('hub')].copy()
-    ring_hub = points_boq[points_boq["site_type"].str.lower().str.contains('hub')].copy()
+    ring_sites = points_boq[
+        ~points_boq["site_type"].str.lower().str.contains("hub")
+    ].copy()
+    ring_hub = points_boq[
+        points_boq["site_type"].str.lower().str.contains("hub")
+    ].copy()
 
     ring_sites = ring_sites[available_col].rename(columns=used_columns)
     ring_hub = ring_hub[available_col].rename(columns=used_columns)
 
-    ring_sites = ring_sites.drop_duplicates('geometry')
-    ring_hub = ring_hub.drop_duplicates('geometry')
+    ring_sites = ring_sites.drop_duplicates("geometry")
+    ring_hub = ring_hub.drop_duplicates("geometry")
 
     # -- DESIGN --
     ring_topology = ring_topology.to_crs(epsg=4326)
@@ -1690,14 +2415,61 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, b
     ring_sites = ring_sites.to_crs(epsg=4326)
     ring_hub = ring_hub.to_crs(epsg=4326)
 
-    kml_updated = export_kml(ring_topology, main_kml, filename, subfolder=folder, name_col="connection", color="#FF00FF", size=2, popup=False)
-    kml_updated = export_kml(ring_route, kml_updated, filename, subfolder=f"{folder}/Route", name_col="name", color="#0000FF", size=3, popup=False)
-    kml_updated = export_kml(ring_sites, kml_updated, filename, subfolder=f"{folder}/Site List", name_col="Site ID", color="#FFFF00", size=0.8, popup=True)
-    kml_updated = export_kml(ring_hub, kml_updated, filename, subfolder=f"{folder}/FO Hub", name_col="Site ID", icon="http://maps.google.com/mapfiles/kml/paddle/A.png", size=0.8, popup=True)
-    
+    kml_updated = export_kml(
+        ring_topology,
+        main_kml,
+        filename,
+        subfolder=folder,
+        name_col="connection",
+        color="#FF00FF",
+        size=2,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        ring_route,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Route",
+        name_col="name",
+        color="#0000FF",
+        size=3,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        ring_sites,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Site List",
+        name_col="Site ID",
+        color="#FFFF00",
+        size=0.8,
+        popup=True,
+    )
+    kml_updated = export_kml(
+        ring_hub,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/FO Hub",
+        name_col="Site ID",
+        icon="http://maps.google.com/mapfiles/kml/paddle/A.png",
+        size=0.8,
+        popup=True,
+    )
+
     # -- BOQ --
     # result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site)
-    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = boq_data
+    (
+        odp,
+        otb,
+        closure,
+        backbone,
+        access_ne,
+        access_fe,
+        fo_exist,
+        pole_exist,
+        obstacle_railway,
+        obstacle_toll,
+    ) = boq_data
 
     backbone = backbone.to_crs(epsg=4326)
     access_fe = access_fe.to_crs(epsg=4326)
@@ -1709,24 +2481,133 @@ def kmz_boq(main_kml, lines_boq:gpd.GeoDataFrame, points_boq:gpd.GeoDataFrame, b
     obstacle_railway = obstacle_railway.to_crs(epsg=4326)
     obstacle_toll = obstacle_toll.to_crs(epsg=4326)
 
-    kml_updated = export_kml(backbone, kml_updated, filename, subfolder=f"{folder}/Route Backbone", name_col="name", color="#0000FF", size=3, popup=False)
-    kml_updated = export_kml(access_fe, kml_updated, filename, subfolder=f"{folder}/Route Akses", name_col="name", color="#FF0000", size=3, popup=False)
-    kml_updated = export_kml(odp, kml_updated, filename, subfolder=f"{folder}/ODP", name_col="name", icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png", color="#00FF00", size=0.8, popup=False)
-    kml_updated = export_kml(otb, kml_updated, filename, subfolder=f"{folder}/OTB", name_col="name", icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png", color="#00FF00", size=0.8, popup=False)
-    kml_updated = export_kml(closure, kml_updated, filename, subfolder=f"{folder}/Closure", name_col="name", icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png", color="#00FF00", size=0.8, popup=False)
-    kml_updated = export_kml(fo_exist, kml_updated, filename, subfolder=f"{folder}/FO Existing", name_col="name", color="#00FF00", size=6, popup=False)
-    kml_updated = export_kml(pole_exist, kml_updated, filename, subfolder=f"{folder}/Pole Existing", name_col="name", color="#FFFFFF", size=6, popup=False)
-    kml_updated = export_kml(obstacle_railway, kml_updated, filename, subfolder=f"{folder}/Obstacle", name_col="name", icon="http://maps.google.com/mapfiles/kml/shapes/rail.png", color="#FFFFFF", size=0.8, popup=False)
-    kml_updated = export_kml(obstacle_toll, kml_updated, filename, subfolder=f"{folder}/Obstacle", name_col="name", icon="http://maps.google.com/mapfiles/kml/shapes/cabs.png", color="#FFFFFF", size=0.8, popup=False)
-    
+    kml_updated = export_kml(
+        backbone,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Route Backbone",
+        name_col="name",
+        color="#0000FF",
+        size=3,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        access_fe,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Route Akses",
+        name_col="name",
+        color="#FF0000",
+        size=3,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        odp,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/ODP",
+        name_col="name",
+        icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
+        color="#00FF00",
+        size=0.8,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        otb,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/OTB",
+        name_col="name",
+        icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
+        color="#00FF00",
+        size=0.8,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        closure,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Closure",
+        name_col="name",
+        icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
+        color="#00FF00",
+        size=0.8,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        fo_exist,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/FO Existing",
+        name_col="name",
+        color="#00FF00",
+        size=6,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        pole_exist,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Pole Existing",
+        name_col="name",
+        color="#FFFFFF",
+        size=6,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        obstacle_railway,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Obstacle",
+        name_col="name",
+        icon="http://maps.google.com/mapfiles/kml/shapes/rail.png",
+        color="#FFFFFF",
+        size=0.8,
+        popup=False,
+    )
+    kml_updated = export_kml(
+        obstacle_toll,
+        kml_updated,
+        filename,
+        subfolder=f"{folder}/Obstacle",
+        name_col="name",
+        icon="http://maps.google.com/mapfiles/kml/shapes/cabs.png",
+        color="#FFFFFF",
+        size=0.8,
+        popup=False,
+    )
+
     return kml_updated
 
-def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir:str, sep="-"):
+
+def save_boq(
+    points_boq: gpd.GeoDataFrame, lines_boq: gpd.GeoDataFrame, export_dir: str, sep="-"
+):
     result_boq = compile_boq(points_boq, lines_boq, sep=sep)
-    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
+    (
+        odp,
+        otb,
+        closure,
+        backbone,
+        access_ne,
+        access_fe,
+        fo_exist,
+        pole_exist,
+        obstacle_railway,
+        obstacle_toll,
+    ) = result_boq
 
     # CLEAN GEOMETRY
-    clean_col = ['otb', 'odp','backbone','fo_exist', 'pole_exist', 'closure', 'obstacle_railway', 'obstacle_toll']
+    clean_col = [
+        "otb",
+        "odp",
+        "backbone",
+        "fo_exist",
+        "pole_exist",
+        "closure",
+        "obstacle_railway",
+        "obstacle_toll",
+    ]
     for col in clean_col:
         if col in points_boq.columns:
             points_boq = points_boq.drop(columns=col)
@@ -1753,13 +2634,24 @@ def save_boq(points_boq:gpd.GeoDataFrame, lines_boq:gpd.GeoDataFrame, export_dir
     if not pole_exist.empty:
         pole_exist.to_parquet(os.path.join(export_dir, "Pole_Exist_BOQ.parquet"))
     if not obstacle_railway.empty:
-        obstacle_railway.to_parquet(os.path.join(export_dir, "Obstacle_Railway_BOQ.parquet"))
+        obstacle_railway.to_parquet(
+            os.path.join(export_dir, "Obstacle_Railway_BOQ.parquet")
+        )
     if not obstacle_toll.empty:
         obstacle_toll.to_parquet(os.path.join(export_dir, "Obstacle_Toll_BOQ.parquet"))
     logger.info(f"✅ Save BOQ Parquet Done.")
 
 
-def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, sep:str="-", operator="ioh", device_in_branch="ODP", device_in_site="OTB", **kwargs):
+def main_boq(
+    points: gpd.GeoDataFrame,
+    lines: gpd.GeoDataFrame,
+    export_dir: str,
+    sep: str = "-",
+    operator="ioh",
+    device_in_branch="ODP",
+    device_in_site="OTB",
+    **kwargs,
+):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Not Defined")
     task_celery = kwargs.get("task_celery", False)
@@ -1768,71 +2660,126 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     os.makedirs(boq_dir, exist_ok=True)
 
     start_time = time.time()
-    points_boq, lines_boq = parallel_boq(points, lines, sep=sep, operator=operator, task_celery=task_celery)
+    points_boq, lines_boq = parallel_boq(
+        points, lines, sep=sep, operator=operator, task_celery=task_celery
+    )
 
     # EXPORT
     save_boq(points_boq, lines_boq, boq_dir, sep=sep)
     end_time = time.time()
-    boq_time = round((end_time-start_time)/60, 2)
-    
+    boq_time = round((end_time - start_time) / 60, 2)
+
     # EXCEL FILE
     start_time = time.time()
-    excel_boq(points_boq, lines_boq, boq_dir, sep=sep, operator=operator, device_in_branch=device_in_branch, device_in_site=device_in_site)
+    excel_boq(
+        points_boq,
+        lines_boq,
+        boq_dir,
+        sep=sep,
+        operator=operator,
+        device_in_branch=device_in_branch,
+        device_in_site=device_in_site,
+    )
     end_time = time.time()
-    excel_time = round((end_time-start_time)/60, 2)
+    excel_time = round((end_time - start_time) / 60, 2)
 
     # KMZ
     start_time = time.time()
-    ring_names = sorted(points_boq['ring_name'].dropna().unique().tolist())
+    ring_names = sorted(points_boq["ring_name"].dropna().unique().tolist())
     output_kmz = os.path.join(boq_dir, "BOQ KMZ Design.kmz")
 
-    result_boq = compile_boq(points_boq, lines_boq, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
-    odp, otb, closure, backbone, access_ne, access_fe, fo_exist, pole_exist, obstacle_railway, obstacle_toll = result_boq
+    result_boq = compile_boq(
+        points_boq,
+        lines_boq,
+        sep=sep,
+        device_in_site=device_in_site,
+        device_in_branch=device_in_branch,
+    )
+    (
+        odp,
+        otb,
+        closure,
+        backbone,
+        access_ne,
+        access_fe,
+        fo_exist,
+        pole_exist,
+        obstacle_railway,
+        obstacle_toll,
+    ) = result_boq
 
     main_kmz = simplekml.Kml()
-    for num, ring in tqdm(enumerate(ring_names, start=1), total=len(ring_names), desc='Process KMZ BOQ'):
-        ring_points = points_boq[points_boq['ring_name'] == ring].copy()
-        ring_lines = lines_boq[lines_boq['ring_name'] == ring].copy()
-        
-        # DATA BOQ
-        ring_odp = odp[odp['ring_name'] == ring].copy()
-        ring_otb = otb[otb['ring_name'] == ring].copy()
-        ring_closure = closure[closure['ring_name'] == ring].copy()
-        ring_backbone = backbone[backbone['ring_name'] == ring].copy()
-        ring_access_fe = access_fe[access_fe['ring_name'] == ring].copy()
-        ring_access_ne = access_ne[access_ne['ring_name'] == ring].copy()
-        ring_fo_exist = fo_exist[fo_exist['ring_name'] == ring].copy()
-        ring_pole_exist = pole_exist[pole_exist['ring_name'] == ring].copy()
-        ring_obstacle_railway = obstacle_railway[obstacle_railway['ring_name'] == ring].copy()
-        ring_obstacle_toll = obstacle_toll[obstacle_toll['ring_name'] == ring].copy()
-        boq_data = (ring_odp, ring_otb, ring_closure, ring_backbone, ring_access_ne, ring_access_fe, ring_fo_exist, ring_pole_exist, ring_obstacle_railway, ring_obstacle_toll)
+    for num, ring in tqdm(
+        enumerate(ring_names, start=1), total=len(ring_names), desc="Process KMZ BOQ"
+    ):
+        ring_points = points_boq[points_boq["ring_name"] == ring].copy()
+        ring_lines = lines_boq[lines_boq["ring_name"] == ring].copy()
 
-        if 'region' in ring_points.columns:
-            region = ring_points['region'].mode()[0]
+        # DATA BOQ
+        ring_odp = odp[odp["ring_name"] == ring].copy()
+        ring_otb = otb[otb["ring_name"] == ring].copy()
+        ring_closure = closure[closure["ring_name"] == ring].copy()
+        ring_backbone = backbone[backbone["ring_name"] == ring].copy()
+        ring_access_fe = access_fe[access_fe["ring_name"] == ring].copy()
+        ring_access_ne = access_ne[access_ne["ring_name"] == ring].copy()
+        ring_fo_exist = fo_exist[fo_exist["ring_name"] == ring].copy()
+        ring_pole_exist = pole_exist[pole_exist["ring_name"] == ring].copy()
+        ring_obstacle_railway = obstacle_railway[
+            obstacle_railway["ring_name"] == ring
+        ].copy()
+        ring_obstacle_toll = obstacle_toll[obstacle_toll["ring_name"] == ring].copy()
+        boq_data = (
+            ring_odp,
+            ring_otb,
+            ring_closure,
+            ring_backbone,
+            ring_access_ne,
+            ring_access_fe,
+            ring_fo_exist,
+            ring_pole_exist,
+            ring_obstacle_railway,
+            ring_obstacle_toll,
+        )
+
+        if "region" in ring_points.columns:
+            region = ring_points["region"].mode()[0]
             folder = f"{region}/{ring}"
         else:
             folder = ring
 
         try:
-            main_kmz = kmz_boq(main_kmz, lines_boq=ring_lines, points_boq=ring_points, boq_data=boq_data, folder=folder, vendor=vendor, program=program, sep=sep)
+            main_kmz = kmz_boq(
+                main_kmz,
+                lines_boq=ring_lines,
+                points_boq=ring_points,
+                boq_data=boq_data,
+                folder=folder,
+                vendor=vendor,
+                program=program,
+                sep=sep,
+            )
             if task_celery:
                 task_celery.update_state(
                     state="PROGRESS",
-                    meta={ "status": (f"Compile KMz for {num}/{len(ring_names):,} rings")},
+                    meta={
+                        "status": (f"Compile KMz for {num}/{len(ring_names):,} rings")
+                    },
                 )
             logger.info(f"🟢 {ring} BOQ KMZ inserted.")
         except Exception as e:
             logger.error(f"Error in ring {ring}: {e}")
-        
+
     sanitize_kml(main_kmz)
     main_kmz.savekmz(output_kmz)
     end_time = time.time()
-    kmz_time = round((end_time-start_time)/60,2)
+    kmz_time = round((end_time - start_time) / 60, 2)
 
     # BOQ FORMAT RESULT
     try:
         start_time = time.time()
-        boq_generation(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
+        boq_generation(
+            kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator
+        )
         end_time = time.time()
     except Exception as e:
         logger.error(f"Error in BOQ Report generation: {e}")
@@ -1842,24 +2789,44 @@ def main_boq(points:gpd.GeoDataFrame, lines:gpd.GeoDataFrame, export_dir:str, se
     logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
     logger.info(f"Excel Result Time   : {excel_time:,} minutes")
     logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")
-    logger.info(f"BOQ {operator.upper()} Time : {round((end_time-start_time)/60,2):,} minutes")
+    logger.info(
+        f"BOQ {operator.upper()} Time : {round((end_time-start_time)/60,2):,} minutes"
+    )
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Intersite Design_Fix Route Part 2.kmz"
-    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export\Debug Part 2"
-    os.makedirs(export_dir, exist_ok=True)
-    main_boq(points=points_kmz, lines=lines_kmz, export_dir=export_dir, sep="-", operator="tsel", device_in_site="OTB", device_in_branch="ODP")
+    # kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Intersite Design_Fix Route Part 2.kmz"
+    # points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
+    # export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export\Debug Part 2")
+    # os.makedirs(export_dir, exist_ok=True)
+    # main_boq(
+    #     points=points_kmz,
+    #     lines=lines_kmz,
+    #     export_dir=export_dir,
+    #     sep="-",
+    #     operator="tsel",
+    #     device_in_site="OTB",
+    #     device_in_branch="ODP",
+    # )
 
-    # ZIPFILE
-    zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"
-    zip_filepath = os.path.join(export_dir, zip_filename)
-    with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(export_dir):
-            for export_file in files:
-                if export_file != zip_filename and not export_file.endswith(".zip") and "Checkpoint" not in export_file:
-                    export_file_path = os.path.join(root, export_file)
-                    arcname = os.path.relpath(export_file_path, export_dir)
-                    zipf.write(export_file_path, arcname)
-    print(f"📦 Result files zipped.")
+    # # ZIPFILE
+    # zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"
+    # zip_filepath = os.path.join(export_dir, zip_filename)
+    # with zipfile.ZipFile(zip_filepath, "w", zipfile.ZIP_DEFLATED) as zipf:
+    #     for root, _, files in os.walk(export_dir):
+    #         for export_file in files:
+    #             if (
+    #                 export_file != zip_filename
+    #                 and not export_file.endswith(".zip")
+    #                 and "Checkpoint" not in export_file
+    #             ):
+    #                 export_file_path = os.path.join(root, export_file)
+    #                 arcname = os.path.relpath(export_file_path, export_dir)
+    #                 zipf.write(export_file_path, arcname)
+    # print(f"📦 Result files zipped.")
+
+    kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\BOQ Dev\0000005197_APD IPL Fiberisasi XLSmart Newsite 2026_TBG.kmz"
+    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\BOQ Dev\Export")
+    os.makedirs(export_dir, exist_ok=True)
+
+    boq_generation(kmz_ipl, export_dir=export_dir, sep=";", operator="xl")

@@ -6,6 +6,7 @@ import networkx as nx
 from shapely.geometry import MultiLineString, LineString
 from shapely.ops import linemerge
 from tqdm import tqdm
+from enum import Enum
 
 sys.path.append(r"D:\JACOBS\SERVICE\API")
 
@@ -14,6 +15,13 @@ from core.config import settings
 MAINDATA_DIR = settings.MAINDATA_DIR
 DATA_DIR = settings.DATA_DIR
 EXPORT_DIR = settings.EXPORT_DIR
+
+class AdminLevel(Enum):
+    provinsi = "provinsi"
+    kabkot = "kabkot"
+    kecamatan = "kecamatan"
+    desa = "desa"
+
 
 def spof_detection(
     paths_gdf: gpd.GeoDataFrame,
@@ -617,10 +625,16 @@ def clutter_identification(
     return sitelist
 
 
-def admin_information(data_gdf:gpd.GeoDataFrame):
-    admin = gpd.read_parquet(r"D:\JACOBS\DATA\01. Admin\Admin_2024_Trimmed.parquet")
-    admin_col = ['Island','Provinsi','Kabkot', 'Kecamatan', 'Desa']
-    admin = admin.dropna(subset=['Provinsi', 'Kabkot', 'Kecamatan', 'Desa'], how="all")
+def admin_information(data_gdf:gpd.GeoDataFrame, level:AdminLevel | str = AdminLevel.kabkot):
+    if level == AdminLevel.desa:
+        admin = gpd.read_parquet(fr"{MAINDATA_DIR}\01. Admin\Admin_2024_Trimmed.parquet")
+        admin_col = ['Island','Provinsi','Kabkot', 'Kecamatan', 'Desa']
+        admin = admin.dropna(subset=['Provinsi', 'Kabkot', 'Kecamatan', 'Desa'], how="all")
+    else:
+        admin = gpd.read_parquet(fr"{MAINDATA_DIR}\01. Admin\Admin_2024_Kabkot_Trimmed_Simplified.parquet")
+        admin_col = ['Island','Provinsi','Kabkot']
+        admin = admin.dropna(subset=['Provinsi', 'Kabkot'], how="all")
+        
     for col in admin_col:
         if col in data_gdf.columns:
             data_gdf = data_gdf.drop(columns=col)
