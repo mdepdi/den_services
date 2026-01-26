@@ -627,11 +627,11 @@ def clutter_identification(
 
 def admin_information(data_gdf:gpd.GeoDataFrame, level:AdminLevel | str = AdminLevel.kabkot):
     if level == AdminLevel.desa:
-        admin = gpd.read_parquet(fr"{MAINDATA_DIR}\01. Admin\Admin_2024_Trimmed.parquet")
+        admin = gpd.read_parquet(f"{MAINDATA_DIR}/01. Admin/Admin_2024_Trimmed.parquet")
         admin_col = ['Island','Provinsi','Kabkot', 'Kecamatan', 'Desa']
         admin = admin.dropna(subset=['Provinsi', 'Kabkot', 'Kecamatan', 'Desa'], how="all")
     else:
-        admin = gpd.read_parquet(fr"{MAINDATA_DIR}\01. Admin\Admin_2024_Kabkot_Trimmed_Simplified.parquet")
+        admin = gpd.read_parquet(fr"{MAINDATA_DIR}/01. Admin/Admin_2024_Kabkot_Trimmed_Simplified.parquet")
         admin_col = ['Island','Provinsi','Kabkot']
         admin = admin.dropna(subset=['Provinsi', 'Kabkot'], how="all")
         
