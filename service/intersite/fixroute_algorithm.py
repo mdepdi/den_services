@@ -353,10 +353,10 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Template_Fixed_Route.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Fix Route MC 200126"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Template_Fixed_Route.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Fixed Route Hasna"
     boq = False
-    program ="FWA Surge"
+    program ="Debug Fix Route"
     spof_threshold = 3000
 
 

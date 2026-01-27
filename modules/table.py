@@ -1,4 +1,5 @@
 import pandas as pd
+import geopandas as gpd
 import re
 import os
 import jellyfish as jf
@@ -34,7 +35,7 @@ def find_best_match(word, candidates, threshold=0.85):
             best_match = candidate
     return best_match, best_score
 
-def sanitize_header(df:pd.DataFrame, preview_row = 5, lowercase=False):
+def sanitize_header(df:pd.DataFrame|gpd.GeoDataFrame, preview_row = 5, lowercase=False):
     if df.columns[0].startswith('Unnamed'):
         for idx, row in df.head(preview_row).iterrows():
             if pd.isna(row.values[0]) or row.values[0] == '':
@@ -56,6 +57,8 @@ def sanitize_header(df:pd.DataFrame, preview_row = 5, lowercase=False):
     df.columns = [col.split('.')[0] for col in df.columns]
     df.columns = [col.strip().replace('\n', '') for col in df.columns]
     df.columns = df.columns.str.replace("*", "")
+    text_cols = df.select_dtypes(include=["object", "string"]).columns
+    df[text_cols] = df[text_cols].apply(lambda col: col.str.strip())
 
     # Clean duplicate columns
     duplicated_cols = df.columns[df.columns.duplicated()].tolist()

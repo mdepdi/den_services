@@ -22,7 +22,7 @@ from shapely.ops import linemerge
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from openpyxl import load_workbook
 from openpyxl.formula.translate import Translator
-from openpyxl.styles import Border, Side
+from openpyxl.styles import NamedStyle, Border, Side, Font, Alignment
 from enum import Enum
 
 sys.path.append(r"D:\JACOBS\SERVICE\API")
@@ -30,7 +30,7 @@ sys.path.append(r"D:\JACOBS\SERVICE\API")
 from modules.kml import export_kml, sanitize_kml, validate_kmz_design, validate_kmz_ipl
 from modules.table import excel_styler
 from modules.utils import auto_group, admin_information
-from modules.geometry import relative_intersection
+from modules.geometry import relative_intersection, geodesic_length
 from core.config import settings
 
 MAINDATA_DIR = settings.MAINDATA_DIR
@@ -1367,7 +1367,7 @@ def excel_boq(
 ):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
-    sep = kwargs.get("sep", "-")
+    sep = kwargs.get("sep", ";")
 
     lines_boq = lines_boq.copy()
     points_boq = points_boq.copy()
@@ -1410,7 +1410,7 @@ def excel_boq(
 
     # -- Route --
     route = lines_boq.copy()
-    route["length"] = route.geometry.to_crs(epsg=3857).length
+    route["length"] = route.geometry.to_crs(epsg=4326).apply(geodesic_length)
     route_columns = ["near_end", "far_end", "geometry", "ring_name", "length"]
     route = route[route_columns].copy()
     route["name"] = route["near_end"] + sep + route["far_end"]
@@ -1503,27 +1503,27 @@ def excel_boq(
     route["type"] = "Route"
     route = route.to_crs(epsg=4326)
     if not route.empty and "geometry" in route:
-        route["length"] = route.geometry.to_crs(epsg=3857).length
+        route["length"] = route.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     backbone["type"] = "Backbone"
     backbone = backbone.to_crs(epsg=4326)
     if not backbone.empty and "geometry" in backbone:
-        backbone["length"] = backbone.geometry.to_crs(epsg=3857).length
+        backbone["length"] = backbone.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     access_fe["type"] = "Access"
     access_fe = access_fe.to_crs(epsg=4326)
     if not access_fe.empty and "geometry" in access_fe:
-        access_fe["length"] = access_fe.geometry.to_crs(epsg=3857).length
+        access_fe["length"] = access_fe.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     fo_exist["type"] = "FO Existing"
     fo_exist = fo_exist.to_crs(epsg=4326)
     if not fo_exist.empty and "geometry" in fo_exist:
-        fo_exist["length"] = fo_exist.geometry.to_crs(epsg=3857).length
+        fo_exist["length"] = fo_exist.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     pole_exist["type"] = "Pole Existing"
     pole_exist = pole_exist.to_crs(epsg=4326)
     if not pole_exist.empty and "geometry" in pole_exist:
-        pole_exist["length"] = pole_exist.geometry.to_crs(epsg=3857).length
+        pole_exist["length"] = pole_exist.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     sheet_routes = pd.concat([route, backbone, access_fe, fo_exist, pole_exist])
     sheet_routes = sheet_routes.sort_values("ring_name")
@@ -1624,8 +1624,8 @@ def excel_boq(
 def boq_generation(
     kmz_path: str,
     export_dir: str,
-    sep: str = "-",
-    operator: Operator | str = Operator.IOH,
+    sep: str = ";",
+    operator: Operator | str = Operator.XL,
     device_in_site: DeviceType = DeviceType.OTB,
     device_in_branch: DeviceType = DeviceType.ODP,
     connector_in_site: ConnectorType = ConnectorType.SC,
@@ -1696,21 +1696,9 @@ def boq_generation(
         gdf_ring_hubs = gdf_hub[gdf_hub["ring_name"] == ring_name].copy()
 
         # Metadata
-        program = (
-            gdf_ring_sites["program"].mode().iloc[0]
-            if "program" in gdf_ring_sites.columns and not gdf_ring_sites.empty
-            else None
-        )
-        region = (
-            gdf_ring_sites["region"].mode().iloc[0]
-            if "region" in gdf_ring_sites.columns and not gdf_ring_sites.empty
-            else None
-        )
-        city = (
-            gdf_ring_hubs["Kabkot"].mode().iloc[0]
-            if "Kabkot" in gdf_ring_sites.columns and not gdf_ring_sites.empty
-            else None
-        )
+        program = (gdf_ring_sites["program"].mode().iloc[0] if "program" in gdf_ring_sites.columns and not gdf_ring_sites.empty else None)
+        region = (gdf_ring_sites["region"].mode().iloc[0] if "region" in gdf_ring_sites.columns and not gdf_ring_sites.empty else None)
+        city = (gdf_ring_hubs["Kabkot"].mode().iloc[0] if "Kabkot" in gdf_ring_hubs.columns and not gdf_ring_hubs.empty else None)
         
         is_otb = DeviceType.OTB in [device_in_site, device_in_branch]
         is_odp = DeviceType.ODP in [device_in_site, device_in_branch]
@@ -1721,9 +1709,7 @@ def boq_generation(
         gdf_ring_backbone = gdf_backbone[gdf_backbone["ring_name"] == ring_name].copy()
         gdf_ring_access = gdf_access[gdf_access["ring_name"] == ring_name].copy()
         gdf_ring_fo_exist = gdf_fo_exist[gdf_fo_exist["ring_name"] == ring_name].copy()
-        gdf_ring_pole_exist = gdf_pole_exist[
-            gdf_pole_exist["ring_name"] == ring_name
-        ].copy()
+        gdf_ring_pole_exist = gdf_pole_exist[gdf_pole_exist["ring_name"] == ring_name].copy()
         gdf_ring_otb = gdf_otb[gdf_otb["ring_name"] == ring_name].copy()
         gdf_ring_odp = gdf_odp[gdf_odp["ring_name"] == ring_name].copy()
         gdf_ring_closure = gdf_closure[gdf_closure["ring_name"] == ring_name].copy()
@@ -1737,8 +1723,8 @@ def boq_generation(
             seg_ctx = f"ring={ring_name} seg={seg_name} ne={seg_ne} fe={seg_fe}"
 
             len_route_m = (
-                round(float(seg_row.geometry.length), 3)
-                if seg_row.geometry is not None
+                round(float(seg_row['length']), 3)
+                if seg_row.length is not None
                 else 0.0
             )
             seg_core = int(seg_row.get("core", 24) or 24)
@@ -1753,17 +1739,12 @@ def boq_generation(
                 prev_ring = prev_seg['ring_name']
                 prev_ne = prev_seg['near_end']
                 prev_fe = prev_seg['far_end']
-                prev_df_access = gdf_ring_access[
-                    (gdf_ring_access["near_end"] == prev_ne)
-                    & (gdf_ring_access["far_end"] == prev_fe)
-                ].copy()
-                len_prev_access_m = (
-                    float(prev_df_access.geometry.iloc[0].length) if not prev_df_access.empty else 0.0
-                )
+                prev_df_access = gdf_ring_access[(gdf_ring_access["near_end"] == prev_ne) & (gdf_ring_access["far_end"] == prev_fe)].copy()
+                len_prev_access_m = (float(sum(prev_df_access['length'])) if not prev_df_access.empty else 0.0)
                 len_prev_access_ext_m = 0
 
             # ---------------------------
-            # Segment slices (df_*)
+            # Segment slices
             # ---------------------------
             df_bb = gdf_ring_backbone[
                 (gdf_ring_backbone["near_end"] == seg_ne)
@@ -1820,16 +1801,10 @@ def boq_generation(
             # ---------------------------
             # Length metrics
             # ---------------------------
-            len_bb_m = float(df_bb.geometry.iloc[0].length) if not df_bb.empty else 0.0
-            len_access_m = (
-                float(df_access.geometry.iloc[0].length) if not df_access.empty else 0.0
-            )
-            len_overlap_m = (
-                float(df_overlap.geometry.iloc[0].length)
-                if not df_overlap.empty
-                else 0.0
-            )
-            len_pole_m = (float(df_pole.geometry.iloc[0].length) if not df_pole.empty else 0.0)
+            len_bb_m = float(sum(df_bb['length'])) if not df_bb.empty else 0.0
+            len_access_m = (float(sum(df_access['length'])) if not df_access.empty else 0.0)
+            len_overlap_m = ( float(sum(df_overlap['length'])) if not df_overlap.empty else 0.0)
+            len_pole_m = (float(sum(df_pole['length'])) if not df_pole.empty else 0.0)
             len_access_ext_m = 0.0
 
             # Cable length by backbone core
@@ -1847,10 +1822,10 @@ def boq_generation(
             qty_odp_ext = len(df_odp_ext)
 
             df_otb_by_core = {
-                c: df_otb[df_otb["core"] == c] for c in (24, 48, 72, 96, 120, 144)
+                c: df_otb_new[df_otb_new["core"] == c] for c in (24, 48, 72, 96, 120, 144)
             }
             df_odp_by_core = {
-                c: df_odp[df_odp["core"] == c] for c in (24, 48, 72, 96, 120, 144)
+                c: df_odp_new[df_odp_new["core"] == c] for c in (24, 48, 72, 96, 120, 144)
             }
             qty_otb_by_core = {c: len(df_) for c, df_ in df_otb_by_core.items()}
             qty_odp_by_core = {c: len(df_) for c, df_ in df_odp_by_core.items()}
@@ -1867,24 +1842,23 @@ def boq_generation(
             # Calculations
             # ---------------------------
             fo_factor = 1.15 if operator.lower() == "xl" else 1.10
-            calc_permission_pu = math.ceil(len_bb_m + len_access_m + len_pole_m + len_cable_by_core_m[96])
-            calc_fo_cable_m = (math.ceil(math.ceil(len_bb_m + len_access_m) * fo_factor / 100) * 100)
+            calc_permission_pu = math.floor(len_bb_m + len_access_m - len_pole_m + sum(len_cable_by_core_m.get(core, 0) for core in len_cable_by_core_m.keys() if int(core) != 24))
+            calc_fo_cable_m = math.ceil(math.ceil(len_bb_m + len_access_m) * fo_factor / 100) * 100
             calc_closure_24_qty = qty_closure_new + (math.floor(calc_fo_cable_m / 4000) if calc_fo_cable_m >= 4000 else 0)
-            calc_total_overlap_m = round(
-                (len_overlap_m + len_access_ext_m + len_prev_access_m + len_prev_access_ext_m if ring_name == prev_ring 
-                else len_overlap_m + len_access_ext_m) * fo_factor, 0)
+            calc_total_overlap_m = round((len_overlap_m + len_access_ext_m + len_prev_access_m + len_prev_access_ext_m if ring_name == prev_ring else len_overlap_m + len_access_ext_m) * fo_factor, 0)
 
             # Material
             calc_mat_hdpe_subduct_32_27_qty = 20 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 20 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0) + 70 * qty_obs_rail
             calc_mat_gi_pipe_1p5in_qty = 3 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 3 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0) + 3 * (2 * qty_obs_rail)
-            calc_mat_pole_fo_9m_3step_qty = even_excel((calc_permission_pu/80)*0.05) if calc_permission_pu/80 <3 else 0 #=IF((S10/80)<3;0;EVEN(((S10)/80)*0,05))
-            calc_mat_pole_fo_7m_2step_qty = even_excel(calc_permission_pu/70) if calc_permission_pu < 0 else 0 #=IF((S10)<0;0;EVEN(((S10)/70)-DV10))
+            calc_mat_pole_fo_9m_3step_qty = 0 if ((calc_permission_pu / 80) < 3) else even_excel((calc_permission_pu/80) * 0.05) #=IF((S10/80)<3;0;EVEN(((S10)/80)*0,05))
+            calc_mat_pole_fo_7m_2step_qty = 0 if calc_permission_pu < 0 else even_excel(calc_permission_pu/80) - calc_mat_pole_fo_9m_3step_qty #=IF((S10)<0;0;EVEN(((S10)/70)-DV10))
             calc_mat_slack_support_70x70x3_qty = 1 + math.floor((calc_mat_pole_fo_7m_2step_qty + calc_mat_pole_fo_9m_3step_qty)/4) if calc_mat_pole_fo_7m_2step_qty + calc_mat_pole_fo_9m_3step_qty > 0 else 0 # =IF(SUM(DU10;DV10)>0;1+ROUNDDOWN(SUM(DU10;DV10)/4;0);0)
             
             # Services
             otb_factor = (is_otb and (is_sc or is_fc))
             is_sc_odp = (is_sc and is_odp)
 
+            calc_svc_pulling_fo_aerial_incl_pole_m = (calc_fo_cable_m + (len_cable_by_core_m.get(core_bb, 0) if core_bb != 24 else 0) - len_pole_m - calc_mat_hdpe_subduct_32_27_qty + 0 ) if (calc_fo_cable_m + (len_cable_by_core_m.get(core_bb, 0) if core_bb != 24 else 0) >= 20) else 0
             calc_splicing_fusion = (
                 (calc_closure_24_qty + (qty_odp_by_core.get(24, 0) if is_sc_odp else 0)) * 24
                 + (qty_odp_by_core.get(48, 0) if is_sc_odp else 0) * 48
@@ -1964,7 +1938,7 @@ def boq_generation(
             seg_record = {
                 # Segment Info
                 "no": num,
-                "site_type": program,
+                "site_type": program if program != "NA" else "Intersite FO",
                 "stip_category": None,
                 "operator": operator.upper(),
                 "spk_wo": None,
@@ -1976,7 +1950,7 @@ def boq_generation(
                 "program": region,
                 "work_code": None,
                 "region_procurement": None,
-                "e2e_distance_m": len_route_m,
+                "e2e_distance_m": calc_fo_cable_m + calc_total_overlap_m, # len_cable_by_core_m[48] + len_cable_by_core_m[72] + len_cable_by_core_m[96] + len_cable_by_core_m[120] + len_cable_by_core_m[144]
                 "boq_id": None,
                 "subset_separator": None,
 
@@ -1999,7 +1973,7 @@ def boq_generation(
                 "mat_fo_aerial_96_m": None,
                 "mat_fo_aerial_144_m": None,
                 "mat_fo_adss_12_m": len_cable_by_core_m.get(12, None),
-                "mat_fo_adss_24_m": len_cable_by_core_m.get(24, 100) if calc_fo_cable_m is None else calc_fo_cable_m,
+                "mat_fo_adss_24_m": calc_fo_cable_m, #  len_cable_by_core_m.get(24, 100) if calc_fo_cable_m is None else 
                 "mat_fo_adss_48_m": len_cable_by_core_m.get(48, None),
                 "mat_fo_adss_72_m": len_cable_by_core_m.get(72, None),
                 "mat_fo_adss_96_m": len_cable_by_core_m.get(96, None),
@@ -2158,8 +2132,8 @@ def boq_generation(
                 "svc_install_pole_7m_2step_unit": calc_mat_pole_fo_7m_2step_qty,
                 "svc_install_pole_9m_3step_unit": calc_mat_pole_fo_9m_3step_qty,
                 "svc_install_slack_support_50x50x3_qty": None,
-                "svc_install_slack_support_70x70x3_qty": calc_mat_slack_support_70x70x3_qty,
                 "svc_install_slack_support_additional_qty": None,
+                "svc_install_slack_support_70x70x3_qty": calc_mat_slack_support_70x70x3_qty,
                 "svc_install_riser_galvanized_1_5inch_3m_qty": calc_mat_gi_pipe_1p5in_qty / 3,
                 "svc_install_riser_galvanized_2inch_3m_qty": None,
                 "svc_supply_install_temberang_tarik_unit": None,
@@ -2180,8 +2154,8 @@ def boq_generation(
                 "svc_install_handhole_80x80x120_unit": qty_obs_rail * 2,
                 "svc_install_handhole_60x60x120_unit": None,
                 "svc_install_odc_foundation_50x70x50_unit": None,
-                "svc_pulling_fo_aerial_incl_pole_m": (calc_fo_cable_m + len_cable_by_core_m.get(core_bb, 0) - len_pole_m - calc_mat_hdpe_subduct_32_27_qty + 0 ) if (calc_fo_cable_m + len_cable_by_core_m.get(core_bb, 0) >= 20) else 0,
-                "svc_pulling_fo_aerial_excl_pole_m": len_pole_m,
+                "svc_pulling_fo_aerial_incl_pole_m": round(calc_svc_pulling_fo_aerial_incl_pole_m, 0),
+                "svc_pulling_fo_aerial_excl_pole_m": round(len_pole_m, 0),
                 "svc_pulling_fo_burial_m": calc_mat_hdpe_subduct_32_27_qty,
                 "svc_pulling_fo_direct_buried_m": None,
                 "svc_air_blown_fo_m": None,
@@ -2227,7 +2201,7 @@ def boq_generation(
                 "svc_install_odp_12c_sc_upc_qty": qty_odp_by_core.get(12, 0) if (is_sc and is_odp) else None,
                 "svc_install_odp_24c_sc_upc_qty": qty_odp_by_core.get(24, 0) if (is_sc and is_odp) else None,
                 "svc_install_odp_96c_sc_upc_qty": qty_odp_by_core.get(96, 0) if (is_sc and is_odp) else None,
-                "svc_support_integration_qty": None,
+                "svc_support_integration_qty": 1,
                 "test_otdr_2lambda_2way_ls": calc_test_otdr_2lambda_2way_ls,
                 "test_opm_2lambda_2way_ls": calc_test_otdr_2lambda_2way_ls,
                 "doc_hardcopy_ls": int(is_first),
@@ -2259,13 +2233,13 @@ def boq_generation(
             logger.info("❌ No BOQ records to write.")
         else:
             boq_df = boq_df.reset_index(drop=True)
-            excel_styler(boq_df).to_excel(writer, sheet_name="Pivot Data", index=False)
+            # excel_styler(boq_df).to_excel(writer, sheet_name="Pivot Data", index=False)
             logger.info(
                 f"📊 Excel sheet 'Pivot Data' written with {len(boq_df):,} records."
             )
 
     # ---------------------------
-    # PROCESS BOQ
+    # PROCESS BOQ EXCEL
     # ---------------------------
     wb = load_workbook(output_path)
     ws = wb["BOQ"]
@@ -2273,19 +2247,30 @@ def boq_generation(
     start_data_row = 8
     col_index = {col: num for num, col in enumerate(boq_df.columns, start=1)}
 
-    style = Side(style="thin", border_style="thin")
-    border = Border(left=style, right=style, top=style, bottom=style)
+    named_style = NamedStyle(name="BOQ Row")
+    side_style = Side(style="thin", border_style="thin")
+    border = Border(left=side_style, right=side_style, top=side_style, bottom=side_style)
+    named_style.font = Font(name="Arial", size=11)
+    named_style.border = border
+
+    if "BOQ Row" not in [s for s in wb.named_styles]:
+        wb.add_named_style(named_style)
 
     for idx, record in enumerate(boq_df.to_dict("records")):
         excel_row = start_data_row + idx
 
         for key, value in record.items():
-            ws.cell(
+            cell = ws.cell(
                 row = excel_row,
                 column = col_index[key],
                 value = value
-            ).border = border
-            
+            )
+            cell.style = "BOQ Row"
+
+            if isinstance(value, (int, float)) and value is not None:
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
     wb.save(output_path)
     logger.info("✅ BOQ Excel saved.")
 
@@ -2301,7 +2286,7 @@ def kmz_boq(
 ):
     program = kwargs.get("program", "N/A")
     vendor = kwargs.get("vendor", "TBG")
-    sep = kwargs.get("sep", "-")
+    sep = kwargs.get("sep", ";")
 
     lines_boq = lines_boq.copy()
     points_boq = points_boq.copy()
@@ -2353,7 +2338,7 @@ def kmz_boq(
     # -- Topology --
     try:
         logger.info(f"ℹ️ Total Point {len(points_boq)}")
-        ring = folder.split("/")[0]
+        ring = folder.split("/")[-1]
         point_conn, connection = identify_connection(
             ring=ring, target_fiber=lines_boq, target_point=points_boq
         )
@@ -2368,7 +2353,7 @@ def kmz_boq(
 
     # -- Route --
     ring_route = lines_boq.copy()
-    ring_route["length"] = ring_route.geometry.to_crs(epsg=3857).length
+    ring_route["length"] = ring_route.geometry.to_crs(epsg=4326).apply(geodesic_length)
     route_columns = ["near_end", "far_end", "geometry", "ring_name", "length"]
     ring_route = ring_route[route_columns].copy()
     ring_route["name"] = ring_route["near_end"] + sep + ring_route["far_end"]
@@ -2646,8 +2631,8 @@ def main_boq(
     points: gpd.GeoDataFrame,
     lines: gpd.GeoDataFrame,
     export_dir: str,
-    sep: str = "-",
-    operator="ioh",
+    sep: str = ";",
+    operator="xl",
     device_in_branch="ODP",
     device_in_site="OTB",
     **kwargs,
@@ -2775,14 +2760,7 @@ def main_boq(
     kmz_time = round((end_time - start_time) / 60, 2)
 
     # BOQ FORMAT RESULT
-    try:
-        start_time = time.time()
-        boq_generation(
-            kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator
-        )
-        end_time = time.time()
-    except Exception as e:
-        logger.error(f"Error in BOQ Report generation: {e}")
+    boq_generation(kmz_path=output_kmz, export_dir=boq_dir, sep=sep, operator=operator)
 
     logger.info(f"✅ All BOQ Process Done.")
     logger.info(f"ℹ️ Time Consumed:")
@@ -2795,16 +2773,16 @@ def main_boq(
 
 
 if __name__ == "__main__":
-    # kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Intersite Design_Fix Route Part 2.kmz"
-    # points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
-    # export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Debug Oneleg TSEL\Export\Debug Part 2")
+    # kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Design Submission Fiberisasi XLS-TBG Newsite_19012026.kmz"
+    # points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
+    # export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Design Submission Fiberisasi XLS-TBG Newsite_19012026")
     # os.makedirs(export_dir, exist_ok=True)
     # main_boq(
     #     points=points_kmz,
     #     lines=lines_kmz,
     #     export_dir=export_dir,
-    #     sep="-",
-    #     operator="tsel",
+    #     sep=";",
+    #     operator="xl",
     #     device_in_site="OTB",
     #     device_in_branch="ODP",
     # )
@@ -2825,8 +2803,8 @@ if __name__ == "__main__":
     #                 zipf.write(export_file_path, arcname)
     # print(f"📦 Result files zipped.")
 
-    kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\BOQ Dev\0000005197_APD IPL Fiberisasi XLSmart Newsite 2026_TBG.kmz"
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\BOQ Dev\Export")
+    kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\0000005199_APD IPL Fiberisasi Newsite TBG_2025.kmz"
+    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\\Export\0000005199_APD IPL Fiberisasi Newsite TBG_2025")
     os.makedirs(export_dir, exist_ok=True)
 
     boq_generation(kmz_ipl, export_dir=export_dir, sep=";", operator="xl")

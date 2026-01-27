@@ -137,9 +137,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
                 'geometry': point
             })
 
-    point_topology = gpd.GeoDataFrame(
-        point_topology, geometry='geometry', crs=line_gdf.crs
-    )
+    point_topology = gpd.GeoDataFrame(point_topology, geometry='geometry', crs=line_gdf.crs)
 
     # ----------------------------------------------------------------------
     # Map to nearest sitelist
@@ -174,6 +172,10 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
 
         ring_data = ring_data.sort_values("num").reset_index(drop=True)
         total_data = len(ring_data)
+        
+        for sitetype in ['FO Hub', 'Site List']:
+            if sitetype not in ring_data['site_type']:
+                raise ValueError(f"{site_type} not found in ring '{ring}'. Check your topology line or excel sheet.")
 
         for i in range(total_data - 1):
             a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
@@ -251,10 +253,10 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\SERVICE\API\test\topologi_based\FWA Central Java Sitelist.xlsx"
-    line_file = r"D:\JACOBS\SERVICE\API\test\topologi_based\FWA Central Java Topology.kml"
-    export_dir = r"D:\JACOBS\SERVICE\API\test\topologi_based\Jawa Tengah 2"
-    program = "Jawa Tengah"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Book4.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\New Ring.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Mas Denny"
+    program = "Intersite FO"
     sep=";"
     boq = False
 

@@ -10,6 +10,7 @@ import geopandas as gpd
 from bs4 import BeautifulSoup
 from shapely.geometry import Point, LineString, Polygon
 from modules.table import sanitize_header
+from modules.geometry import geodesic_length
 
 def export_kml(
     gdf,
@@ -268,7 +269,7 @@ def parse_folder(folder, parent_name=None):
     results = []
     folder_name = folder.find("name").text if folder.find("name") else "Unnamed Folder"
     folder_name = folder_name.strip()
-    full_path = f"{parent_name};{folder_name}" if parent_name else folder_name
+    full_path = f"{parent_name}>{folder_name}" if parent_name else folder_name
 
     # Parse Placemark
     for pm in folder.find_all("Placemark", recursive=False):
@@ -377,7 +378,7 @@ def read_kml(file: str):
         raise ValueError(f"Error in GeoDataFrame conversion: {e}")
 
 
-def validate_kmz_design(filepath:str, sep: str = "-"):
+def validate_kmz_design(filepath:str, sep: str = ";"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
@@ -397,14 +398,14 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     points_existing['site_id'] = (points_existing['site_id'].str.replace(r'\s*\[.*\]$', '', regex=True))
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_name'] = np.where(points_existing['site_name'].isna(), points_existing['site_id'], points_existing['site_name'])
-    points_existing['site_type'] = points_existing['folders'].str.split(";").str[-1]
+    points_existing['site_type'] = points_existing['folders'].str.split(">").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
     points_existing['long'] = round(points_existing.geometry.to_crs(epsg=4326).x, 8)
     points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 8) 
-    points_existing['ring_name'] = points_existing['folders'].str.split(";").str[-2]
+    points_existing['ring_name'] = points_existing['folders'].str.split(">").str[-2]
     points_existing['geometry'] = points_existing.geometry.force_2d()
-    points_existing['program'] = points_existing['Program'] if "Program" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Za-z0-9]{6,});')
-    points_existing['region'] = points_existing['Region'] if "Region" in points_existing.columns else points_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    points_existing['program'] = points_existing['Program'] if "Program" in points_existing.columns else points_existing['folders'].str.extract(r'>([A-Za-z0-9]{6,})>')
+    points_existing['region'] = points_existing['Region'] if "Region" in points_existing.columns else points_existing['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
     points_existing['program'] = points_existing['program'].fillna("NA")
     points_existing = points_existing.dropna(how='all', axis=1)
 
@@ -420,12 +421,12 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
     lines_existing['near_end'] = lines_existing['segment'].str.split(sep).str[0]
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
-    lines_existing['length'] = lines_existing.geometry.to_crs(epsg=3857).length
-    lines_existing['ring_name'] = lines_existing['folders'].str.split(";").str[-2]
-    lines_existing['program'] = lines_existing['Program'] if "Program" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Za-z0-9]{6,});')
-    lines_existing['region'] = lines_existing['Region'] if "Region" in lines_existing.columns else lines_existing['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    lines_existing['ring_name'] = lines_existing['folders'].str.split(">").str[-2]
+    lines_existing['program'] = lines_existing['Program'] if "Program" in lines_existing.columns else lines_existing['folders'].str.extract(r'>([A-Za-z0-9]{6,})>')
+    lines_existing['region'] = lines_existing['Region'] if "Region" in lines_existing.columns else lines_existing['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
     lines_existing['fo_note'] = 'merged'
     lines_existing['program'] = lines_existing['program'].fillna("NA")
+    lines_existing['length'] = lines_existing.geometry.apply(geodesic_length)
     lines_existing = lines_existing.dropna(how='all', axis=1)
     
     # COMPILE
@@ -460,8 +461,6 @@ def validate_kmz_design(filepath:str, sep: str = "-"):
 
 def validate_kmz_ipl(filepath:str, sep: str = "-"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
-    points_kmz.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Jawa Tengah Trial BOQ\Debug\Points.parquet")
-    lines_kmz.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\JAN\W2\BOQ Algo\Jawa Tengah Trial BOQ\Debug\Lines.parquet")
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
@@ -473,14 +472,14 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     points_data['site_id']      = points_data['name'].str.strip().astype(str)
     points_data['site_id']      = (points_data['site_id'].str.replace(r'\s*\[.*\]$', '', regex=True))
     points_data['site_name']    = points_data['Site_Name'] if "Site_Name" in points_data.columns else points_data['name']
-    points_data['site_type']    = points_data['folders'].str.split(";").str[-1]
+    points_data['site_type']    = points_data['folders'].str.split(">").str[-1]
     points_data['site_type']    = np.where(points_data['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
     points_data['long']         = round(points_data.geometry.to_crs(epsg=4326).x, 8)
     points_data['lat']          = round(points_data.geometry.to_crs(epsg=4326).y, 8)
-    points_data['ring_name']    = points_data['folders'].str.split(";").str[-2]
+    points_data['ring_name']    = points_data['folders'].str.split(">").str[-2]
     points_data['geometry']     = points_data.geometry.force_2d()
-    points_data['program']      = points_data['Program'] if "Program" in points_data.columns else points_data['folders'].str.extract(r';([A-Za-z0-9_-]{6,});')
-    points_data['region']       = points_data['Region'] if "Region" in points_data.columns else points_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    points_data['program']      = points_data['Program'] if "Program" in points_data.columns else points_data['folders'].str.extract(r'>([A-Za-z0-9_-]{6,})>')
+    points_data['region']       = points_data['Region'] if "Region" in points_data.columns else points_data['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
     points_data['program']      = points_data['program'].fillna("NA")
     points_data['region']       = points_data['region'].fillna("NA")
     points_data = points_data.dropna(how='all', axis=1)
@@ -503,14 +502,14 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     lines_data['near_end']  = lines_data['segment'].str.split(sep).str[0]
     lines_data['far_end']   = lines_data['segment'].str.split(sep).str[-1]
     lines_data['geometry']  = lines_data.geometry.force_2d()
-    lines_data['length']    = lines_data.geometry.to_crs(epsg=3857).length
-    lines_data['ring_name'] = lines_data['folders'].str.split(";").str[-2]
-    lines_data['program']   = lines_data['Program'] if "Program" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Za-z0-9_-]{6,});')
-    lines_data['region']    = lines_data['Region'] if "Region" in lines_data.columns else lines_data['folders'].str.extract(r';([A-Z0-9]{3,6});')
+    lines_data['ring_name'] = lines_data['folders'].str.split(">").str[-2]
+    lines_data['program']   = lines_data['Program'] if "Program" in lines_data.columns else lines_data['folders'].str.extract(r'>([A-Za-z0-9_-]{6,})>')
+    lines_data['region']    = lines_data['Region'] if "Region" in lines_data.columns else lines_data['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
     lines_data['fo_note']   = 'merged'
     lines_data['core']      = lines_extracted['core']
     lines_data['program']   = lines_data['program'].fillna("NA")
     lines_data['region']   = lines_data['region'].fillna("NA")
+    lines_data['length']    = lines_data.geometry.apply(geodesic_length)
     lines_data = lines_data.dropna(how='all', axis=1)
 
     # COMPILE

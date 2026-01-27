@@ -4,6 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from shapely.geometry import Point, LineString, MultiLineString, Polygon, MultiPolygon
 from shapely.ops import substring, linemerge
+from pyproj import Geod
 
 def explode_lines(gdf):
     """Explode lines into individual segments."""
@@ -450,3 +451,15 @@ def route_preprocess(gdf: gpd.GeoDataFrame, decimals: int = 12):
         edges_gdf = edges_gdf.to_crs(crs_input)
 
     return nodes_gdf, edges_gdf
+
+def geodesic_length(geom: LineString|MultiLineString):
+    geod = Geod(ellps="WGS84")
+    if geom.is_empty:
+        return 0.0
+    
+    if geom.geom_type == "LineString":
+        lons, lats = zip(*geom.coords)
+        return abs(geod.line_length(lons, lats))
+    if geom.geom_type == "MultiLineString":
+        return sum( abs(geod.line_length(*zip(*part.coords))) for part in geom.geoms)
+    return 0.0
