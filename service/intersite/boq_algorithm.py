@@ -1687,6 +1687,7 @@ def boq_generation(
     # ---------------------------
     piv_records: list[dict] = []
     boq_records: list[dict] = []
+    boq_pr_records: list[dict] = []
     recorded_segment = set()
     num = 1
     gdf_route = gdf_route.reset_index(drop=True)
@@ -1972,12 +1973,12 @@ def boq_generation(
                 "mat_fo_aerial_72_m": None,
                 "mat_fo_aerial_96_m": None,
                 "mat_fo_aerial_144_m": None,
-                "mat_fo_adss_12_m": len_cable_by_core_m.get(12, None),
+                "mat_fo_adss_12_m": len_cable_by_core_m.get(12, 0),
                 "mat_fo_adss_24_m": calc_fo_cable_m, #  len_cable_by_core_m.get(24, 100) if calc_fo_cable_m is None else 
-                "mat_fo_adss_48_m": len_cable_by_core_m.get(48, None),
-                "mat_fo_adss_72_m": len_cable_by_core_m.get(72, None),
-                "mat_fo_adss_96_m": len_cable_by_core_m.get(96, None),
-                "mat_fo_adss_144_m": len_cable_by_core_m.get(144, None),
+                "mat_fo_adss_48_m": len_cable_by_core_m.get(48, 0),
+                "mat_fo_adss_72_m": len_cable_by_core_m.get(72, 0),
+                "mat_fo_adss_96_m": len_cable_by_core_m.get(96, 0),
+                "mat_fo_adss_144_m": len_cable_by_core_m.get(144, 0),
                 "mat_fo_db_sj_12_m": None,
                 "mat_fo_db_sj_24_m": None,
                 "mat_fo_db_sj_48_m": None,
@@ -2208,14 +2209,43 @@ def boq_generation(
                 "doc_softcopy_ls": int(is_first),
                 "overlap_fo": calc_total_overlap_m,
             }
+
+            # BOQ PR Record
+            pr_record = {
+                "num": num,
+                "site_type": program if program != "NA" else "Intersite FO",
+                "stip_category": None,
+                "operator": operator.upper(),
+                "spk_wo": None,
+                "segment_type": "Segment",
+                "sonumb": None,
+                "ring_id": ring_name,
+                "segment_id": seg_name,
+                "permit": calc_permission_pu,
+                "shop_incl_pole_aerial": round(calc_svc_pulling_fo_aerial_incl_pole_m, 0),
+                "shop_excl_pole_aerial": round(len_pole_m, 0),
+                "shop_burial": calc_mat_hdpe_subduct_32_27_qty,
+                "comcase": calc_permission_pu,
+                "mat_pole_7": calc_mat_pole_fo_7m_2step_qty,
+                "mat_pole_9": calc_mat_pole_fo_9m_3step_qty,
+                "mat_cable_fo_24": calc_fo_cable_m,
+                "mat_cable_fo_96": len_cable_by_core_m.get(96, 0),
+                "mat_hdpe": calc_mat_hdpe_subduct_32_27_qty,
+                "total_e2e_dist": calc_fo_cable_m + calc_total_overlap_m,
+                "pole_exist": len_pole_m,
+            }
             
             boq_records.append(seg_record)
+            boq_pr_records.append(pr_record)
+
+            # Update Segment Info
             recorded_segment.add(seg_name)
             is_first = False
             num += 1
 
     piv_df = pd.DataFrame(piv_records)
     boq_df = pd.DataFrame(boq_records)
+    boq_pr_df = pd.DataFrame(boq_pr_records)
 
     # ---------------------------
     # Write into Excel template
@@ -2242,11 +2272,8 @@ def boq_generation(
     # PROCESS BOQ EXCEL
     # ---------------------------
     wb = load_workbook(output_path)
-    ws = wb["BOQ"]
 
-    start_data_row = 8
-    col_index = {col: num for num, col in enumerate(boq_df.columns, start=1)}
-
+    # Style
     named_style = NamedStyle(name="BOQ Row")
     side_style = Side(style="thin", border_style="thin")
     border = Border(left=side_style, right=side_style, top=side_style, bottom=side_style)
@@ -2256,11 +2283,34 @@ def boq_generation(
     if "BOQ Row" not in [s for s in wb.named_styles]:
         wb.add_named_style(named_style)
 
+    # BOQ Sheet
+    boq_sheet = wb["BOQ"]
+    start_data_row = 8
+    col_index = {col: num for num, col in enumerate(boq_df.columns, start=1)}
     for idx, record in enumerate(boq_df.to_dict("records")):
         excel_row = start_data_row + idx
 
         for key, value in record.items():
-            cell = ws.cell(
+            cell = boq_sheet.cell(
+                row = excel_row,
+                column = col_index[key],
+                value = value
+            )
+            cell.style = "BOQ Row"
+
+            if isinstance(value, (int, float)) and value is not None:
+                cell.number_format = "#,##0"
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # BOQ PR Sheet
+    boq_pr_sheet = wb["BOQ PR"]
+    start_data_row = 3
+    col_index = {col: num for num, col in enumerate(boq_pr_df.columns, start=1)}
+    for idx, record in enumerate(boq_pr_df.to_dict("records")):
+        excel_row = start_data_row + idx
+
+        for key, value in record.items():
+            cell = boq_pr_sheet.cell(
                 row = excel_row,
                 column = col_index[key],
                 value = value
@@ -2775,7 +2825,7 @@ def main_boq(
 if __name__ == "__main__":
     kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Intersite Design_Fix Route.kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Intersite Design_Fix Route Hasna")
+    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Intersite Design_Fix Route Hasna BOQ PR")
     os.makedirs(export_dir, exist_ok=True)
     main_boq(
         points=points_kmz,
