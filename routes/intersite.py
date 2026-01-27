@@ -750,8 +750,8 @@ async def implementation_intersite(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
     program: Optional[str] = Form("Implementation", description="Program name if 'program' column not provided."),
     operator: Optional[Operator] = Form(Operator.IOH, description="Operator to generate implementation KMZ algorithm."),
-    device_in_site: Optional[Operator] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
-    device_in_branch: Optional[Operator] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
 ):
     """
     Create Intersite Implementation KMZ with BOQ Report.  

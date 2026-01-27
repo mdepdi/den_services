@@ -2773,38 +2773,38 @@ def main_boq(
 
 
 if __name__ == "__main__":
-    # kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Design Submission Fiberisasi XLS-TBG Newsite_19012026.kmz"
-    # points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep=";")
-    # export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Design Submission Fiberisasi XLS-TBG Newsite_19012026")
-    # os.makedirs(export_dir, exist_ok=True)
-    # main_boq(
-    #     points=points_kmz,
-    #     lines=lines_kmz,
-    #     export_dir=export_dir,
-    #     sep=";",
-    #     operator="xl",
-    #     device_in_site="OTB",
-    #     device_in_branch="ODP",
-    # )
-
-    # # ZIPFILE
-    # zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"
-    # zip_filepath = os.path.join(export_dir, zip_filename)
-    # with zipfile.ZipFile(zip_filepath, "w", zipfile.ZIP_DEFLATED) as zipf:
-    #     for root, _, files in os.walk(export_dir):
-    #         for export_file in files:
-    #             if (
-    #                 export_file != zip_filename
-    #                 and not export_file.endswith(".zip")
-    #                 and "Checkpoint" not in export_file
-    #             ):
-    #                 export_file_path = os.path.join(root, export_file)
-    #                 arcname = os.path.relpath(export_file_path, export_dir)
-    #                 zipf.write(export_file_path, arcname)
-    # print(f"📦 Result files zipped.")
-
-    kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\0000005199_APD IPL Fiberisasi Newsite TBG_2025.kmz"
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\\Export\0000005199_APD IPL Fiberisasi Newsite TBG_2025")
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Intersite Design_Fix Route.kmz"
+    points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
+    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Intersite Design_Fix Route Hasna")
     os.makedirs(export_dir, exist_ok=True)
+    main_boq(
+        points=points_kmz,
+        lines=lines_kmz,
+        export_dir=export_dir,
+        sep="-",
+        operator="tsel",
+        device_in_site="OTB",
+        device_in_branch="ODP",
+    )
 
-    boq_generation(kmz_ipl, export_dir=export_dir, sep=";", operator="xl")
+    # ZIPFILE
+    zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_BOQ_Task.zip"
+    zip_filepath = os.path.join(export_dir, zip_filename)
+    with zipfile.ZipFile(zip_filepath, "w", zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(export_dir):
+            for export_file in files:
+                if (
+                    export_file != zip_filename
+                    and not export_file.endswith(".zip")
+                    and "Checkpoint" not in export_file
+                ):
+                    export_file_path = os.path.join(root, export_file)
+                    arcname = os.path.relpath(export_file_path, export_dir)
+                    zipf.write(export_file_path, arcname)
+    print(f"📦 Result files zipped.")
+
+    # kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\0000005199_APD IPL Fiberisasi Newsite TBG_2025.kmz"
+    # export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\\Export\0000005199_APD IPL Fiberisasi Newsite TBG_2025")
+    # os.makedirs(export_dir, exist_ok=True)
+
+    # boq_generation(kmz_ipl, export_dir=export_dir, sep=";", operator="xl")
