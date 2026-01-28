@@ -182,7 +182,7 @@ def validate_longlat(df:pd.DataFrame, lon_col="long", lat_col="lat"):
         df = df.reset_index(drop=True)
     return df
 
-def read_gdf(file: str = None, **kwargs):
+def read_gdf(file: str|pd.DataFrame = None, **kwargs):
     if isinstance(file, str):
         filename = file
         extension = filename.split(".")[-1].lower()
@@ -273,8 +273,36 @@ def read_gdf(file: str = None, **kwargs):
                 raise ValueError("Unsupported file format. Supported formats are: Parquet, GeoJSON, Shapefile, GPKG, and TAB.")
         except Exception as e:
             raise ValueError(f"Error reading file: {str(e)}")
+    elif isinstance(file, pd.DataFrame):
+        df = file.copy()
+        crs = kwargs.get("crs", "EPSG:4326")
+        long_col = kwargs.get("long_col", "long")
+        lat_col = kwargs.get("lat_col", "lat")
+        header = kwargs.get("header", 0)
+
+        long_col = find_best_match(long_col, df.columns.tolist())
+        lat_col = find_best_match(lat_col, df.columns.tolist())
+        try:
+            long_col = long_col[0]
+            lat_col = lat_col[0]
+            df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
+            gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
+            print(f"Identified long column: {long_col}, lat column: {lat_col}")
+            print(f"🟢 Read dataframe done.")
+        except Exception as e:
+            try:
+                long_col = find_best_match("longitude", df.columns.tolist(), 0.6)
+                lat_col = find_best_match("latitude", df.columns.tolist(), 0.6)
+                long_col = long_col[0]
+                lat_col = lat_col[0]
+                df = validate_longlat(df, lon_col=long_col, lat_col=lat_col)
+                gdf = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df[long_col], df[lat_col]), crs=crs)
+                print(f"Identified long column: {long_col}, lat column: {lat_col}")
+                print(f"🟢 Read dataframe done.")
+            except Exception as e:
+                raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
     else:
-        raise ValueError("File must be a string representing the file path.")
+        raise ValueError("File must be a string representing the file path or dataframe format.")
 
     return gdf
 

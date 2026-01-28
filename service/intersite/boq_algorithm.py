@@ -1630,6 +1630,9 @@ def boq_generation(
     device_in_branch: DeviceType = DeviceType.ODP,
     connector_in_site: ConnectorType = ConnectorType.SC,
     connector_in_branch: ConnectorType = ConnectorType.SC,
+    interval_pole_m: int = 80,
+    cable_percentage:int = 10,
+    program_name: str = "Intersite FO"
 ):
     def even_excel(x:float|int):
         return math.ceil(x/2) * 2
@@ -1842,7 +1845,7 @@ def boq_generation(
             # ---------------------------
             # Calculations
             # ---------------------------
-            fo_factor = 1.15 if operator.lower() == "xl" else 1.10
+            fo_factor = 1 + (cable_percentage/100)
             calc_permission_pu = math.floor(len_bb_m + len_access_m - len_pole_m + sum(len_cable_by_core_m.get(core, 0) for core in len_cable_by_core_m.keys() if int(core) != 24))
             calc_fo_cable_m = math.ceil(math.ceil(len_bb_m + len_access_m) * fo_factor / 100) * 100
             calc_closure_24_qty = qty_closure_new + (math.floor(calc_fo_cable_m / 4000) if calc_fo_cable_m >= 4000 else 0)
@@ -1851,8 +1854,8 @@ def boq_generation(
             # Material
             calc_mat_hdpe_subduct_32_27_qty = 20 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 20 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0) + 70 * qty_obs_rail
             calc_mat_gi_pipe_1p5in_qty = 3 * (qty_otb_by_core.get(24, 0) if (is_sc and is_otb) else 0) + 3 * (qty_otb_by_core.get(24, 0) if (is_fc and is_otb) else 0) + 3 * (2 * qty_obs_rail)
-            calc_mat_pole_fo_9m_3step_qty = 0 if ((calc_permission_pu / 80) < 3) else even_excel((calc_permission_pu/80) * 0.05) #=IF((S10/80)<3;0;EVEN(((S10)/80)*0,05))
-            calc_mat_pole_fo_7m_2step_qty = 0 if calc_permission_pu < 0 else even_excel(calc_permission_pu/80) - calc_mat_pole_fo_9m_3step_qty #=IF((S10)<0;0;EVEN(((S10)/70)-DV10))
+            calc_mat_pole_fo_9m_3step_qty = 0 if ((calc_permission_pu / interval_pole_m) < 3) else even_excel((calc_permission_pu / interval_pole_m) * 0.05) #=IF((S10/80)<3;0;EVEN(((S10)/80)*0,05))
+            calc_mat_pole_fo_7m_2step_qty = 0 if calc_permission_pu < 0 else even_excel(calc_permission_pu/interval_pole_m) - calc_mat_pole_fo_9m_3step_qty #=IF((S10)<0;0;EVEN(((S10)/70)-DV10))
             calc_mat_slack_support_70x70x3_qty = 1 + math.floor((calc_mat_pole_fo_7m_2step_qty + calc_mat_pole_fo_9m_3step_qty)/4) if calc_mat_pole_fo_7m_2step_qty + calc_mat_pole_fo_9m_3step_qty > 0 else 0 # =IF(SUM(DU10;DV10)>0;1+ROUNDDOWN(SUM(DU10;DV10)/4;0);0)
             
             # Services
@@ -1939,7 +1942,7 @@ def boq_generation(
             seg_record = {
                 # Segment Info
                 "no": num,
-                "site_type": program if program != "NA" else "Intersite FO",
+                "site_type": program if program != "NA" else program_name,
                 "stip_category": None,
                 "operator": operator.upper(),
                 "spk_wo": None,
@@ -2201,6 +2204,7 @@ def boq_generation(
                 "svc_install_odp_8c_sc_upc_qty": qty_odp_by_core.get(8, 0) if (is_sc and is_odp) else None,
                 "svc_install_odp_12c_sc_upc_qty": qty_odp_by_core.get(12, 0) if (is_sc and is_odp) else None,
                 "svc_install_odp_24c_sc_upc_qty": qty_odp_by_core.get(24, 0) if (is_sc and is_odp) else None,
+                "svc_install_odp_48c_sc_upc_qty": qty_odp_by_core.get(48, 0) if (is_sc and is_odp) else None,
                 "svc_install_odp_96c_sc_upc_qty": qty_odp_by_core.get(96, 0) if (is_sc and is_odp) else None,
                 "svc_support_integration_qty": 1,
                 "test_otdr_2lambda_2way_ls": calc_test_otdr_2lambda_2way_ls,

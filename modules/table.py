@@ -58,7 +58,7 @@ def sanitize_header(df:pd.DataFrame|gpd.GeoDataFrame, preview_row = 5, lowercase
     df.columns = [col.strip().replace('\n', '') for col in df.columns]
     df.columns = df.columns.str.replace("*", "")
     text_cols = df.select_dtypes(include=["object", "string"]).columns
-    df[text_cols] = df[text_cols].apply(lambda col: col.str.strip())
+    df[text_cols] = df[text_cols].apply(lambda col: col.astype(str).str.strip())
 
     # Clean duplicate columns
     duplicated_cols = df.columns[df.columns.duplicated()].tolist()

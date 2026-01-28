@@ -174,7 +174,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
         total_data = len(ring_data)
         
         for sitetype in ['FO Hub', 'Site List']:
-            if sitetype not in ring_data['site_type']:
+            if sitetype not in ring_data['site_type'].unique().tolist():
                 raise ValueError(f"{site_type} not found in ring '{ring}'. Check your topology line or excel sheet.")
 
         for i in range(total_data - 1):
@@ -253,9 +253,9 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Book4.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\New Ring.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Mas Denny"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Debug Hussein\Template_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Debug Hussein\Connection 23.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Debug Hussein\Export"
     program = "Intersite FO"
     sep=";"
     boq = False
