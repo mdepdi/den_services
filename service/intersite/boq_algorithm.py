@@ -1864,27 +1864,14 @@ def boq_generation(
             is_sc_odp = (is_sc and is_odp)
 
             calc_svc_pulling_fo_aerial_incl_pole_m = (calc_fo_cable_m + (len_cable_by_core_m.get(core_bb, 0) if core_bb != 24 else 0) - len_pole_m - calc_mat_hdpe_subduct_32_27_qty + 0 ) if (calc_fo_cable_m + (len_cable_by_core_m.get(core_bb, 0) if core_bb != 24 else 0) >= 20) else 0
-            calc_splicing_fusion = (
-                (calc_closure_24_qty + (qty_odp_by_core.get(24, 0) if is_sc_odp else 0)) * 24
-                + (qty_odp_by_core.get(48, 0) if is_sc_odp else 0) * 48
-                + (qty_odp_by_core.get(4, 0)  if is_sc_odp else 0) * 4
-                + (qty_odp_by_core.get(8, 0)  if is_sc_odp else 0) * 8
-                + (qty_odp_by_core.get(16, 0) if is_sc_odp else 0) * 16
-            )
-
-            calc_termination_fusion = sum(
-            (qty_otb_by_core.get(core, 0) if otb_factor else 0) * core
-            for core in (12, 24, 48, 96, 144, 288)
-            )
+            calc_splicing_fusion = ((calc_closure_24_qty + (qty_odp_by_core.get(24, 0) if is_sc_odp else 0)) * 24 + (qty_odp_by_core.get(48, 0) if is_sc_odp else 0) * 48 + (qty_odp_by_core.get(4, 0)  if is_sc_odp else 0) * 4 + (qty_odp_by_core.get(8, 0)  if is_sc_odp else 0) * 8 + (qty_odp_by_core.get(16, 0) if is_sc_odp else 0) * 16)
+            calc_termination_fusion = sum((qty_otb_by_core.get(core, 0) if otb_factor else 0) * core for core in (12, 24, 48, 96, 144, 288))
 
             calc_svc_splicing_fusion_qty = 24 if (calc_splicing_fusion == 0 and calc_fo_cable_m > 0) else calc_splicing_fusion
             calc_svc_termination_fusion_qty = calc_termination_fusion
             
             # Testing
-            calc_test_otdr_2lambda_2way_ls = (calc_svc_termination_fusion_qty if calc_svc_termination_fusion_qty > 0 else 96
-                                              if len_cable_by_core_m.get(96, 0) > 0 else 48
-                                              if len_cable_by_core_m.get(48, 0) > 0 else 24
-                                              )
+            calc_test_otdr_2lambda_2way_ls = (calc_svc_termination_fusion_qty if calc_svc_termination_fusion_qty > 0 else 96 if len_cable_by_core_m.get(96, 0) > 0 else 48 if len_cable_by_core_m.get(48, 0) > 0 else 24)
 
             # ---------------------------
             # Pivot record

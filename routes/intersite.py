@@ -998,35 +998,16 @@ async def implementation_intersite(
 # ================
 @router.post("/boq-intersite", tags=["Intersite"])
 async def boq_intersite(
-    ipl_file: UploadFile = File(
-        None,
-        description="Implementation file containing DEN intersite format (.kmz, .kml).",
-    ),
-    operator: Optional[Operator] = Form(
-        Operator.XL, description="Operator to generate implementation KMZ algorithm."
-    ),
-    device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
-    ),
-    device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
-    ),
-    interval_pole_m: Optional[int] = Form(
-        80, description="Interval between pole in meters"
-    ),
-    cable_percentage: Optional[int] = Form(
-        10, description="Cable percentage (%) to calculate FO cable distance"
-    ),
-    sclc_enabled: Optional[bool] = Form(
-        False, description="Set to True if SC LC enabled."
-    ),
-    connector_in_site: Optional[ConnectorType] = Form(
-        ConnectorType.SC, description="Connector to used in site"
-    ),
-    connector_in_branch: Optional[ConnectorType] = Form(
-        ConnectorType.SC, description="Connector to used in branch"
-    ),
-    program_name: Optional[str] = "Intersite FO",
+    ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml).",),
+    operator: Operator = Form(Operator.XL, description="Operator to generate implementation KMZ algorithm."),
+    program_name: Optional[str] =  Form("Intersite FO", description="Program name to write into BOQ"),
+    interval_pole_m: Optional[int] = Form(80, description="Interval between pole in meters"),
+    cable_percentage: Optional[int] = Form(10, description="Cable percentage (%) to calculate FO cable distance"),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
+    sclc_enabled: Optional[bool] = Form(False, description="Set to True if SC LC enabled."),
+    connector_in_site: Optional[ConnectorType] = Form(ConnectorType.SC, description="Connector to used in site"),
+    connector_in_branch: Optional[ConnectorType] = Form(ConnectorType.SC, description="Connector to used in branch"),
 ):
     """
     Create BOQ Report based on Implementation KMZ.
