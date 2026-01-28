@@ -413,6 +413,7 @@ def task_topology_intersite(self, data: dict):
         excel_path = parsed_data.get("excel_path")
         topology_path = parsed_data.get("topology_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
+        distance_tolerance = parsed_data.get("distance_tolerance", 500)
         boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
@@ -437,6 +438,7 @@ def task_topology_intersite(self, data: dict):
             line_file=topology_path,
             export_dir=export_loc,
             spof_threshold=spof_threshold,
+            distance_tolerance=distance_tolerance,
             program=program,
             boq=boq,
             sep=sep,

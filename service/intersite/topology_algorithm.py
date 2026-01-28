@@ -55,7 +55,7 @@ def validate_topology(excel_path:str):
         sitelist_gdf = gpd.GeoDataFrame(sitelist, geometry=sitelist_geom, crs="EPSG:4326")
     return sitelist_gdf
 
-def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vendor='TBG', program='Intersite'):
+def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, distance_tolerance:int=500, vendor='TBG', program='Intersite'):
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
 
@@ -146,7 +146,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped = gpd.sjoin_nearest(
         point_topology,
         sitelist_gdf[['site_id', 'site_name', 'region', 'centroid', 'geometry']],
-        max_distance=500,
+        max_distance=distance_tolerance,
         distance_col='dist_to_site'
     ).drop(columns='index_right')
 
@@ -182,10 +182,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
             b = ring_data.iloc[i+1].drop(['geometry', 'region', 'ring_name'])
 
             # Concatenate horizontally
-            seg = pd.concat(
-                [a.add_suffix('_a'), b.add_suffix('_b')],
-                axis=0
-            ).to_frame().T
+            seg = pd.concat([a.add_suffix('_a'), b.add_suffix('_b')], axis=0).to_frame().T
 
             seg['ring_name'] = ring
             seg['region'] = region
@@ -198,7 +195,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, vend
     mapped = mapped.reset_index(drop=True)
     return mapped_fix
 
-def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, graph_type:str="full_weighted", **kwargs):
+def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, distance_tolerance:int=500, graph_type:str="full_weighted", **kwargs):
     cable_cost = kwargs.get("cable_cost", 35000)
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
@@ -225,7 +222,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Mapping Topology to Sitelist"})
 
-    site_data = topology_algo(sitelist_gdf, line_gdf, vendor, program)
+    site_data = topology_algo(sitelist_gdf, line_gdf, distance_tolerance, vendor, program)
     site_data = sanitize_header(site_data)
     print(f"ℹ️ Total Sitelist Mapped Topology: {len(site_data):,} points")
     # site_data = validate_fixroute(site_data)
