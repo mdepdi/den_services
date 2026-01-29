@@ -549,13 +549,13 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
             print(f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ.")
     
     # COMPILE
-    existing_col = ['name', 'folder_name', 'site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
+    existing_col = ['name', 'folders', 'folder_name', 'site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
     for col in existing_col:
         if col not in points_data.columns:
             raise ValueError(f"Column {col} not detected in Existing Point Sites data.")
     points_data = points_data[existing_col]
 
-    existing_col = ['name', 'folder_name', 'segment', 'near_end', 'far_end', 'core', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
+    existing_col = ['name', 'folders', 'folder_name', 'segment', 'near_end', 'far_end', 'core', 'fo_note', 'ring_name', 'program', 'region','geometry', 'length']
     for col in existing_col:
         if col not in lines_data.columns:
             raise ValueError(f"Column {col} not detected in Existing Lines Sites data.")
@@ -641,14 +641,14 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
         [ "Closure", "ODP", "OTB"],
         default="Unknown"
     )
-    devices_data['core'] = devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-_]*(?P<core>\(?((24|48|72|96|120|144))\)?)?[\s\-]+(?P<site_id>[A-Za-z0-9\ _-]+)$", expand=True)["core"].fillna(24).astype(int)
+    devices_data['core'] = devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\-_]+(?P<core>\(?((24|48|72|96|120|144))\)?)|[\s\-_]+(?P<ext>EXT))*?[\s\-]+(?P<site_id>[A-Za-z0-9\ _-]+)$", expand=True)["core"].fillna(24).astype(int)
     devices_data['identifier'] = np.select(
         [devices_data['device_type'] == "ODP",
         devices_data['device_type'] == "OTB",
         devices_data['device_type'] == "Closure"],
         [
-            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-_]*(?P<core>\(?((24|48|72|96|120|144))\)?)?[\s\-]+(?P<site_id>[A-Za-z0-9\ _-]+)$", expand=True)["site_id"].str.strip(),
-            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\_]+(?P<ext>EXT))?[\s\-_]*(?P<core>\(?((24|48|72|96|120|144))\)?)?[\s\-]+(?P<site_id>[A-Za-z0-9\ _-]+)$", expand=True)["site_id"].str.strip(),
+            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\-_]+(?P<core>\(?((24|48|72|96|120|144))\)?)|[\s\-_]+(?P<ext>EXT))*?[\s\-]+(?P<site_id>[A-Za-z0-9\ _-]+)$", expand=True)["site_id"].str.strip(),
+            devices_data['name'].str.extract(r"(?P<device_type>ODP|OTB)(?:[\s\-_]+(?P<core>\(?((24|48|72|96|120|144))\)?)|[\s\-_]+(?P<ext>EXT))*?[\s\-]+(?P<site_id>[A-Za-z0-9\ _-]+)$", expand=True)["site_id"].str.strip(),
             devices_data['name'].str.extract(r"(?P<device_type>\w+)\s*(?P<segment>[A-Za-z0-9\ -;_]+)$", expand=True)["segment"].str.strip(),
         ],
         default=devices_data['name'].str.strip()
@@ -707,7 +707,7 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
                 if ne_line.empty and fe_line.empty:
                     print(f"Identifier  : {identifier}")
                     print(f"Device Type : {device_type}")
-                    print(f"Ring Lines \n {ring_lines[['near_end', 'far_end']]}")
+                    print(f"Ring Lines \n {ring_lines[['name', 'near_end', 'far_end', 'ring_name','folders']]}")
                     raise ValueError(f"No far end line found for device {device_name} in ring {ring}")
                 
                 first_ids = fe_line['segment'].values[0] if not fe_line.empty else ne_line['segment'].values[0]

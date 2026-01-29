@@ -353,8 +353,8 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest CMI 12 Sites.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest CMI 12 Sites"
     boq = False
     program ="Sites Direct to Station"
     spof_threshold = 3000

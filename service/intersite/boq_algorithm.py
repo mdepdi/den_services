@@ -2821,18 +2821,19 @@ def main_boq(
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\FWA Surge Batch 1 + Batch 3 V3.kmz"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Test BOQ IOH Pak Seno\20250716-H2B2NewSiteCoverage-TBG-v9 (BoQ).kmz"
     points_kmz, lines_kmz = validate_kmz_design(kmz_path, sep="-")
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Trial BOQ")
+    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Test BOQ IOH Pak Seno\H2B2 IPL BOQ")
     os.makedirs(export_dir, exist_ok=True)
     main_boq(
         points=points_kmz,
         lines=lines_kmz,
         export_dir=export_dir,
         sep="-",
-        operator="surge",
+        operator="ioh",
         device_in_site="OTB",
         device_in_branch="ODP",
+        program_name="H2B2 IPL BOQ"
     )
 
     # ZIPFILE
