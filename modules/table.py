@@ -60,6 +60,9 @@ def sanitize_header(df:pd.DataFrame|gpd.GeoDataFrame, preview_row = 5, lowercase
     text_cols = df.select_dtypes(include=["object", "string"]).columns
     df[text_cols] = df[text_cols].apply(lambda col: col.astype(str).str.strip())
 
+    if lowercase:
+        df.columns = df.columns.str.lower().str.strip().str.replace(" ", "_")
+
     # Clean duplicate columns
     duplicated_cols = df.columns[df.columns.duplicated()].tolist()
     if duplicated_cols:
@@ -80,10 +83,6 @@ def sanitize_header(df:pd.DataFrame|gpd.GeoDataFrame, preview_row = 5, lowercase
     else:
         print("No duplicate columns found.")
 
-    if lowercase:
-        df.columns = df.columns.str.lower().str.strip().str.replace(" ", "_")
-        df.columns = df.columns.drop_duplicates()
-    
     return df
 
 def detect_week(date_str):

@@ -353,10 +353,10 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Template_Fixed_Route (1).xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Fixed Route Mas Rendo"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest"
     boq = False
-    program ="Debug Fix Route"
+    program ="Sites Direct to Station"
     spof_threshold = 3000
 
 
@@ -371,7 +371,7 @@ if __name__ == "__main__":
         boq=boq,
         program=program,
         spof_threshold=spof_threshold,
-        graph_type="full_weighted"
+        graph_type="weighted_roads"
     )
     end_time = time()
     elapsed_time = end_time - start_time

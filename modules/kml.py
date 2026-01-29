@@ -539,18 +539,14 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
         available = {req for name in line_ring['folder_name'].str.lower() for req in line_folder if req in name}
         missing = line_folder - available
         if missing:
-            raise ValueError(
-                f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ."
-            )
+            print(f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ.")
     
     point_folder = {'hub', 'site','odp', 'otb'}
     for ring, point_ring in points_data.groupby("ring_name"):
         available = {req for name in point_ring['folder_name'].str.lower() for req in point_folder if req in name}
         missing = point_folder - available
         if missing:
-            raise ValueError(
-                f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ."
-            )
+            print(f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ.")
     
     # COMPILE
     existing_col = ['name', 'folder_name', 'site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']

@@ -104,7 +104,7 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
             src_geom = meta["src_geom"]
             tgt_geom = meta["tgt_geom"]
             pairs_df.at[id, 'geometry'] = result
-            print(f"🟢 Success. ID {id} from {src_geom} -> {tgt_geom}")
+            # print(f"🟢 Success. ID {id} from {src_geom} -> {tgt_geom}")
 
     route_gdf = gpd.GeoDataFrame(pairs_df, geometry="geometry", crs="EPSG:4326")
     route_gdf['distance'] = route_gdf.geometry.to_crs(epsg=3857).length

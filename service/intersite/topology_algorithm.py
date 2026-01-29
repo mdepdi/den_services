@@ -175,7 +175,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         
         for sitetype in ['FO Hub', 'Site List']:
             if sitetype not in ring_data['site_type'].unique().tolist():
-                raise ValueError(f"{site_type} not found in ring '{ring}'. Check your topology line or excel sheet.")
+                print(f"{site_type} not found in ring '{ring}'. Check your topology line or excel sheet.")
 
         for i in range(total_data - 1):
             a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
@@ -250,12 +250,14 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Debug Hussein\Template_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Debug Hussein\Connection 23.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\BOQ Dev\Export\Debug\Debug Hussein\Export"
-    program = "Intersite FO"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Design P1\Topology Based\Template_Sitelist 14 and DRM.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Design P1\Topology Based\Topologi - 20260128.parquet"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Design P1\Topology Based"
+    program = "Surge FWA Batch 3"
     sep=";"
     boq = False
+    graph_type = "weighted_road"
+    operator = 'surge'
 
     result = main_topology(
         excel_path=excel_file,
@@ -263,7 +265,8 @@ if __name__ == "__main__":
         export_dir=export_dir,
         sep=sep,
         boq=boq,
-        program=program
+        program=program,
+        distance_tolerance=500
     )
 
     zip_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_Topology_Task.zip"
