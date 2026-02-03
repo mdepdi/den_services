@@ -4,6 +4,7 @@ import os
 import tempfile
 import zipfile
 import shutil
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from json import loads, dumps
@@ -15,6 +16,7 @@ from enum import Enum
 
 from uuid import uuid4
 from datetime import datetime
+from time import time
 
 from core.config import settings
 from modules.data import read_gdf
@@ -27,7 +29,7 @@ from service.intersite.fixroute_algorithm import validate_fixroute
 from service.intersite.topology_algorithm import validate_topology
 from service.intersite.poligonized_algorithm import validate_poligonize
 from service.intersite.insert_algorithm import validate_insert
-from service.intersite.boq_algorithm import boq_generation
+from service.intersite.boq_algorithm import boq_generation, boq_mmp
 from tasks.intersite_celery import (
     task_insertring,
     task_supervised,
@@ -82,22 +84,26 @@ class Operator(str, Enum):
     SURGE = "surge"
     TSEL = "tsel"
 
+class Separator(str, Enum):
+    SEMICOLON = ";"
+    HYPHEN = "-"
 
 class RoutePreference(str, Enum):
     FIBER = "existing_fiber"
     ROAD = "weighted_road"
     SHORTEST = "shortest_route"
 
-
 class DeviceType(str, Enum):
     OTB = "OTB"
     ODP = "ODP"
-
 
 class ConnectorType(str, Enum):
     SC = "SC"
     FC = "FC"
 
+class BoQType(str, Enum):
+    INTERSITE = "intersite"
+    MMP = "mmp"
 
 # ========
 # ROUTER
@@ -172,6 +178,9 @@ async def insert_ring(
     max_distance: int = Form(
         3000, description="Maximum distance consider for insertion."
     ),
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
+    ),
     operator: Optional[Operator] = Form(
         Operator.IOH,
         description="Operator to define separator of near end far end from 'Route' folders.",
@@ -186,24 +195,10 @@ async def insert_ring(
     **Note:**
     - KMZ Data should be formatted as DEN intersite design rules.
     - Make sure the latitude and longitude is not reversed.
-
-    Separator:
-        - IOH Operator  : Separator will be '-'
-        - XL Operator   : Separator will be ';'
     """
     date_today = datetime.now().strftime("%Y%m%d")
     upload_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Insert Ring")
     os.makedirs(upload_dir, exist_ok=True)
-
-    # Operator
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     kmz_suffix = os.path.splitext(kmz_design.filename)[1].lower()
     if kmz_suffix not in [".kmz", ".kml"]:
@@ -239,7 +234,7 @@ async def insert_ring(
             "max_member": max_member,
             "max_distance": max_distance,
             "operator": operator,
-            "sep": sep,
+            "sep": separator,
         }
     )
 
@@ -264,8 +259,8 @@ async def supervised_ring(
     program: str = Form("Fiberization", description="Program name if needed."),
     boq: bool = Form(False, description="Output file to choose"),
     operator: Optional[Operator] = Form(Operator.XL, description="Operator company"),
-    sep: Optional[str] = Form(
-        ";", description="Separator of near end far end from 'Route' folders"
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
@@ -297,22 +292,11 @@ async def supervised_ring(
     - Each ring name must be on the same region.
     - Flag define the start hub or end hub.
     - Make sure the latitude and longitude is not reversed.
-
-    Separator:
-        - IOH Operator  : Separator will be '-'
-        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
     if excel_file is None:
         return {"error": "Excel file is required."}
-
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
 
     match route_preference:
         case RoutePreference.FIBER:
@@ -323,7 +307,7 @@ async def supervised_ring(
             graph_type = "route"
 
     print(f"ℹ️ Operator          : {operator}")
-    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -356,7 +340,7 @@ async def supervised_ring(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep,
+            "sep": separator,
             "graph_type": graph_type,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
@@ -392,6 +376,9 @@ async def unsupervised_ring(
         Operator.IOH,
         description="Operator to define separator of near end far end from 'Route' folders.",
     ),
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
+    ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
     ),
@@ -413,10 +400,6 @@ async def unsupervised_ring(
     - Hubs should containing 'FO Hub' for interconnection source.
     - Each ring name must be on the same region.
     - Make sure the latitude and longitude is not reversed.
-
-    Separator:
-        - IOH Operator  : Separator will be '-'
-        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
@@ -429,13 +412,6 @@ async def unsupervised_ring(
     )
     os.makedirs(unsupervised_upload, exist_ok=True)
 
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
@@ -445,7 +421,7 @@ async def unsupervised_ring(
             graph_type = "route"
 
     print(f"ℹ️ Operator          : {operator}")
-    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
@@ -497,7 +473,7 @@ async def unsupervised_ring(
             "program": program,
             "spof_threshold": spof_threshold,
             "boq": boq,
-            "sep": sep,
+            "sep": separator,
             "graph_type": graph_type,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
@@ -527,6 +503,9 @@ async def fixroute_ring(
     operator: Optional[Operator] = Form(
         Operator.IOH,
         description="Operator to define separator of near end far end from 'Route' folders.",
+    ),
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
@@ -560,13 +539,6 @@ async def fixroute_ring(
     fixroute_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Fix Route")
     os.makedirs(fixroute_upload, exist_ok=True)
 
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
@@ -576,7 +548,7 @@ async def fixroute_ring(
             graph_type = "route"
 
     print(f"ℹ️ Operator          : {operator}")
-    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
@@ -601,7 +573,7 @@ async def fixroute_ring(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep,
+            "sep": separator,
             "graph_type": graph_type,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
@@ -636,6 +608,9 @@ async def polygon_intersite(
         Operator.IOH,
         description="Operator to define separator of near end far end from 'Route' folders.",
     ),
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
+    ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
     ),
@@ -658,10 +633,6 @@ async def polygon_intersite(
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
-
-    Separator:
-        - IOH Operator  : Separator will be '-'
-        - XL Operator   : Separator will be ';'
     """
 
     # Read Excel file
@@ -677,13 +648,6 @@ async def polygon_intersite(
     except Exception as e:
         return {"error": f"Failed to read Excel file: {str(e)}"}
 
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-
     match route_preference:
         case RoutePreference.FIBER:
             graph_type = "full_weighted"
@@ -693,7 +657,7 @@ async def polygon_intersite(
             graph_type = "route"
 
     print(f"ℹ️ Operator          : {operator}")
-    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
@@ -737,7 +701,7 @@ async def polygon_intersite(
             "spof_threshold": spof_threshold,
             "program": program,
             "boq": boq,
-            "sep": sep,
+            "sep": separator,
             "graph_type": graph_type,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
@@ -774,6 +738,9 @@ async def topology_intersite(
         Operator.IOH,
         description="Operator to define separator of near end far end from 'Route' folders.",
     ),
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
+    ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
     ),
@@ -796,18 +763,7 @@ async def topology_intersite(
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
-
-    Separator:
-        - IOH Operator  : Separator will be '-'
-        - XL Operator   : Separator will be ';'
     """
-
-    # Process data
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
 
     match route_preference:
         case RoutePreference.FIBER:
@@ -818,7 +774,7 @@ async def topology_intersite(
             graph_type = "route"
 
     print(f"ℹ️ Operator          : {operator}")
-    print(f"ℹ️ Separator         : {sep}")
+    print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
     # Read Excel file
@@ -877,7 +833,7 @@ async def topology_intersite(
             "distance_tolerance": distance_tolerance,
             "program": program,
             "boq": boq,
-            "sep": sep,
+            "sep": separator,
             "graph_type": graph_type,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
@@ -908,6 +864,9 @@ async def implementation_intersite(
     operator: Optional[Operator] = Form(
         Operator.IOH, description="Operator to generate implementation KMZ algorithm."
     ),
+    separator: Separator = Form(
+        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
+    ),
     device_in_site: Optional[DeviceType] = Form(
         DeviceType.OTB, description="Device to place in site, if BOQ is True."
     ),
@@ -921,24 +880,12 @@ async def implementation_intersite(
 
     **Input Design Sample**
     [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
-
-    **Note:**
-    - IOH Operator  : Separator will be '-'
-    - XL Operator   : Separator will be ';'
     """
 
     date_today = datetime.now().strftime("%Y%m%d")
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -947,7 +894,7 @@ async def implementation_intersite(
             tmp_fiber_path = tmp_fiber.name
 
         if suffix in [".kml", ".kmz"]:
-            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=sep)
+            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=separator)
         else:
             return {
                 "error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."
@@ -970,7 +917,7 @@ async def implementation_intersite(
             "lines_path": lines_path,
             "program": program,
             "operator": operator,
-            "sep": sep,
+            "sep": separator,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
         }
@@ -994,9 +941,11 @@ async def implementation_intersite(
 async def boq_intersite(
     ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml).",),
     operator: Operator = Form(Operator.XL, description="Operator to generate implementation KMZ algorithm."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
     program_name: Optional[str] =  Form("Intersite FO", description="Program name to write into BOQ"),
     interval_pole_m: Optional[int] = Form(80, description="Interval between pole in meters"),
     cable_percentage: Optional[int] = Form(10, description="Cable percentage (%) to calculate FO cable distance"),
+    cable_multiplier: Optional[int] = Form(1, description="Multiplier for calculate FO cable distance"),
     device_in_site: Optional[DeviceType] = Form(DeviceType.OTB, description="Device to place in site, if BOQ is True."),
     device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch, if BOQ is True."),
     sclc_enabled: Optional[bool] = Form(False, description="Set to True if SC LC enabled."),
@@ -1009,24 +958,12 @@ async def boq_intersite(
 
     **Input KMZ Implementation Sample**
     [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Implementation_Sample.kmz)
-
-    **Note:**
-    - IOH Operator  : Separator will be '-'
-    - XL Operator   : Separator will be ';'
     """
 
     date_today = datetime.now().strftime("%Y%m%d")
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
-    match operator:
-        case "xl":
-            sep = ";"
-        case _:
-            sep = "-"
-
-    print(f"ℹ️ Operator  : {operator}")
-    print(f"ℹ️ Separator : {sep}")
 
     suffix = os.path.splitext(ipl_file.filename)[1].lower()
     filename = os.path.splitext(ipl_file.filename)[0]
@@ -1042,27 +979,128 @@ async def boq_intersite(
         shutil.copyfileobj(ipl_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
 
-    extracted_ipl = validate_kmz_ipl(kmz_path, sep=sep)
+    extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator)
     if extracted_ipl is not None:
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
         os.makedirs(export_loc, exist_ok=True)
 
         try:
+            start_time = time.time()
+            print(f"ℹ️ BOQ Generation Task Started")
             boq_generation(
-                kmz_path=kmz_path,
-                export_dir=export_loc,
-                sep=sep,
-                operator=operator,
-                interval_pole_m=interval_pole_m,
-                cable_percentage=cable_percentage,
-                sclc_enabled=sclc_enabled,
-                device_in_site=device_in_site,
-                device_in_branch=device_in_branch,
-                connector_in_site=connector_in_site,
-                connector_in_branch=connector_in_branch,
-                program_name=program_name,
+                kmz_path=kmz_path, 
+                export_dir=export_loc, 
+                sep=separator, 
+                operator=operator,  
+                interval_pole_m = interval_pole_m,
+                cable_percentage = cable_percentage,
+                sclc_enabled = sclc_enabled,
+                device_in_site = device_in_site,
+                device_in_branch = device_in_branch,
+                connector_in_site = connector_in_site,
+                connector_in_branch = connector_in_branch,
+                program_name = program_name
             )
+            end_time = time.time()
+            excel_time = round((end_time - start_time) / 60, 2)
+            print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
+            print(f"✅ All BOQ Process Done.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
+
+        try:
+            out_base = f"BOQ_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
+            zip_path = os.path.join(export_loc, f"{out_base}.zip")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                for root, _, files in os.walk(export_loc):
+                    for export_file in files:
+                        if export_file.endswith(".zip") or "Checkpoint" in export_file:
+                            continue
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
+            print(f"📦 Result files zipped.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
+
+        # --- FileResponse ---
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename=os.path.basename(zip_path),
+        )
+
+@router.post("/boq-mmp", tags=["Intersite"])
+async def boq_mmp(
+    ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml).",),
+    operator: Operator = Form(Operator.XL, description="Operator to generate implementation KMZ algorithm."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    program_name: Optional[str] =  Form("Intersite FO", description="Program name to write into BOQ"),
+    interval_pole_m: Optional[int] = Form(60, description="Interval between pole in meters"),
+    cable_percentage: Optional[int] = Form(15, description="Cable percentage (%) to calculate FO cable distance"),
+    cable_multiplier: Optional[int] = Form(2, description="Multiplier for calculate FO cable distance"),
+    device_in_site: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in site."),
+    device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch."),
+    sclc_enabled: Optional[bool] = Form(False, description="Set to True if SC LC enabled."),
+    connector_in_site: Optional[ConnectorType] = Form(ConnectorType.SC, description="Connector to used in site"),
+    connector_in_branch: Optional[ConnectorType] = Form(ConnectorType.SC, description="Connector to used in branch"),
+):
+    """
+    Create MMP BOQ Report based on Implementation KMZ.
+    KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List', 'Route Backbone', 'Route Akses', 'Pole Eksisting', 'FO Existing', and so on].
+
+    **Input KMZ Implementation Sample**
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Implementation_Sample.kmz)
+    """
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
+    os.makedirs(boq_upload, exist_ok=True)
+
+
+    suffix = os.path.splitext(ipl_file.filename)[1].lower()
+    filename = os.path.splitext(ipl_file.filename)[0]
+
+    if suffix not in [".kml", ".kmz"]:
+        return {"error": f"Unsupported format: {suffix}"}
+
+    kmz_path = os.path.join(
+        boq_upload,
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}{suffix}",
+    )
+    with open(kmz_path, "wb") as buffer:
+        shutil.copyfileobj(ipl_file.file, buffer)
+        print(f"ℹ️ File copied into local storage.")
+
+    extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator)
+    if extracted_ipl is not None:
+        date_today = datetime.now().strftime("%Y%m%d")
+        export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        os.makedirs(export_loc, exist_ok=True)
+
+        try:
+            start_time = time.time()
+            print(f"ℹ️ BOQ MMP Task Started")
+            boq_mmp(
+                kmz_path=kmz_path, 
+                export_dir=export_loc, 
+                sep=separator, 
+                operator=operator,  
+                interval_pole_m = interval_pole_m,
+                cable_percentage = cable_percentage,
+                cable_multiplier = cable_multiplier,
+                sclc_enabled = sclc_enabled,
+                device_in_site = device_in_site,
+                device_in_branch = device_in_branch,
+                connector_in_site = connector_in_site,
+                connector_in_branch = connector_in_branch,
+                program_name = program_name
+            )
+            end_time = time.time()
+            excel_time = round((end_time - start_time) / 60, 2)
+            print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
+            print(f"✅ All BOQ MMP Process Done.")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
 

@@ -250,14 +250,14 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Design P1\Topology Based\Template_Sitelist 14 and DRM.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Design P1\Topology Based\Topologi - 20260128.parquet"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Design P1\Topology Based"
-    program = "Surge FWA Batch 3"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\ASIAN TELCOM\Sample Data\Intersite\Banten_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\ASIAN TELCOM\Sample Data\Intersite\Banten Topology 12122025.kml"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\ASIAN TELCOM\Sample Data\Intersite\Banten_Topology_Based"
+    program = "Sample Topologi Data"
     sep=";"
     boq = False
     graph_type = "weighted_road"
-    operator = 'surge'
+    operator = 'ioh'
 
     result = main_topology(
         excel_path=excel_file,
