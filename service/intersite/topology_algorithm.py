@@ -89,7 +89,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     # ----------------------------------------------------------------------
     point_topology = []
     if 'name' in line_gdf.columns:
-        is_unique_id = line_gdf['name'].is_unique()
+        is_unique_id = line_gdf['name'].is_unique
         if is_unique_id:
             logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
             line_gdf['ring_name'] = line_gdf['name']
