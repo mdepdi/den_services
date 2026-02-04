@@ -92,6 +92,7 @@ class RoutePreference(str, Enum):
     FIBER = "existing_fiber"
     ROAD = "weighted_road"
     SHORTEST = "shortest_route"
+    SURGE_763 = "surge_763"
 
 class DeviceType(str, Enum):
     OTB = "OTB"
@@ -101,9 +102,14 @@ class ConnectorType(str, Enum):
     SC = "SC"
     FC = "FC"
 
+class IPLRoute(str, Enum):
+    EXISTING_FIBER = "existing_fiber"
+    SURGE_763 = "surge_763"
+
 class BoQType(str, Enum):
     INTERSITE = "intersite"
     MMP = "mmp"
+
 
 # ========
 # ROUTER
@@ -303,6 +309,8 @@ async def supervised_ring(
             graph_type = "full_weighted"
         case RoutePreference.ROAD:
             graph_type = "weighted_road"
+        case RoutePreference.SURGE_763:
+            graph_type = "surge_763"
         case _:
             graph_type = "route"
 
@@ -417,6 +425,8 @@ async def unsupervised_ring(
             graph_type = "full_weighted"
         case RoutePreference.ROAD:
             graph_type = "weighted_road"
+        case RoutePreference.SURGE_763:
+            graph_type = "surge_763"
         case _:
             graph_type = "route"
 
@@ -544,6 +554,8 @@ async def fixroute_ring(
             graph_type = "full_weighted"
         case RoutePreference.ROAD:
             graph_type = "weighted_road"
+        case RoutePreference.SURGE_763:
+            graph_type = "surge_763"
         case _:
             graph_type = "route"
 
@@ -653,6 +665,8 @@ async def polygon_intersite(
             graph_type = "full_weighted"
         case RoutePreference.ROAD:
             graph_type = "weighted_road"
+        case RoutePreference.SURGE_763:
+            graph_type = "surge_763"
         case _:
             graph_type = "route"
 
@@ -770,6 +784,8 @@ async def topology_intersite(
             graph_type = "full_weighted"
         case RoutePreference.ROAD:
             graph_type = "weighted_road"
+        case RoutePreference.SURGE_763:
+            graph_type = "surge_763"
         case _:
             graph_type = "route"
 
@@ -873,6 +889,9 @@ async def implementation_intersite(
     device_in_branch: Optional[DeviceType] = Form(
         DeviceType.ODP, description="Device to place in branch, if BOQ is True."
     ),
+    ipl_route: Optional[IPLRoute] = Form(
+        IPLRoute.EXISTING_FIBER, description="Route preference to identify as existing fiber."
+    )
 ):
     """
     Create Intersite Implementation KMZ with BOQ Report.
@@ -917,6 +936,7 @@ async def implementation_intersite(
             "lines_path": lines_path,
             "program": program,
             "operator": operator,
+            "ipl_route": ipl_route,
             "sep": separator,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,

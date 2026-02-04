@@ -484,9 +484,9 @@ def task_topology_intersite(self, data: dict):
         print(f"Exception occurred during Topology Based fiberization processing: {str(e)}")
         raise e
 
-# TASK BOQ
-@celery_app.task(name="tasks.heavy.boq_intersite", bind=True, max_retries=1, default_retry_delay=60)
-def task_boq(self, data: dict):
+# TASK IMPLEMENTATION
+@celery_app.task(name="tasks.heavy.implementation_intersite", bind=True, max_retries=1, default_retry_delay=60)
+def task_ipl(self, data: dict):
     try:
         print(f"🌏 Celery Fiberization | BOQ Task Started | Task ID: {self.request.id}")
         parsed_data:dict = loads(data)
@@ -494,6 +494,8 @@ def task_boq(self, data: dict):
         lines_path = parsed_data.get("lines_path")
         program = parsed_data.get("program", "BOQ")
         operator = parsed_data.get("operator", "ioh")
+        boq_type = parsed_data.get("boq_type", "intersite")
+        ipl_route = parsed_data.get("ipl_route", "existing_fiber")
         vendor = parsed_data.get("vendor", "TBG")
         sep = parsed_data.get("sep", "-")
         device_in_site = parsed_data.get("device_in_site", "OTB")
@@ -520,6 +522,8 @@ def task_boq(self, data: dict):
             export_dir=export_loc,
             sep=sep,
             operator=operator,
+            boq_type=boq_type,
+            ipl_route=ipl_route,
             program=program,
             vendor=vendor,
             device_in_site=device_in_site,

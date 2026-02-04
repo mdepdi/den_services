@@ -10,8 +10,10 @@ from time import time
 from shapely.geometry import Point
 from shapely.ops import linemerge
 from tqdm import tqdm
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 from service.intersite.boq_algorithm import main_boq
 from service.intersite.fixroute_algorithm import main_fixroute, validate_fixroute

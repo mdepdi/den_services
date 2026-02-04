@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 import geopandas as gpd
 import networkx as nx
@@ -152,7 +153,7 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
 
     Args:
         roads_gdf (GeoDataFrame): GeoDataFrame containing road geometries.
-        graph_type (str): Type of graph to build. Options are ['route', 'fiber', 'full_fiber', 'weighted_road', 'full_weighted'].
+        graph_type (str): Type of graph to build. Options are ['route', 'fiber', 'full_fiber', 'weighted_road', 'full_weighted', 'surge_763'].
         cable_cost(int, optional): Cost of cable to build. Defaults to 35000.
 
     Returns:
@@ -178,10 +179,23 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
     if ref_fo is None:
         ref_fo = set()
         if graph_type != "route":
+            
             if "ref_fo" not in roads_gdf:
                 raise ValueError("Reference FO column ('ref_fo') is required.")
-            ref_fo = set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_start']) | set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_end'])
             
+            if graph_type == "surge_763":
+                print(f"ℹ️ Build graph using Surge 763")
+                fo_763 = gpd.read_parquet(f"{DATA_DIR}/FO Surge 763 Surge.parquet")
+                roads_gdf = roads_gdf.to_crs(epsg=3857)
+                fo_763 = fo_763.to_crs(epsg=3857)
+                fo_763['geometry'] = fo_763.geometry.buffer(20)
+                
+                isec_fo = gpd.sjoin(roads_gdf, fo_763[['geometry']], how="inner").drop(columns='index_right')
+                roads_gdf['ref_fo'] = np.where(roads_gdf.index.isin(isec_fo.index), 1, 0)
+                ref_fo = set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_start']) | set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_end'])
+            else:
+                ref_fo = set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_start']) | set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_end'])
+
     # BASE WEIGHT
     if graph_type in ["weighted_road", "full_weighted"]:
         roads_gdf = roads_gdf.drop(columns='road_weight')

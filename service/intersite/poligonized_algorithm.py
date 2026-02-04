@@ -10,7 +10,10 @@ from time import time
 from shapely.ops import linemerge
 from tqdm import tqdm
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 from service.intersite.boq_algorithm import main_boq
 from service.intersite.ring_algorithm import supervised_validation, main_supervised

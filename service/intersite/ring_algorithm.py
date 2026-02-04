@@ -16,8 +16,10 @@ import math
 import random
 import zipfile
 import sys
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 from time import time
 from datetime import datetime

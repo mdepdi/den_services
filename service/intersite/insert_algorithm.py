@@ -12,8 +12,10 @@ from shapely.ops import linemerge, unary_union
 from tqdm import tqdm
 from shapely.ops import substring
 from shapely.geometry import Point, LineString, MultiLineString, GeometryCollection
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 from modules.table import sanitize_header, excel_styler
 from modules.data import read_gdf, validate_longlat

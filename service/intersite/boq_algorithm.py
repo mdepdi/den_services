@@ -24,8 +24,10 @@ from openpyxl import load_workbook
 from openpyxl.formula.translate import Translator
 from openpyxl.styles import NamedStyle, Border, Side, Font, Alignment
 from enum import Enum
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 from modules.kml import export_kml, sanitize_kml, validate_kmz_design, validate_kmz_ipl
 from modules.table import excel_styler
@@ -40,7 +42,6 @@ DATA_DIR = settings.DATA_DIR
 # LOGGER
 # ------------------------------------------------------
 from core.logger import create_logger
-
 logger = create_logger(__file__)
 
 
@@ -66,6 +67,9 @@ class BoQType(str, Enum):
     INTERSITE = "intersite"
     MMP = "mmp"
 
+class IPLRoute(str, Enum):
+    EXISTING_FIBER = "existing_fiber"
+    SURGE_763 = "surge_763"
 
 def detect_turn(
     nodes_gdf: gpd.GeoDataFrame,
@@ -489,7 +493,7 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):
 
 
 def bill_of_quantity(
-    points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-", operator: str = None
+    points: gpd.GeoDataFrame, lines: gpd.GeoDataFrame, sep="-", operator: str = None, ipl_route: str = IPLRoute.EXISTING_FIBER
 ):
     import shapely
     from shapely.ops import split, snap, linemerge
@@ -501,7 +505,12 @@ def bill_of_quantity(
     # =============================
     # LOAD FO REFERENCE GEOMETRY
     # =============================
-    fo_route_path = rf"{DATA_DIR}/FO TBG Only_01062025.parquet"
+    match ipl_route:
+        case IPLRoute.SURGE_763:
+            fo_route_path = rf"{DATA_DIR}/FO Surge 763 Surge.parquet"
+        case _:
+            fo_route_path = rf"{DATA_DIR}/FO TBG Only_01062025.parquet"
+
     fo_route = gpd.read_parquet(fo_route_path)
     fo_route = fo_route.to_crs(epsg=3857)
     fo_route.columns = fo_route.columns.str.lower()
@@ -732,9 +741,7 @@ def bill_of_quantity(
     fo_route_clip["geometry"] = fo_route_clip.geometry.buffer(30)
 
     _ = substring_overlay(lines, fo_route_clip)
-    existing_route = gpd.overlay(
-        lines, fo_route_clip, how="intersection", keep_geom_type=True
-    )
+    existing_route = gpd.overlay(lines, fo_route_clip, how="intersection", keep_geom_type=True)
 
     lines["fo_exist"] = [{} for _ in range(len(lines))]
     lines["pole_exist"] = [{} for _ in range(len(lines))]
@@ -829,7 +836,7 @@ def bill_of_quantity(
 
 
 def parallel_boq(
-    points_gdf: gpd.GeoDataFrame, lines_gdf: gpd.GeoDataFrame, operator: str, **kwargs
+    points_gdf: gpd.GeoDataFrame, lines_gdf: gpd.GeoDataFrame, operator: str, ipl_route: str = IPLRoute.EXISTING_FIBER, **kwargs
 ):
     ringlist = set(points_gdf["ring_name"])
     task_celery = kwargs.get("task_celery", False)
@@ -845,9 +852,7 @@ def parallel_boq(
         for ring in ringlist:
             points_ring = points_gdf[points_gdf["ring_name"] == ring].copy()
             lines_ring = lines_gdf[lines_gdf["ring_name"] == ring].copy()
-            future = executor.submit(
-                bill_of_quantity, points_ring, lines_ring, sep=sep, operator=operator
-            )
+            future = executor.submit(bill_of_quantity, points_ring, lines_ring, sep=sep, operator=operator, ipl_route=ipl_route)
             futures[future] = ring
 
         points_compiled = []
@@ -1410,9 +1415,7 @@ def excel_boq(
     # available_col = [col for col in used_columns.keys() if col in points_boq.columns]
 
     # -- Sitelist & Hub --
-    sitelist = points_boq[
-        points_boq["site_type"].str.lower().str.contains("site")
-    ].copy()
+    sitelist = points_boq[points_boq["site_type"].str.lower().str.contains("site")].copy()
     hubs = points_boq[points_boq["site_type"].str.lower().str.contains("hub")].copy()
 
     # sitelist = sitelist[available_col].rename(columns=used_columns)
@@ -3079,6 +3082,7 @@ def main_boq(
     sep: str = ";",
     operator= Operator.XL,
     boq_type: BoQType = BoQType.INTERSITE,
+    ipl_route: str = IPLRoute.EXISTING_FIBER,
     interval_pole_m: int = 80,
     cable_percentage: int = 10,
     cable_multiplier: int = 1,
@@ -3099,7 +3103,7 @@ def main_boq(
 
     start_time = time.time()
     points_boq, lines_boq = parallel_boq(
-        points, lines, sep=sep, operator=operator, task_celery=task_celery
+        points, lines, sep=sep, operator=operator, ipl_route=ipl_route, task_celery=task_celery
     )
 
     # EXPORT
@@ -3259,6 +3263,7 @@ if __name__ == "__main__":
     export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\MMP BOQ\MMP XLS Batch 6 - SOKKA")
     sep= ";"
     boq_type = "mmp"
+    ipl_route = IPLRoute.EXISTING_FIBER
     operator = "tsel"
 
     match boq_type:
@@ -3289,6 +3294,7 @@ if __name__ == "__main__":
         sep=sep,
         operator=operator,
         boq_type=boq_type,
+        ipl_route=ipl_route,
         interval_pole_m=interval_pole_m,
         cable_percentage=cable_percentage,
         cable_multiplier=cable_multiplier,

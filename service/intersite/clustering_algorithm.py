@@ -27,7 +27,10 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 from itertools import permutations
 from modules.data import validate_longlat
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 # ------------------------------------------------------
 # LOGGER
