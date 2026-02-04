@@ -37,7 +37,7 @@ from tasks.intersite_celery import (
     task_fixroute,
     task_polygon_intersite,
     task_topology_intersite,
-    task_boq,
+    task_ipl,
 )
 
 # EXPORT DIR
@@ -943,7 +943,7 @@ async def implementation_intersite(
         }
 
         data = dumps(data, default=str)
-        celery_task = task_boq.apply_async(args=[data])
+        celery_task = task_ipl.apply_async(args=[data])
 
         return {
             "message": "Implementation KMZ and BOQ Report task has been initiated.",
