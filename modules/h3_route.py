@@ -211,9 +211,6 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
             case "fiber":
                 weight = row.length * (10000 if identified_fo else cable_cost)
 
-            case "surge_763":
-                weight = row.length * (10000 if identified_fo else cable_cost)
-
             case "full_fiber":
                 weight = row.length * (100 if identified_fo else cable_cost)
 
@@ -226,6 +223,9 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
                 base_weight = row.road_weight
                 build_charge = row.build_charge if avoid_railway else 0
                 weight = row.length * (10000 if identified_fo else cable_cost) * base_weight + build_charge
+
+            case "surge_763":
+                weight = row.length * (10000 if identified_fo else cable_cost)
 
             case _:
                 weight = row.length
