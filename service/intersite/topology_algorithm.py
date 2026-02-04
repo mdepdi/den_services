@@ -88,6 +88,11 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     # Extract topology points
     # ----------------------------------------------------------------------
     point_topology = []
+    if 'name' in line_gdf.columns:
+        is_unique_id = line_gdf['name'].is_unique()
+        if is_unique_id:
+            logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
+            line_gdf['ring_name'] = line_gdf['name']
 
     for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
