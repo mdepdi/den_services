@@ -189,7 +189,7 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
                 roads_gdf = roads_gdf.to_crs(epsg=3857)
                 fo_763 = fo_763.to_crs(epsg=3857)
                 fo_763['geometry'] = fo_763.geometry.buffer(20)
-                
+
                 isec_fo = gpd.sjoin(roads_gdf, fo_763[['geometry']], how="inner").drop(columns='index_right')
                 roads_gdf['ref_fo'] = np.where(roads_gdf.index.isin(isec_fo.index), 1, 0)
                 ref_fo = set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_start']) | set(roads_gdf[roads_gdf["ref_fo"] == 1]['node_end'])
@@ -209,6 +209,9 @@ def build_graph(roads_gdf:gpd.GeoDataFrame, graph_type="route", cable_cost=35000
         
         match graph_type:
             case "fiber":
+                weight = row.length * (10000 if identified_fo else cable_cost)
+
+            case "surge_763":
                 weight = row.length * (10000 if identified_fo else cable_cost)
 
             case "full_fiber":
