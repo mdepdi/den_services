@@ -253,7 +253,6 @@ async def insert_ring(
         "task_status_url": f"/tasks/status/{celery_task.id}",
     }
 
-
 # =============================
 # NEW RING
 # =============================
@@ -263,19 +262,11 @@ async def supervised_ring(
     excel_file: UploadFile = File(None, description="Excel file containing ring data."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
-    boq: bool = Form(False, description="Output file to choose"),
-    operator: Optional[Operator] = Form(Operator.XL, description="Operator company"),
     separator: Separator = Form(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
-    device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
-    ),
-    device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
     ),
 ):
     """
@@ -314,7 +305,6 @@ async def supervised_ring(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Operator          : {operator}")
     print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
@@ -347,11 +337,8 @@ async def supervised_ring(
             "site_path": temp_parquet_path,
             "spof_threshold": spof_threshold,
             "program": program,
-            "boq": boq,
             "sep": separator,
             "graph_type": graph_type,
-            "device_in_site": device_in_site,
-            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_supervised.apply_async(args=[data])
@@ -379,22 +366,11 @@ async def unsupervised_ring(
     drop_existings: bool = Form(
         False, description="Drop ring if not conatining new site."
     ),
-    boq: bool = Form(False, description="Output file to choose"),
-    operator: Optional[Operator] = Form(
-        Operator.IOH,
-        description="Operator to define separator of near end far end from 'Route' folders.",
-    ),
     separator: Separator = Form(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
-    device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
-    ),
-    device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
     ),
 ):
     """
@@ -430,7 +406,6 @@ async def unsupervised_ring(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Operator          : {operator}")
     print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
@@ -482,11 +457,8 @@ async def unsupervised_ring(
             "drop_existings": drop_existings,
             "program": program,
             "spof_threshold": spof_threshold,
-            "boq": boq,
             "sep": separator,
             "graph_type": graph_type,
-            "device_in_site": device_in_site,
-            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_unsupervised.apply_async(args=[data])
@@ -509,22 +481,11 @@ async def fixroute_ring(
     ),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form(None, description="Program name if not defined"),
-    boq: Optional[bool] = Form(False, description="Output file to choose"),
-    operator: Optional[Operator] = Form(
-        Operator.IOH,
-        description="Operator to define separator of near end far end from 'Route' folders.",
-    ),
     separator: Separator = Form(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
-    device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
-    ),
-    device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
     ),
 ):
     """
@@ -559,7 +520,6 @@ async def fixroute_ring(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Operator          : {operator}")
     print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
@@ -584,11 +544,8 @@ async def fixroute_ring(
             "template_path": excel_path,
             "spof_threshold": spof_threshold,
             "program": program,
-            "boq": boq,
             "sep": separator,
             "graph_type": graph_type,
-            "device_in_site": device_in_site,
-            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_fixroute.apply_async(args=[data])
@@ -615,22 +572,11 @@ async def polygon_intersite(
     program: Optional[str] = Form(
         "Fiberization", description="Program name if needed."
     ),
-    boq: Optional[bool] = Form(False, description="Output file to choose"),
-    operator: Optional[Operator] = Form(
-        Operator.IOH,
-        description="Operator to define separator of near end far end from 'Route' folders.",
-    ),
     separator: Separator = Form(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
-    device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
-    ),
-    device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
     ),
 ):
     """
@@ -670,7 +616,6 @@ async def polygon_intersite(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Operator          : {operator}")
     print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
@@ -714,11 +659,8 @@ async def polygon_intersite(
             "polygon_path": polygon_path,
             "spof_threshold": spof_threshold,
             "program": program,
-            "boq": boq,
             "sep": separator,
             "graph_type": graph_type,
-            "device_in_site": device_in_site,
-            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_polygon_intersite.apply_async(args=[data])
@@ -747,22 +689,11 @@ async def topology_intersite(
     program: Optional[str] = Form(
         "Fiberization", description="Program name if needed."
     ),
-    boq: Optional[bool] = Form(False, description="Output file to choose"),
-    operator: Optional[Operator] = Form(
-        Operator.IOH,
-        description="Operator to define separator of near end far end from 'Route' folders.",
-    ),
     separator: Separator = Form(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     route_preference: Optional[RoutePreference] = Form(
         RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
-    device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
-    ),
-    device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
     ),
 ):
     """
@@ -789,7 +720,6 @@ async def topology_intersite(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Operator          : {operator}")
     print(f"ℹ️ Separator         : {separator}")
     print(f"ℹ️ Route Preference  : {route_preference}")
 
@@ -848,11 +778,8 @@ async def topology_intersite(
             "spof_threshold": spof_threshold,
             "distance_tolerance": distance_tolerance,
             "program": program,
-            "boq": boq,
             "sep": separator,
             "graph_type": graph_type,
-            "device_in_site": device_in_site,
-            "device_in_branch": device_in_branch,
         }
         data = dumps(data, default=str)
         celery_task = task_topology_intersite.apply_async(args=[data])
@@ -1015,6 +942,7 @@ async def boq_intersite(
                 operator=operator,  
                 interval_pole_m = interval_pole_m,
                 cable_percentage = cable_percentage,
+                cable_multiplier = cable_multiplier,
                 sclc_enabled = sclc_enabled,
                 device_in_site = device_in_site,
                 device_in_branch = device_in_branch,

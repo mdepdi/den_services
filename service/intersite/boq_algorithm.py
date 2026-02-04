@@ -467,22 +467,6 @@ def obstacle_detection(lines_gdf: gpd.GeoDataFrame, sep="-"):
         lines_gdf["obstacle_toll"] = None
         logger.info(f"🟢 No highway obstacle in {ring_name}.")
 
-    # # JOIN ADMIN
-    # admin_2024 = admin_2024.to_crs(epsg=3857)
-    # clean_col = ['kabkot', 'provinsi', 'kecamatan', 'desa']
-    # intersected.columns = intersected.columns.str.lower()
-
-    # for col in clean_col:
-    #     if col in intersected.columns:
-    #         intersected = intersected.drop(columns=col)
-    # intersected = gpd.sjoin(intersected, admin_2024).drop(columns='index_right')
-
-    # # EXPORT
-    # intersected = intersected.to_crs(epsg=4326)
-    # intersected['long'] = intersected.geometry.x
-    # intersected['lat'] = intersected.geometry.y
-    # intersected.to_parquet(fr"{export_dir}\Intersect Railway.parquet")
-
     return lines_gdf
 
 
@@ -2156,12 +2140,12 @@ def main_boq(
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\MMP BOQ\MMP XLS Batch 6 - SOKKA.kmz"
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\MMP BOQ\MMP XLS Batch 6 - SOKKA")
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Export\West Java Denny\Topology_Based\Intersite Design_Topology Based.kmz"
+    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Export\West Java Denny\Topology_Based")
     sep= ";"
-    boq_type = "mmp"
-    ipl_route = IPLRoute.EXISTING_FIBER
-    operator = "tsel"
+    boq_type = BoQType.INTERSITE
+    ipl_route = IPLRoute.SURGE_763
+    operator = Operator.SURGE
 
     match boq_type:
         case BoQType.INTERSITE:

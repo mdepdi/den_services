@@ -16,7 +16,6 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 sys.path.append(root)
 
-from service.intersite.boq_algorithm import main_boq
 from service.intersite.ring_algorithm import save_intersite
 from modules.data import validate_longlat
 from modules.table import sanitize_header
@@ -63,7 +62,7 @@ def fixroute_algo(
     if os.path.exists(result_route):
         logger.info(f"ℹ️ Ring {ring} already processed. Loading existing data...")
         routes = gpd.read_parquet(result_route)
-        points = gpd.GeoDataFrame(columns=gdf_ne_ring.columns, geometry='geometry', crs=gdf_ne_ring.crs)
+        points = gpd.read_parquet(result_point)
         return points, routes
     
     start_time = time()
@@ -288,7 +287,6 @@ def validate_fixroute(df: pd.DataFrame):
 def main_fixroute(
     template_df: pd.DataFrame,
     export_dir: str,
-    boq:bool = False,
     sep:str = "-",
     spof_threshold: int = 3000,
     graph_type: str = "full_weighted",
@@ -297,27 +295,26 @@ def main_fixroute(
     if not os.path.exists(export_dir):
         os.makedirs(export_dir)
 
-    cable_cost = kwargs.get("cable_cost", 35000)
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Fix Route")
-    device_in_site = kwargs.get("device_in_site", "OTB")
-    device_in_branch = kwargs.get("device_in_branch", "ODP")
     task_celery = kwargs.get("task_celery", False)
-    design_type = 'Bill of Quantity' if boq else 'Design'
 
     logger.info(f"🌏 Starting Intersite")
     logger.info(f"ℹ️ Method  : {method}")
     logger.info(f"ℹ️ Vendor  : {vendor}")
     logger.info(f"ℹ️ Program : {program}")
     logger.info(f"ℹ️ SPOF Tol: {spof_threshold}")
-    logger.info(f"ℹ️ Design  : {design_type}")
+    logger.info(f"ℹ️ Graph   : {graph_type}")
     logger.info(f"ℹ️ Total Data  : {len(template_df):,}")
 
     # PROCESS FIXED ROUTING
     date_today = datetime.now().strftime("%d-%m-%Y")
-    points_path = os.path.join(export_dir, f"Fixed Points_Intersite_{date_today}.parquet")
-    routes_path = os.path.join(export_dir, f"Fixed Route_Intersite_{date_today}.parquet")
+    metadata_dir = os.path.join(export_dir, "Metadata")
+    os.makedirs(metadata_dir, exist_ok=True)
+
+    points_path = os.path.join(metadata_dir, f"Fixed Points_Intersite_{date_today}.parquet")
+    routes_path = os.path.join(metadata_dir, f"Fixed Route_Intersite_{date_today}.parquet")
     if os.path.exists(points_path) and os.path.exists(routes_path):
         updated_points = gpd.read_parquet(points_path)
         updated_routes = gpd.read_parquet(routes_path)
@@ -337,6 +334,10 @@ def main_fixroute(
         logger.info(f"ℹ️ Total updated routes: {len(updated_routes):,}")
         updated_routes.to_parquet(routes_path)
 
+    checkpoint_dir = os.path.join(export_dir, "Checkpoint")
+    if os.path.exists(checkpoint_dir):
+        shutil.rmtree(checkpoint_dir)
+
     if 'program' not in updated_points.columns:
         updated_points['program'] = program
 
@@ -344,13 +345,8 @@ def main_fixroute(
         updated_routes['program'] = program
 
     # EXPORT
-    if boq:
-        logger.info("🧩 Running BOQ Calculation...")
-        main_boq(updated_points, updated_routes, export_dir=export_dir, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
-    else:
-        # TOPOLOGY CHECK
-        logger.info("🧩 Save Design Information")
-        save_intersite(updated_points, updated_routes, export_dir, method)
+    logger.info("🧩 Save Design Information")
+    save_intersite(updated_points, updated_routes, export_dir, method)
 
     logger.info("🏆 Fix Route export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")
@@ -358,7 +354,6 @@ def main_fixroute(
 if __name__ == "__main__":
     excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest CMI 12 Sites.xlsx"
     export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest CMI 12 Sites"
-    boq = False
     program ="Sites Direct to Station"
     spof_threshold = 3000
 
@@ -371,7 +366,6 @@ if __name__ == "__main__":
     main_fixroute(
         template_df= template_df,
         export_dir=export_dir,
-        boq=boq,
         program=program,
         spof_threshold=spof_threshold,
         graph_type="weighted_roads"

@@ -15,7 +15,6 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 sys.path.append(root)
 
-from service.intersite.boq_algorithm import main_boq
 from service.intersite.ring_algorithm import supervised_validation, main_supervised
 from modules.table import sanitize_header
 from modules.data import read_gdf, validate_longlat
@@ -178,22 +177,17 @@ def polygonize_algo(sitelist_gdf:gpd.GeoDataFrame, hubs_gdf:gpd.GeoDataFrame, po
         print(f"🔴 Ring data empty.")
         return None
 
-def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, graph_type:str="full_weighted", **kwargs):
-    cable_cost = kwargs.get("cable_cost", 35000)
+def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, spof_threshold:int=3000, graph_type:str="full_weighted", **kwargs):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Poligon Based")
     sep = kwargs.get("sep", "-")
-    device_in_site = kwargs.get("device_in_site", "OTB")
-    device_in_branch = kwargs.get("device_in_branch", "ODP")
     task_celery = kwargs.get("task_celery", None)
-    design_type = 'Bill of Quantity' if boq else 'Design'
 
     logger.info(f"🌏 Starting Intersite")
     logger.info(f"ℹ️ Method  : {method}")
     logger.info(f"ℹ️ Vendor  : {vendor}")
     logger.info(f"ℹ️ Program : {program}")
-    logger.info(f"ℹ️ Design  : {design_type}")
 
     sitelist_gdf, hubs_gdf = validate_poligonize(excel_path)
     polygon_gdf = read_gdf(polygon_file, geom_type='polygon')
@@ -213,13 +207,10 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, boq:bool=
         export_loc=design_dir,
         program=program,
         vendor=vendor,
-        boq=boq,
         method=method,
         sep=sep,
         graph_type=graph_type,
         spof_threshold=spof_threshold,
-        device_in_branch=device_in_branch,
-        device_in_site=device_in_site,
         task_celery=task_celery
     )
 
@@ -230,7 +221,6 @@ if __name__ == "__main__":
     poligon_file = r"D:\JACOBS\SERVICE\API\data\template\Polygon_Sample.kmz"
     export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 1\Polygon Based"
     program = "Trial Poligonized"
-    boq = False
 
     date_today = datetime.now().strftime("%Y%m%d")
     export_loc = f"{export_dir}/{date_today}"
@@ -240,7 +230,6 @@ if __name__ == "__main__":
         excel_path=excel_file,
         polygon_file=poligon_file,
         export_dir=export_dir,
-        boq=boq,
         program=program
     )
 

@@ -33,7 +33,7 @@ def task_insertring(self, data: dict):
         max_member = data.get("max_member", 12)
         max_distance = data.get("max_distance", 3000)
         operator = data.get("operator", 'IOH')
-        sep = data.get("sep", '-')
+        sep = data.get("sep", ';')
 
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Insert_Ring/{date_today}/{self.request.id}"
@@ -99,13 +99,10 @@ def task_supervised(self, data: dict):
         site_path = parsed_data.get("site_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         program = parsed_data.get("program", 'Fiberization')
-        boq = parsed_data.get("boq", False)
         method = parsed_data.get("method", "Supervised")
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
-        device_in_site = parsed_data.get("device_in_site", 'OTB')
-        device_in_branch = parsed_data.get("device_in_branch", 'ODP')
-        sep = parsed_data.get("sep", '-')
+        sep = parsed_data.get("sep", ';')
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -126,11 +123,8 @@ def task_supervised(self, data: dict):
             cluster_col=cluster_col,
             spof_threshold=spof_threshold,
             method=method,
-            boq=boq,
             sep=sep,
             program=program,
-            device_in_branch=device_in_branch,
-            device_in_site=device_in_site,
             task_celery=self
         )
 
@@ -179,15 +173,12 @@ def task_unsupervised(self, data: dict):
         member_expectation = parsed_data.get("member_expectation")
         max_distance = parsed_data.get("max_distance", 10000)
         spof_threshold = parsed_data.get("spof_threshold", 3000)
-        boq = parsed_data.get("boq", False)
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
         drop_existings = parsed_data.get("drop_existings", False)
         program = parsed_data.get("program", 'Supervised Intersite')
-        sep = parsed_data.get("sep", '-')
+        sep = parsed_data.get("sep", ';')
         graph_type = parsed_data.get("graph_type", "full_weighted")
-        device_in_site = parsed_data.get("device_in_site", 'OTB')
-        device_in_branch = parsed_data.get("device_in_branch", 'ODP')
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -214,12 +205,9 @@ def task_unsupervised(self, data: dict):
             max_distance=max_distance,
             spof_threshold=spof_threshold,
             drop_existings=drop_existings,
-            boq=boq,
             sep=sep,
             graph_type=graph_type,
             program=program,
-            device_in_branch=device_in_branch,
-            device_in_site=device_in_site,
             task_celery=self
         )
         
@@ -264,11 +252,8 @@ def task_fixroute(self, data: dict):
         template_path = parsed_data.get("template_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         program = parsed_data.get("program", 'Fix Route Fiberization')
-        boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
-        device_in_site = parsed_data.get("device_in_site", "OTB")
-        device_in_branch = parsed_data.get("device_in_branch", "ODP")
 
         if DOCKER:
             if "/mnt/" not in template_path:
@@ -285,12 +270,9 @@ def task_fixroute(self, data: dict):
             template_df=template_df,
             export_dir=export_loc,
             program=program,
-            boq=boq,
             sep=sep,
             graph_type=graph_type,
             spof_threshold=spof_threshold,
-            device_in_site=device_in_site,
-            device_in_branch=device_in_branch,
             task_celery=self
         )
 
@@ -336,12 +318,9 @@ def task_polygon_intersite(self, data: dict):
         excel_path = parsed_data.get("excel_path")
         polygon_path = parsed_data.get("polygon_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
-        boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Polygon Based Fiberization')
-        device_in_site = parsed_data.get("device_in_site", "OTB")
-        device_in_branch = parsed_data.get("device_in_branch", "ODP")
         
         if DOCKER:
             if "/mnt/" not in excel_path:
@@ -360,12 +339,9 @@ def task_polygon_intersite(self, data: dict):
             polygon_file=polygon_path,
             export_dir=export_loc,
             program=program,
-            boq=boq,
             sep=sep,
             graph_type=graph_type,
             spof_threshold=spof_threshold,
-            device_in_site=device_in_site,
-            device_in_branch=device_in_branch,
             task_celery=self
         )
 
@@ -414,12 +390,9 @@ def task_topology_intersite(self, data: dict):
         topology_path = parsed_data.get("topology_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         distance_tolerance = parsed_data.get("distance_tolerance", 500)
-        boq = parsed_data.get("boq", False)
         sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Topology Based Fiberization')
-        device_in_site = parsed_data.get("device_in_site", "OTB")
-        device_in_branch = parsed_data.get("device_in_branch", "ODP")
         
         if DOCKER:
             if "/mnt/" not in excel_path:
@@ -440,11 +413,8 @@ def task_topology_intersite(self, data: dict):
             spof_threshold=spof_threshold,
             distance_tolerance=distance_tolerance,
             program=program,
-            boq=boq,
             sep=sep,
             graph_type=graph_type,
-            device_in_site=device_in_site,
-            device_in_branch=device_in_branch,
             task_celery=self
         )
 
@@ -498,8 +468,6 @@ def task_ipl(self, data: dict):
         ipl_route = parsed_data.get("ipl_route", "existing_fiber")
         vendor = parsed_data.get("vendor", "TBG")
         sep = parsed_data.get("sep", "-")
-        device_in_site = parsed_data.get("device_in_site", "OTB")
-        device_in_branch = parsed_data.get("device_in_branch", "ODP")
 
         if DOCKER:
             if "/mnt/" not in points_path:
@@ -526,8 +494,6 @@ def task_ipl(self, data: dict):
             ipl_route=ipl_route,
             program=program,
             vendor=vendor,
-            device_in_site=device_in_site,
-            device_in_branch=device_in_branch,
             task_celery=self
         )
 

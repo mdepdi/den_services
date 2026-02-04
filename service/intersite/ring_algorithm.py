@@ -34,9 +34,8 @@ from modules.data import validate_longlat
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection, fiber_utilization
 from modules.table import sanitize_header, detect_week, excel_styler
-from modules.validation import input_newring
 from modules.kml import export_kml, sanitize_kml
-from service.intersite.boq_algorithm import main_boq
+from service.intersite.report import drm_format
 
 
 # ------------------------------------------------------
@@ -1224,6 +1223,7 @@ def save_kml(
     sanitize_kml(main_kml)
     main_kml.savekmz(kmz_path)
     logger.info(f"🏆 KML/KMZ export completed at {kmz_path}")
+    return kmz_path
 
 
 def save_intersite(
@@ -1233,7 +1233,7 @@ def save_intersite(
     method: str = "Supervised",
     check_utils: bool = False
 ):
-    logger.info("🧩 Exporting supervised outputs (parquet, KML, Excel).")
+    logger.info("🧩 Exporting supervised outputs (Parquet, KML, Excel).")
     topology = create_topology(points, paths, sequential=False)
 
     # FO UTILIZATION
@@ -1254,61 +1254,68 @@ def save_intersite(
         paths['cable_existing'] = 0
     
     # EXPORT PARQUET
+    metadata_dir = os.path.join(export_dir, "Metadata")
+    os.makedirs(metadata_dir, exist_ok=True)
+    
     if not points.empty:
-        points.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Points.parquet"), index=False,)
+        points.to_crs(epsg=4326).to_parquet(os.path.join(metadata_dir, f"Points.parquet"), index=False,)
         logger.info(f"🏆 Points parquet exported with {len(points):,} records.")
     if not paths.empty:
-        paths.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Route.parquet"), index=False,)
+        paths.to_crs(epsg=4326).to_parquet(os.path.join(metadata_dir, f"Route.parquet"), index=False,)
         logger.info(f"🏆 Route parquet exported with {len(paths):,} records.")
     if not topology.empty:
         topology = topology.sort_values(by=['ring_name']).reset_index(drop=True)
-        topology.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"Topology.parquet"), index=False)
+        topology.to_crs(epsg=4326).to_parquet(os.path.join(metadata_dir, f"Topology.parquet"), index=False)
         logger.info(f"🏆 Topology parquet exported with {len(topology):,} records.")
     if not fo_utilization.empty:
         fo_utilization = fo_utilization.sort_values(by=['ring_name']).reset_index(drop=True)
-        fo_utilization.to_crs(epsg=4326).to_parquet(os.path.join(export_dir, f"FO Utilization.parquet"), index=False)
+        fo_utilization.to_crs(epsg=4326).to_parquet(os.path.join(metadata_dir, f"FO Utilization.parquet"), index=False)
         logger.info(f"🏆 FO Utilization parquet exported with {len(fo_utilization):,} records.")
 
     # EXPORT KML
     if not points.empty and not paths.empty and not topology.empty:
-        save_kml(points, paths, topology, export_dir, method)
+        kmz_path = save_kml(points, paths, topology, export_dir, method)
+    
+    # EXPORT DRM
+    drm = drm_format(kmz_path, export_dir)
 
-    # EXPORT EXCEL
-    excel_path = os.path.join(export_dir, f"Summary Report_Intersite_{method}.xlsx")
-    with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
-        if not points.empty:
-            sheet_name = "Site Information"
-            points_report = points.drop(columns="geometry")
-            excel_styler(points_report).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(points_report):,} records.")
+    # # EXPORT EXCEL
+    # excel_path = os.path.join(export_dir, f"Summary Report_Intersite_{method}.xlsx")
+    # with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+    #     if not points.empty:
+    #         sheet_name = "Site Information"
+    #         points_report = points.drop(columns="geometry")
+    #         excel_styler(points_report).to_excel(writer, sheet_name=sheet_name, index=False)
+    #         logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(points_report):,} records.")
 
-        if not paths.empty:
-            sheet_name = "Route Information"
-            paths_report = paths.drop(columns="geometry")
-            if check_utils:
-                index_col = ['ring_name', 'name', 'near_end', 'far_end', 'cable_new', 'cable_existing']
-            else:
-                index_col = ['ring_name', 'name', 'near_end', 'far_end']
+    #     if not paths.empty:
+    #         sheet_name = "Route Information"
+    #         paths_report = paths.drop(columns="geometry")
+    #         if check_utils:
+    #             index_col = ['ring_name', 'name', 'near_end', 'far_end', 'cable_new', 'cable_existing']
+    #         else:
+    #             index_col = ['ring_name', 'name', 'near_end', 'far_end']
 
-            paths_report = paths_report.pivot_table(
-                index=index_col,
-                columns='fo_note',
-                values='length',
-                aggfunc='sum',
-                fill_value=0
-            ).reset_index()
+    #         paths_report = paths_report.pivot_table(
+    #             index=index_col,
+    #             columns='fo_note',
+    #             values='length',
+    #             aggfunc='sum',
+    #             fill_value=0
+    #         ).reset_index()
 
-            paths_report = paths_report.rename(columns={'merged': 'length'})
-            paths_report = paths_report.merge(
-                paths[['ring_name', 'region', 'program']].drop_duplicates(),
-                on='ring_name',
-                how='left'
-            )
+    #         paths_report = paths_report.rename(columns={'merged': 'length'})
+    #         paths_report = paths_report.merge(
+    #             paths[['ring_name', 'region', 'program']].drop_duplicates(),
+    #             on='ring_name',
+    #             how='left'
+    #         )
 
-            paths_report = paths_report.sort_values(by=['ring_name', 'near_end']).reset_index(drop=True)
-            paths_report.columns = paths_report.columns.str.replace(' ', '_').str.lower()
-            excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
-            logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records.")
+    #         paths_report = paths_report.sort_values(by=['ring_name', 'near_end']).reset_index(drop=True)
+    #         paths_report.columns = paths_report.columns.str.replace(' ', '_').str.lower()
+    #         excel_styler(paths_report).to_excel(writer, sheet_name=sheet_name, index=False)
+    #         logger.info(f"ℹ️ Excel sheet '{sheet_name}' written with {len(paths_report):,} records.")
+    
 
 # ------------------------------------------------------
 # 6) MAIN ENTRYPOINT
@@ -1319,7 +1326,6 @@ def main_supervised(
     area_col: str = "region",
     cluster_col="ring_name",
     fo_expand: gpd.GeoDataFrame = None,
-    boq: bool = False,
     spof_threshold: int = 3000,
     graph_type: str = "full_weighted",
     **kwargs,
@@ -1331,9 +1337,6 @@ def main_supervised(
     method = kwargs.get("method", "Supervised")
     task_celery = kwargs.get("task_celery", None)
     sep = kwargs.get("sep", "-")
-    device_in_site = kwargs.get("device_in_site", "OTB")
-    device_in_branch = kwargs.get("device_in_branch", "ODP")
-    design_type = 'Bill of Quantity' if boq else 'Design'
 
     if "site_id" in site_data.columns:
         site_data["site_id"] = site_data["site_id"].astype(str)
@@ -1364,7 +1367,6 @@ def main_supervised(
         logger.info(f"ℹ️ Method  : {method}")
         logger.info(f"ℹ️ Vendor  : {vendor}")
         logger.info(f"ℹ️ Program : {program}")
-        logger.info(f"ℹ️ Design  : {design_type}")
         logger.info(f"ℹ️ SPOF Tol: {spof_threshold}")
         logger.info(f"ℹ️ Total sites: {len(site_data):,}")
 
@@ -1414,19 +1416,14 @@ def main_supervised(
         all_paths["program"] = program
 
     # EXPORT
-    if boq:
-        logger.info("🧩 Running BOQ calculation...")
-        main_boq(all_points, all_paths, export_dir=export_dir, sep=sep, device_in_site=device_in_site, device_in_branch=device_in_branch)
-    else:
-        logger.info("🧩 Save Design Information")
-        save_intersite(all_points, all_paths, export_dir, method)
+    logger.info("🧩 Save Design Information")
+    save_intersite(all_points, all_paths, export_dir, method)
 
     logger.info("🏆 Supervised export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 
 if __name__ == "__main__":
-    # excel_file = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 3\BoQ Intersite\Trial BoQ Intersite.xlsx"
     excel_file = r"D:\JACOBSPACE\TBIG Impact 2025\QCC Fiberisasi\Asessment\Q1AOP2025 All_Smart Routing Automatic Template.xlsx"
     export_dir = r"D:\JACOBS\PROJECT\TASK\NOVEMBER\Week 3\BoQ Intersite\Export\TaskForce"
     area_col = 'region'
@@ -1434,7 +1431,6 @@ if __name__ == "__main__":
     path_type = 'classified'
     program = "Trial BOQ"
     vendor = "TBG"
-    boq = True
     spof_threshold = 3000
 
     logger.info("🧩 Running supervised ring network as standalone script.")
@@ -1455,7 +1451,6 @@ if __name__ == "__main__":
         fo_expand=fo_expand,
         program=program,
         vendor=vendor,
-        boq=boq,
         spof_threshold=spof_threshold
     )
 

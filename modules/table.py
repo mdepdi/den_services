@@ -80,8 +80,6 @@ def sanitize_header(df:pd.DataFrame|gpd.GeoDataFrame, preview_row = 5, lowercase
         for col in duplicated_cols:
             print(f"  - {col} | Total: {col_count[col]}")
         df.columns = new_columns
-    else:
-        print("No duplicate columns found.")
 
     return df
 

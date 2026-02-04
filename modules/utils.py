@@ -7,8 +7,10 @@ from shapely.geometry import MultiLineString, LineString
 from shapely.ops import linemerge
 from tqdm import tqdm
 from enum import Enum
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[1]
+sys.path.append(root)
 
 from core.config import settings
 
@@ -16,12 +18,11 @@ MAINDATA_DIR = settings.MAINDATA_DIR
 DATA_DIR = settings.DATA_DIR
 EXPORT_DIR = settings.EXPORT_DIR
 
-class AdminLevel(Enum):
+class AdminLevel(str, Enum):
     provinsi = "provinsi"
     kabkot = "kabkot"
     kecamatan = "kecamatan"
     desa = "desa"
-
 
 def spof_detection(
     paths_gdf: gpd.GeoDataFrame,
@@ -647,4 +648,6 @@ def admin_information(data_gdf:gpd.GeoDataFrame, level:AdminLevel | str = AdminL
         data_gdf =  data_gdf.drop(columns="index_right")
     admin_cols = admin_col + ['geometry']
     data_filled = gpd.sjoin_nearest(data_gdf, admin[admin_cols]).drop(columns=["index_right"])
+
+    del admin
     return data_filled

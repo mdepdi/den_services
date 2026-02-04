@@ -15,7 +15,6 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 sys.path.append(root)
 
-from service.intersite.boq_algorithm import main_boq
 from service.intersite.fixroute_algorithm import main_fixroute, validate_fixroute
 from modules.table import sanitize_header
 from modules.data import read_gdf, validate_longlat
@@ -197,22 +196,18 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     mapped = mapped.reset_index(drop=True)
     return mapped_fix
 
-def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False, spof_threshold:int=3000, distance_tolerance:int=500, graph_type:str="full_weighted", **kwargs):
-    cable_cost = kwargs.get("cable_cost", 35000)
+def main_topology(excel_path:str, line_file:str, export_dir:str, spof_threshold:int=3000, distance_tolerance:int=500, graph_type:str="full_weighted", **kwargs):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Topology Based")
     sep = kwargs.get("sep", "-")
-    device_in_site = kwargs.get("device_in_site", "OTB")
-    device_in_branch = kwargs.get("device_in_branch", "ODP")
     task_celery = kwargs.get("task_celery", None)
-    design_type = 'Bill of Quantity' if boq else 'Design'
 
     logger.info(f"🌏 Starting Intersite")
     logger.info(f"ℹ️ Method  : {method}")
     logger.info(f"ℹ️ Vendor  : {vendor}")
     logger.info(f"ℹ️ Program : {program}")
-    logger.info(f"ℹ️ Design  : {design_type}")
+    logger.info(f"ℹ️ Graph   : {graph_type}")
 
     sitelist_gdf = validate_topology(excel_path)
     line_gdf = read_gdf(line_file, geom_type='line')
@@ -240,34 +235,30 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, boq:bool=False,
         program=program,
         vendor=vendor,
         spof_threshold=spof_threshold,
-        boq=boq,
         sep=sep,
         method=method,
         graph_type=graph_type,
-        device_in_branch=device_in_branch,
-        device_in_site=device_in_site,
         task_celery=task_celery
     )
 
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\ASIAN TELCOM\Sample Data\Intersite\Banten_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\ASIAN TELCOM\Sample Data\Intersite\Banten Topology 12122025.kml"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\ASIAN TELCOM\Sample Data\Intersite\Banten_Topology_Based"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Sitelist 5k + Station Surge.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Compiled FWA Surge 04022026_West Java_Denny.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Export\West Java Denny"
     program = "Sample Topologi Data"
     sep=";"
-    boq = False
-    graph_type = "weighted_road"
-    operator = 'ioh'
+    graph_type = "surge_763"
+    operator = 'surge'
 
     result = main_topology(
         excel_path=excel_file,
         line_file=line_file,
         export_dir=export_dir,
         sep=sep,
-        boq=boq,
         program=program,
+        graph_type=graph_type,
         distance_tolerance=500
     )
 

@@ -6,6 +6,7 @@ import numpy as np
 import sys
 import shutil
 import math
+import re
 from pathlib import Path
 from tqdm import tqdm
 from enum import Enum
@@ -64,8 +65,18 @@ def drm_format(
     # Inputs (GeoDataFrames)
     # ---------------------------
     points_kmz, lines_kmz = validated
-    points_kmz = admin_information(points_kmz, level="desa")
-    lines_kmz = admin_information(lines_kmz, level="desa")
+
+    # Check Admin Level
+    admin_col = {'Provinsi','Kabkot', 'Kecamatan', 'Desa'}
+    miss_col = admin_col - set(points_kmz.columns)
+
+    if miss_col:
+        logger.info(f"🌏 Add Admin Information (missing: {(", ").join(sorted(miss_col))})")
+        points_kmz = admin_information(points_kmz, level="desa")
+        lines_kmz = admin_information(lines_kmz, level="kabkot")
+        points_kmz = points_kmz.drop_duplicates(subset=["site_id", "ring_name"]).reset_index(drop=True)
+        lines_kmz = lines_kmz.drop_duplicates(subset=["segment", "ring_name"]).reset_index(drop=True)
+
     lines_kmz['length'] = lines_kmz['geometry'].to_crs(epsg=4326).apply(geodesic_length)
 
     colopriming_data = pd.read_excel(f"{DATA_DIR}/Sitelist Dec 2025.xlsx")
@@ -85,7 +96,7 @@ def drm_format(
     recorded_sites = set()
     for ring, ring_points in tqdm(points_grouped, desc="DRM Format Process Ring", total=len(points_grouped)):
         ring_lines = lines_kmz[lines_kmz['ring_name'] == ring].copy()
-        
+
         if ring_lines.empty:
             logger.error(f"🔴 Ring {ring} lines data not found.")
             continue
@@ -141,15 +152,23 @@ def drm_format(
             # Enrich Metadata
             match route_type:
                 case "Star":
-                    ne_status = ne_site['site_name'].str.contains(r'\w', regex=True, na=False)
-                    fe_status = fe_site['site_name'].str.contains(r'\w', regex=True, na=False)
-                    ne_status = "Station" if ne_status else "Direct to Station"
-                    fe_status = "Station" if fe_status else "Direct to Station"
+                    ne_station = bool(re.fullmatch(r'\^[A-Za-z ]+', ne_site['site_name']))
+                    fe_station = bool(re.fullmatch(r'\^[A-Za-z ]+', fe_site['site_name']))
+                    if ne_station or fe_station:
+                        ne_status = "Station" if ne_status else "Direct to Station"
+                        fe_status = "Station" if fe_status else "Direct to Station"
+                    else:
+                        ne_status = ne_site['site_type']
+                        fe_status = fe_site['site_type']
                 case "Chain":
-                    ne_status = ne_site['site_name'].str.contains(r'\w', regex=True, na=False)
-                    fe_status = fe_site['site_name'].str.contains(r'\w', regex=True, na=False)
-                    ne_status = "Station" if ne_status else "Direct to Station"
-                    fe_status = "Station" if fe_status else "Direct to Station"
+                    ne_station = bool(re.fullmatch(r'\^[A-Za-z ]+', ne_site['site_name']))
+                    fe_station = bool(re.fullmatch(r'\^[A-Za-z ]+', fe_site['site_name']))
+                    if ne_station or fe_station:
+                        ne_status = "Station" if ne_status else "Direct to Station"
+                        fe_status = "Station" if fe_status else "Direct to Station"
+                    else:
+                        ne_status = ne_site['site_type']
+                        fe_status = fe_site['site_type']
                 case "Ring":
                     ne_status = ne_site['site_type']
                     fe_status = fe_site['site_type']
@@ -163,14 +182,14 @@ def drm_format(
                 "fe_site": fe_site['site_id'],
                 "fe_long": fe_site['long'],
                 "fe_lat": fe_site['lat'],
+                "status_ne": ne_status,
+                "status_fe": fe_status,
                 "ring_name": ring,
-                "route_type": None,
+                "route_type": route_type,
                 "length": route['length'],
                 "hub_1": hub_1,
                 "hub_2": hub_2,
                 "pop_type": None,
-                "status_ne": ne_status,
-                "status_fe": fe_status,
                 "rfs_plan":None,
                 "province": province,
                 "city": city,
@@ -254,11 +273,16 @@ def drm_format(
     sites_records['no'] = sites_records.index + 1
     ring_records['no'] = ring_records.index + 1
 
+    logger.info(f"ℹ️ Excel sheet 'Lampiran Segment' written with {len(segments_records):,} records.")
+    logger.info(f"ℹ️ Excel sheet 'Lampiran Site' written with {len(sites_records):,} records.")
+    logger.info(f"ℹ️ Excel sheet 'Summary Ring' written with {len(ring_records):,} records.")
+
+
     # ---------------------------
     # Write Excel
     # ---------------------------
     template_path = os.path.join(DATA_DIR, "template", "drm", "Template_DRM_Report.xlsx")
-    output_path = os.path.join(export_dir, "DRM Report.xlsx")
+    output_path = os.path.join(export_dir, "Summary Report_Design Review Format.xlsx")
 
     if not os.path.exists(template_path):
         raise ValueError("BOQ template file not found in template directory.")
@@ -282,7 +306,7 @@ def drm_format(
 
     # Segment Sheet
     segment_sheet = wb["Lampiran Segment"]
-    start_data_row = 2
+    start_data_row = 3
     col_index = {col: num for num, col in enumerate(segments_records.columns, start=1)}
     for idx, record in enumerate(segments_records.to_dict("records")):
         excel_row = start_data_row + idx

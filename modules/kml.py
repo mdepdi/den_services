@@ -286,8 +286,6 @@ def parse_doc(doc, parent=None, source_prefix=""):
     doc_name = doc.find("name").text if doc.find("name") else None
 
     full_doc = f"{parent};{doc_name}" if parent else doc_name
-    print(f"ℹ️ Parsing {source_prefix}{full_doc}")
-
     for pm in doc.find_all("Placemark", recursive=False):
         result.extend(parse_placemark(pm, folder_name=doc_name, full_path=full_doc))
 
@@ -322,11 +320,10 @@ def read_kml(file: str):
 
         for kml_path in kml_files:
             with zip_obj.open(kml_path) as kml_fp:
-                print(f"KML File ({prefix}): {kml_path}")
                 parsed_kml = parse_kml(kml_fp, source_prefix=f"{prefix}{kml_path}::")
                 result.append(parsed_kml)
 
-        kmz_files = [e for e in entries if e.lower().endswith(".kmz")]
+        kmz_files = [e for e in entries if e.lower().endswith((".kmz"))]
         if kmz_files:
             print(f"List of nested KMZ ({prefix}): {kmz_files}")
 
@@ -368,10 +365,10 @@ def read_kml(file: str):
         lines = data_gdf[gt.isin(["LineString", "MultiLineString"])]
         polygons = data_gdf[gt.isin(["Polygon", "MultiPolygon"])]
 
-        print(f"ℹ️ Total Points data extracted {len(points)}")
-        print(f"ℹ️ Total Lines data extracted {len(lines)}")
-        print(f"ℹ️ Total Polygon data extracted {len(polygons)}")
-        print("✅ Extraction done.")
+        print(f"ℹ️ Total Points data extracted   {len(points):>10,} records.")
+        print(f"ℹ️ Total Lines data extracted    {len(lines):>10,} records.")
+        print(f"ℹ️ Total Polygon data extracted  {len(polygons):>10,} records.")
+        print("✅ Extraction done.\n")
         return points, lines, polygons
 
     except Exception as e:
@@ -473,8 +470,6 @@ def validate_kmz_design(filepath:str, sep: str = ";"):
     if lines_existing.empty:
         raise ValueError(f"Lines data in existing kmz is empty")
     
-
-
     print(f"ℹ️ Summary Validated Ring:")
     print(f"ℹ️ Total Points      : {len(points_existing):,}")
     print(f"ℹ️ Total LineString  : {len(points_existing):,}")
