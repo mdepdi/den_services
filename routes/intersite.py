@@ -29,6 +29,7 @@ from service.intersite.fixroute_algorithm import validate_fixroute
 from service.intersite.topology_algorithm import validate_topology
 from service.intersite.poligonized_algorithm import validate_poligonize
 from service.intersite.insert_algorithm import validate_insert
+from service.intersite.report import drm_format
 from service.intersite.boq_algorithm import boq_generation, boq_mmp
 from tasks.intersite_celery import (
     task_insertring,
@@ -880,6 +881,83 @@ async def implementation_intersite(
     except Exception as e:
         return {"error": f"Failed to process data: {str(e)}"}
 
+# ===================
+# GENERATE DRM FORMAT
+# ===================
+@router.post("/drm-intersite", tags=["Intersite"])
+async def drm_intersite(
+    design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml).",),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+):
+    """
+    Create DRM Report based on Design KMZ.
+    KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List'].
+
+    **Input KMZ Design Sample**
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    """
+
+    date_today = datetime.now().strftime("%Y%m%d")
+    drm_dir = os.path.join(UPLOAD_DIR, date_today, "Intersite", "DRM")
+    os.makedirs(drm_dir, exist_ok=True)
+
+
+    suffix = os.path.splitext(design_file.filename)[1].lower()
+    filename = os.path.splitext(design_file.filename)[0]
+
+    if suffix not in [".kml", ".kmz"]:
+        return {"error": f"Unsupported format: {suffix}"}
+
+    kmz_path = os.path.join(
+        drm_dir,
+        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}{suffix}",
+    )
+    with open(kmz_path, "wb") as buffer:
+        shutil.copyfileobj(design_file.file, buffer)
+        print(f"ℹ️ File copied into local storage.")
+
+    extracted_design = validate_kmz_design(kmz_path, sep=separator)
+    if extracted_design is not None:
+        date_today = datetime.now().strftime("%Y%m%d")
+        export_loc = f"{EXPORT_DIR}/Intersite/DRM/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        os.makedirs(export_loc, exist_ok=True)
+
+        try:
+            start_time = time.time()
+            print(f"ℹ️ DRM Format Task Started")
+            drm_format(
+                kmz_path=kmz_path, 
+                export_dir=export_loc, 
+                sep=separator,
+            )
+            end_time = time.time()
+            excel_time = round((end_time - start_time) / 60, 2)
+            print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
+            print(f"✅ All DRM Format Process Done.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
+
+        try:
+            out_base = f"DRM_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
+            zip_path = os.path.join(export_loc, f"{out_base}.zip")
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                for root, _, files in os.walk(export_loc):
+                    for export_file in files:
+                        if export_file.endswith(".zip") or "Checkpoint" in export_file:
+                            continue
+                        export_file_path = os.path.join(root, export_file)
+                        arcname = os.path.relpath(export_file_path, export_loc)
+                        zipf.write(export_file_path, arcname)
+            print(f"📦 Result files zipped.")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
+
+        # --- FileResponse ---
+        return FileResponse(
+            path=zip_path,
+            media_type="application/zip",
+            filename=os.path.basename(zip_path),
+        )
 
 # ================
 # GENERATE BOQ
@@ -918,10 +996,7 @@ async def boq_intersite(
     if suffix not in [".kml", ".kmz"]:
         return {"error": f"Unsupported format: {suffix}"}
 
-    kmz_path = os.path.join(
-        boq_upload,
-        f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}{suffix}",
-    )
+    kmz_path = os.path.join(boq_upload, f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}{suffix}")
     with open(kmz_path, "wb") as buffer:
         shutil.copyfileobj(ipl_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
