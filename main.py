@@ -19,6 +19,14 @@ app = FastAPI(
         {
             "name": "Intersite",
             "description": "Endpoints related to intersite fiberization services."
+        },
+        {
+            "name": "Report",
+            "description": "Endpoints related to generate report."
+        },
+        {
+            "name": "Utils",
+            "description": "Endpoints related to utilities in DEN Services."
         }
     ]
 )
@@ -59,8 +67,8 @@ async def root():
     return {"message": "Welcome to the Design and Engineering API Services!"}
 
 # INCLUDE ROUTERS
-app.include_router(intersite.router, prefix="/intersite", tags=["Intersite"])
 app.include_router(report.router, prefix="/report", tags=["Report"])
+app.include_router(intersite.router, prefix="/intersite", tags=["Intersite"])
 app.include_router(fwa.router, prefix="/fwa", tags=["Fixed Wireless Access (FWA)"])
 app.include_router(utils.router, prefix="/utils", tags=["Utils"])
 
