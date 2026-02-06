@@ -3,8 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
-from routes import intersite
-from routes import fwa, utils
+from routes import intersite, fwa, utils, report
 from core.config import settings
 from pathlib import Path
 
@@ -61,6 +60,7 @@ async def root():
 
 # INCLUDE ROUTERS
 app.include_router(intersite.router, prefix="/intersite", tags=["Intersite"])
+app.include_router(report.router, prefix="/report", tags=["Report"])
 app.include_router(fwa.router, prefix="/fwa", tags=["Fixed Wireless Access (FWA)"])
 app.include_router(utils.router, prefix="/utils", tags=["Utils"])
 
