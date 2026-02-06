@@ -241,7 +241,7 @@ async def insert_ring(
             "max_member": max_member,
             "max_distance": max_distance,
             "operator": operator,
-            "sep": separator,
+            "sep": separator.value.value,
         }
     )
 
@@ -338,7 +338,7 @@ async def supervised_ring(
             "site_path": temp_parquet_path,
             "spof_threshold": spof_threshold,
             "program": program,
-            "sep": separator,
+            "sep": separator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -458,7 +458,7 @@ async def unsupervised_ring(
             "drop_existings": drop_existings,
             "program": program,
             "spof_threshold": spof_threshold,
-            "sep": separator,
+            "sep": separator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -545,7 +545,7 @@ async def fixroute_ring(
             "template_path": excel_path,
             "spof_threshold": spof_threshold,
             "program": program,
-            "sep": separator,
+            "sep": separator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -660,7 +660,7 @@ async def polygon_intersite(
             "polygon_path": polygon_path,
             "spof_threshold": spof_threshold,
             "program": program,
-            "sep": separator,
+            "sep": separator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -779,7 +779,7 @@ async def topology_intersite(
             "spof_threshold": spof_threshold,
             "distance_tolerance": distance_tolerance,
             "program": program,
-            "sep": separator,
+            "sep": separator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -841,7 +841,7 @@ async def implementation_intersite(
             tmp_fiber_path = tmp_fiber.name
 
         if suffix in [".kml", ".kmz"]:
-            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=separator)
+            point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=separator.value)
         else:
             return {
                 "error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."
@@ -865,7 +865,7 @@ async def implementation_intersite(
             "program": program,
             "operator": operator,
             "ipl_route": ipl_route,
-            "sep": separator,
+            "sep": separator.value,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
         }
@@ -916,7 +916,7 @@ async def drm_intersite(
         shutil.copyfileobj(design_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
 
-    extracted_design = validate_kmz_design(kmz_path, sep=separator)
+    extracted_design = validate_kmz_design(kmz_path, sep=separator.value)
     if extracted_design is not None:
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Intersite/DRM/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
@@ -928,7 +928,7 @@ async def drm_intersite(
             drm_format(
                 kmz_path=kmz_path, 
                 export_dir=export_loc, 
-                sep=separator,
+                sep=separator.value,
             )
             end_time = time.time()
             excel_time = round((end_time - start_time) / 60, 2)
@@ -1001,7 +1001,7 @@ async def boq_intersite(
         shutil.copyfileobj(ipl_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
 
-    extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator)
+    extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator.value)
     if extracted_ipl is not None:
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
@@ -1013,7 +1013,7 @@ async def boq_intersite(
             boq_generation(
                 kmz_path=kmz_path, 
                 export_dir=export_loc, 
-                sep=separator, 
+                sep=separator.value, 
                 operator=operator,  
                 interval_pole_m = interval_pole_m,
                 cable_percentage = cable_percentage,
@@ -1096,7 +1096,7 @@ async def boq_mmp(
         shutil.copyfileobj(ipl_file.file, buffer)
         print(f"ℹ️ File copied into local storage.")
 
-    extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator)
+    extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator.value)
     if extracted_ipl is not None:
         date_today = datetime.now().strftime("%Y%m%d")
         export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
@@ -1108,7 +1108,7 @@ async def boq_mmp(
             boq_mmp(
                 kmz_path=kmz_path, 
                 export_dir=export_loc, 
-                sep=separator, 
+                sep=separator.value, 
                 operator=operator,  
                 interval_pole_m = interval_pole_m,
                 cable_percentage = cable_percentage,
