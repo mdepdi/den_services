@@ -24,9 +24,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 sys.path.append(root)
 
-from modules.kml import export_kml, sanitize_kml, validate_kmz_design, validate_kmz_ipl
-from modules.utils import auto_group, admin_information
-from modules.geometry import geodesic_length
+from modules.kml import validate_kmz_design
 from core.config import settings
 from service.intersite.ring_algorithm import save_intersite
 
@@ -46,7 +44,7 @@ class Separator(str, Enum):
 from core.logger import create_logger
 logger = create_logger(__file__)
 
-def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator.SEMICOLON):
+def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator = Separator.SEMICOLON.value):
     filename = Path(kmz_path).stem
     qty_ring = len(ring_list)
     
@@ -66,6 +64,7 @@ def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator.S
     points_cleaned = points_kmz[~(points_kmz['ring_name'].astype(str).isin(ring_list))].copy()
     lines_cleaned = lines_kmz[~(lines_kmz['ring_name'].astype(str).isin(ring_list))].copy()
 
+
     os.makedirs(export_dir, exist_ok=True)
     logger.info("🧩 Save Design Information")
     save_intersite(
@@ -77,3 +76,21 @@ def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator.S
 
     logger.info("🏆 Clean KM Design export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")
+
+if __name__ == "__main__":
+    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\FWA COMPILE ADJUSTED\Compiled FWA Surge Adjusted.kmz"
+    ringlist_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Clean_Ring List.xlsx"
+
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\FWA COMPILE ADJUSTED"
+    os.makedirs(export_dir, exist_ok=True)
+
+    # ringlist = pd.read_excel(ringlist_file)
+    ringlist = []
+
+    takeout_ring(
+        kmz_path=design_path,
+        export_dir=export_dir,
+        ring_list=ringlist,
+        sep=Separator.SEMICOLON.value
+    )
+

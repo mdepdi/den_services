@@ -1940,30 +1940,32 @@ def save_boq(points_boq: gpd.GeoDataFrame, lines_boq: gpd.GeoDataFrame, export_d
             lines_boq = lines_boq.drop(columns=col)
 
     # EXPORT
-    points_boq.to_parquet(os.path.join(export_dir, "Points_BOQ.parquet"))
-    lines_boq.to_parquet(os.path.join(export_dir, "Routes_BOQ.parquet"))
+    metadata_dir = os.path.join(export_dir, "Metadata")
+    os.makedirs(metadata_dir, exist_ok=True)
+    points_boq.to_parquet(os.path.join(metadata_dir, "Points_BOQ.parquet"))
+    lines_boq.to_parquet(os.path.join(metadata_dir, "Routes_BOQ.parquet"))
     if not odp.empty:
-        odp.to_parquet(os.path.join(export_dir, "ODP_BOQ.parquet"))
+        odp.to_parquet(os.path.join(metadata_dir, "ODP_BOQ.parquet"))
     if not otb.empty:
-        otb.to_parquet(os.path.join(export_dir, "OTB_BOQ.parquet"))
+        otb.to_parquet(os.path.join(metadata_dir, "OTB_BOQ.parquet"))
     if not backbone.empty:
-        backbone.to_parquet(os.path.join(export_dir, "Backbone_BOQ.parquet"))
+        backbone.to_parquet(os.path.join(metadata_dir, "Backbone_BOQ.parquet"))
     if not access_ne.empty:
-        access_ne.to_parquet(os.path.join(export_dir, "Access_NE_BOQ.parquet"))
+        access_ne.to_parquet(os.path.join(metadata_dir, "Access_NE_BOQ.parquet"))
     if not access_fe.empty:
-        access_fe.to_parquet(os.path.join(export_dir, "Access_FE_BOQ.parquet"))
+        access_fe.to_parquet(os.path.join(metadata_dir, "Access_FE_BOQ.parquet"))
     if not closure.empty:
-        closure.to_parquet(os.path.join(export_dir, "Closure_BOQ.parquet"))
+        closure.to_parquet(os.path.join(metadata_dir, "Closure_BOQ.parquet"))
     if not fo_exist.empty:
-        fo_exist.to_parquet(os.path.join(export_dir, "FO_Exist_BOQ.parquet"))
+        fo_exist.to_parquet(os.path.join(metadata_dir, "FO_Exist_BOQ.parquet"))
     if not pole_exist.empty:
-        pole_exist.to_parquet(os.path.join(export_dir, "Pole_Exist_BOQ.parquet"))
+        pole_exist.to_parquet(os.path.join(metadata_dir, "Pole_Exist_BOQ.parquet"))
     if not obstacle_railway.empty:
         obstacle_railway.to_parquet(
-            os.path.join(export_dir, "Obstacle_Railway_BOQ.parquet")
+            os.path.join(metadata_dir, "Obstacle_Railway_BOQ.parquet")
         )
     if not obstacle_toll.empty:
-        obstacle_toll.to_parquet(os.path.join(export_dir, "Obstacle_Toll_BOQ.parquet"))
+        obstacle_toll.to_parquet(os.path.join(metadata_dir, "Obstacle_Toll_BOQ.parquet"))
     logger.info(f"✅ Save BOQ Parquet Done.")
 
 
@@ -2140,12 +2142,12 @@ def main_boq(
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Export\West Java Denny\Topology_Based\Intersite Design_Topology Based.kmz"
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Export\West Java Denny\Topology_Based")
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DEBUG BOQ\Hasna_Intersite Design_Fix Route.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DEBUG BOQ\Hasna_Intersite Design_Fix Route"
     sep= ";"
     boq_type = BoQType.INTERSITE
-    ipl_route = IPLRoute.SURGE_763
-    operator = Operator.SURGE
+    ipl_route = IPLRoute.EXISTING_FIBER
+    operator = Operator.TSEL
 
     match boq_type:
         case BoQType.INTERSITE:

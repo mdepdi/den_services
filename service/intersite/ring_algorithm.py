@@ -1168,6 +1168,14 @@ def save_kml(
         for ring in tqdm(ring_list, desc=f"Processing rings in {region}"):
             ring_points = region_points[region_points['ring_name'] == ring].copy()
             ring_paths = region_paths[region_paths['ring_name'] == ring].copy()
+
+            if ring_paths.empty:
+                print(f"No Paths found in region {region} ring {ring}")
+                raise
+
+            if ring_points.empty:
+                print(f"No Points found in region {region} ring {ring}")
+                raise
             topology_ring = topology_region[topology_region['ring_name'] == ring].copy()
             topology_ring = topology_ring.dissolve(by='ring_name').reset_index()
             topology_ring['geometry'] = topology_ring.geometry.apply( lambda geom: linemerge(geom) if type(geom) == MultiLineString else geom)
@@ -1256,7 +1264,7 @@ def save_intersite(
     # EXPORT PARQUET
     metadata_dir = os.path.join(export_dir, "Metadata")
     os.makedirs(metadata_dir, exist_ok=True)
-    
+
     if not points.empty:
         points.to_crs(epsg=4326).to_parquet(os.path.join(metadata_dir, f"Points.parquet"), index=False,)
         logger.info(f"🏆 Points parquet exported with {len(points):,} records.")
@@ -1274,6 +1282,8 @@ def save_intersite(
 
     # EXPORT KML
     if not points.empty and not paths.empty and not topology.empty:
+        print(f"Total Points: {len(points):,} records")
+        print(f"Total Lines: {len(paths):,} records")
         kmz_path = save_kml(points, paths, topology, export_dir, method)
     
     # EXPORT DRM

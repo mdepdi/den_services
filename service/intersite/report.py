@@ -146,32 +146,38 @@ def drm_format(
         for idx, route in ring_lines.iterrows():
             ne_id = route['near_end']
             fe_id = route['far_end']
-            ne_site = ring_points[ring_points['site_id'].astype(str) == str(ne_id)].squeeze().copy()
-            fe_site = ring_points[ring_points['site_id'].astype(str) == str(fe_id)].squeeze().copy()
+
+            ne_site = ring_points[ring_points['site_id'].astype(str) == str(ne_id)].copy()
+            fe_site = ring_points[ring_points['site_id'].astype(str) == str(fe_id)].copy()
+            
+            if ne_site.empty:
+                raise ValueError(f"🔴 Near End site {ne_id} not found in ring {ring}.")
+
+            if fe_site.empty:
+                raise ValueError(f"🔴 Far End site {fe_id} not found in ring {ring}.")
+
+            ne_site = ne_site.iloc[0]
+            fe_site = fe_site.iloc[0]
 
             # Enrich Metadata
             match route_type:
-                case "Star":
-                    ne_station = bool(re.fullmatch(r'\^[A-Za-z ]+', ne_site['site_name']))
-                    fe_station = bool(re.fullmatch(r'\^[A-Za-z ]+', fe_site['site_name']))
+                case "Star" | "Chain":
+                    ne_name = str(ne_site.get("site_name", ""))
+                    fe_name = str(fe_site.get("site_name", ""))
+
+                    ne_station = bool(re.fullmatch(r'^[A-Za-z ]+', ne_name))
+                    fe_station = bool(re.fullmatch(r'^[A-Za-z ]+', fe_name))
+
                     if ne_station or fe_station:
                         ne_status = "Station" if ne_status else "Direct to Station"
                         fe_status = "Station" if fe_status else "Direct to Station"
                     else:
-                        ne_status = ne_site['site_type']
-                        fe_status = fe_site['site_type']
-                case "Chain":
-                    ne_station = bool(re.fullmatch(r'\^[A-Za-z ]+', ne_site['site_name']))
-                    fe_station = bool(re.fullmatch(r'\^[A-Za-z ]+', fe_site['site_name']))
-                    if ne_station or fe_station:
-                        ne_status = "Station" if ne_status else "Direct to Station"
-                        fe_status = "Station" if fe_status else "Direct to Station"
-                    else:
-                        ne_status = ne_site['site_type']
-                        fe_status = fe_site['site_type']
+                        ne_status = ne_site.get('site_type')
+                        fe_status = fe_site.get('site_type')
+
                 case "Ring":
-                    ne_status = ne_site['site_type']
-                    fe_status = fe_site['site_type']
+                    ne_status = ne_site.get('site_type')
+                    fe_status = fe_site.get('site_type')
             
             segment = {
                 "no": None,

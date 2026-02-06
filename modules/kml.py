@@ -7,10 +7,16 @@ import zipfile
 import pandas as pd
 import numpy as np
 import geopandas as gpd
+from enum import Enum
 from bs4 import BeautifulSoup
+from tqdm import tqdm
 from shapely.geometry import Point, LineString, Polygon
 from modules.table import sanitize_header
 from modules.geometry import geodesic_length
+
+class Separator(str, Enum):
+    SEMICOLON = ";"
+    HYPHEN = "-"
 
 def export_kml(
     gdf,
@@ -374,36 +380,45 @@ def read_kml(file: str):
     except Exception as e:
         raise ValueError(f"Error in GeoDataFrame conversion: {e}")
 
+def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
+    
+    if isinstance(sep, Separator):
+        sep = sep.value
 
-def validate_kmz_design(filepath:str, sep: str = ";"):
     points_kmz, lines_kmz, _ = read_kml(filepath)
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
     lines_kmz = sanitize_header(lines_kmz)
     
-    points_existing = points_kmz[points_kmz['folder_name'].str.lower().str.contains('site|hub')].copy()
+    points_existing = points_kmz[points_kmz['folder_name'].str.lower().str.contains('site|hub|akses')].copy()
     lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route')].copy()
 
     # CLEAN UNUSED DATA
     points_existing = points_existing[~points_existing['folder_name'].str.lower().str.contains("closure|odp|otb|obstacle")]
     points_existing = points_existing[~points_existing['name'].str.lower().str.contains("connection|closure|odp |otb |obstacle")]
-    lines_existing = lines_existing[~lines_existing['folder_name'].str.lower().str.contains("bb|backbone|akses|existing")]
+    lines_existing = lines_existing[~lines_existing['folder_name'].str.lower().str.contains("bb|backbone|existing")]
+
+    # SURGE ADJUSTMENT
+    points_existing['folders'] = points_existing['folders'].str.replace("akses|Akses|AKSES", "FO Hub", regex=True)
+    points_existing['folder_name'] = points_existing['folder_name'].str.lower().str.replace("akses", "FO Hub")
 
     # POINT EXISTING
     points_existing['site_id'] = points_existing['name'].str.strip()
     points_existing['site_id'] = (points_existing['site_id'].str.replace(r'\s*\[.*\]$', '', regex=True))
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_name'] = np.where(points_existing['site_name'].isna(), points_existing['site_id'], points_existing['site_name'])
+
     points_existing['site_type'] = points_existing['folders'].str.split(">").str[-1]
     points_existing['site_type'] = np.where(points_existing['site_type'].str.lower().str.contains('hub'), "FO Hub", 'Site List')
     points_existing['long'] = round(points_existing.geometry.to_crs(epsg=4326).x, 8)
     points_existing['lat'] = round(points_existing.geometry.to_crs(epsg=4326).y, 8) 
     points_existing['ring_name'] = points_existing['folders'].str.split(">").str[-2]
     points_existing['geometry'] = points_existing.geometry.force_2d()
-    points_existing['program'] = points_existing['Program'] if "Program" in points_existing.columns else points_existing['folders'].str.extract(r'>([A-Za-z0-9]{6,})>')
-    points_existing['region'] = points_existing['Region'] if "Region" in points_existing.columns else points_existing['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
+    points_existing['program'] = points_existing['folders'].str.split(">").str[-3]
+    points_existing['region'] = points_existing['folders'].str.split(">").str[-3]
     points_existing['program'] = points_existing['program'].fillna("NA")
+    points_existing['region'] = points_existing['region'].fillna("NA")
     points_existing = points_existing.dropna(how='all', axis=1)
 
     # LINES EXISTING
@@ -419,10 +434,11 @@ def validate_kmz_design(filepath:str, sep: str = ";"):
     lines_existing['far_end'] = lines_existing['segment'].str.split(sep).str[-1]
     lines_existing['geometry'] = lines_existing.geometry.force_2d()
     lines_existing['ring_name'] = lines_existing['folders'].str.split(">").str[-2]
-    lines_existing['program'] = lines_existing['Program'] if "Program" in lines_existing.columns else lines_existing['folders'].str.extract(r'>([A-Za-z0-9]{6,})>')
-    lines_existing['region'] = lines_existing['Region'] if "Region" in lines_existing.columns else lines_existing['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
+    lines_existing['program'] = lines_existing['folders'].str.split(">").str[-3]
+    lines_existing['region'] = lines_existing['folders'].str.split(">").str[-3]
     lines_existing['fo_note'] = 'merged'
     lines_existing['program'] = lines_existing['program'].fillna("NA")
+    lines_existing['region'] = lines_existing['region'].fillna("NA")
     lines_existing['length'] = lines_existing.geometry.apply(geodesic_length)
     lines_existing = lines_existing.dropna(how='all', axis=1)
     
@@ -432,18 +448,14 @@ def validate_kmz_design(filepath:str, sep: str = ";"):
         available = {req for name in line_ring['folder_name'].str.lower() for req in line_folder if req in name}
         missing = line_folder - available
         if missing:
-            raise ValueError(
-                f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ."
-            )
+            raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
     
     point_folder = {'hub', 'site'}
     for ring, point_ring in points_existing.groupby("ring_name"):
         available = {req for name in point_ring['folder_name'].str.lower() for req in point_folder if req in name}
         missing = point_folder - available
         if missing:
-            raise ValueError(
-                f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ."
-            )
+            raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
 
     # COMPILE
     existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
@@ -470,12 +482,117 @@ def validate_kmz_design(filepath:str, sep: str = ";"):
     if lines_existing.empty:
         raise ValueError(f"Lines data in existing kmz is empty")
     
+    # ===========================
+    # VALIDATE FOLDER AND SEGMENT
+    # ===========================
+    points_grouped = points_existing.groupby("ring_name")
+
+    errors = []
+    for ring, ring_points in tqdm(points_grouped, desc="Validate Design by Ring", total=len(points_grouped)):
+        ring_lines = lines_existing[lines_existing['ring_name'] == ring].copy()
+
+        if ring_points.empty:
+            errors.append(f"🔴 Ring {ring} points data not found.")
+
+        if ring_lines.empty:
+            errors.append(f"🔴 Ring {ring} lines data not found.")
+            continue
+
+        # Ring Metadata
+        ne_ids = set(ring_lines['near_end'].astype(str))
+        fe_ids = set(ring_lines['far_end'].astype(str))
+
+        # Route
+        routes_length = ring_lines['length'].sum()
+
+        # Hub Sitelist
+        hubs = ring_points[ring_points['site_type'].astype(str).str.lower().str.contains("hub")].copy()
+        sitelist = ring_points[~(ring_points.index.isin(hubs.index))].copy()
+        hubs_ids = set(hubs['site_id'].astype(str))
+        sites_ids = set(sitelist['site_id'].astype(str))
+        qty_hubs = len(hubs)
+        qty_sites = len(sitelist)
+
+        match qty_hubs:
+            case 0:
+                errors.append(f"🔴 Ring {ring} FO Hub not found.")
+                continue
+            case 1:
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = None
+            case 2:
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = hubs['site_id'].astype(str).values[-1]
+            case _:
+                errors.append(f"🔴 Ring {ring} FO Hub exceeds, found {qty_hubs}.")
+                continue
+            
+        # Enrich Metadata
+        route_type = None
+        if qty_hubs == 1 and qty_sites == 1:
+            route_type = "Star"
+        elif qty_hubs == 1 and qty_sites > 1:
+            route_type = "Chain"
+        elif qty_hubs > 1 and qty_sites >= 1:
+            route_type = "Ring"
+
+        # Segments
+        for idx, route in ring_lines.iterrows():
+            ne_id = route['near_end']
+            fe_id = route['far_end']
+
+            ne_site = ring_points[ring_points['site_id'].astype(str) == str(ne_id)].copy()
+            fe_site = ring_points[ring_points['site_id'].astype(str) == str(fe_id)].copy()
+            
+            if ne_site.empty:
+                errors.append(f"🔴 Ring {ring} Near End site {ne_id} not found.")
+                continue
+
+            if fe_site.empty:
+                errors.append(f"🔴 Ring {ring} Far End site {fe_id} not found.")
+                continue
+            
+            ne_idx = ne_site.index[0]
+            fe_idx = fe_site.index[0]
+            
+            ne_site = ne_site.iloc[0]
+            fe_site = fe_site.iloc[0]
+
+            # Enrich Metadata
+            match route_type:
+                case "Star" | "Chain":
+                    ne_name = str(ne_site.get("site_name", ""))
+                    fe_name = str(fe_site.get("site_name", ""))
+
+                    ne_station = bool(re.fullmatch(r'^[A-Za-z ]+', ne_name))
+                    fe_station = bool(re.fullmatch(r'^[A-Za-z ]+', fe_name))
+
+                    if ne_station or fe_station:
+                        ne_status = "Station" if ne_status else "Direct to Station"
+                        fe_status = "Station" if fe_status else "Direct to Station"
+                    else:
+                        ne_status = ne_site.get('site_type')
+                        fe_status = fe_site.get('site_type')
+
+                case "Ring":
+                    ne_status = ne_site.get('site_type')
+                    fe_status = fe_site.get('site_type')
+
+            # Add Route Type
+            lines_existing.at[idx, 'route_type'] = route_type
+            points_existing.loc[ne_idx, 'route_type'] = route_type
+            points_existing.loc[fe_idx, 'route_type'] = route_type
+
+    # Raise Error if Exist
+    if any(errors):
+        raise ValueError(f"Please check the KMZ Design, found errors: \n {("\n").join(errors)}")
+    
     print(f"ℹ️ Summary Validated Ring:")
     print(f"ℹ️ Total Points      : {len(points_existing):,}")
     print(f"ℹ️ Total LineString  : {len(points_existing):,}")
     return points_existing, lines_existing
 
-def validate_kmz_ipl(filepath:str, sep: str = "-"):
+def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     points_kmz, lines_kmz, _ = read_kml(filepath)
     points_kmz = gpd.GeoDataFrame(points_kmz, geometry='geometry', crs='EPSG:4326') 
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
@@ -494,8 +611,8 @@ def validate_kmz_ipl(filepath:str, sep: str = "-"):
     points_data['lat']          = round(points_data.geometry.to_crs(epsg=4326).y, 8)
     points_data['ring_name']    = points_data['folders'].str.split(">").str[-2]
     points_data['geometry']     = points_data.geometry.force_2d()
-    points_data['program']      = points_data['Program'] if "Program" in points_data.columns else points_data['folders'].str.extract(r'>([A-Za-z0-9_-]{6,})>')
-    points_data['region']       = points_data['Region'] if "Region" in points_data.columns else points_data['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
+    points_data['program']      = points_data['folders'].str.split(">").str[-3]
+    points_data['region']       = points_data['folders'].str.split(">").str[-3]
     points_data['program']      = points_data['program'].fillna("NA")
     points_data['region']       = points_data['region'].fillna("NA")
     points_data = points_data.dropna(how='all', axis=1)
