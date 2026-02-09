@@ -78,10 +78,10 @@ def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator =
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\FWA COMPILE ADJUSTED\Compiled FWA Surge Adjusted.kmz"
+    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\COMPILE SURGE\Compiled FWA Surge Adjusted.kmz"
     ringlist_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Clean_Ring List.xlsx"
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\FWA COMPILE ADJUSTED"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\COMPILE SURGE\Export"
     os.makedirs(export_dir, exist_ok=True)
 
     # ringlist = pd.read_excel(ringlist_file)

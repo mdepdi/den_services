@@ -866,8 +866,8 @@ async def implementation_intersite(
             "operator": operator,
             "ipl_route": ipl_route,
             "sep": separator.value,
-            "device_in_site": device_in_site,
-            "device_in_branch": device_in_branch,
+            "device_in_site": device_in_site.value,
+            "device_in_branch": device_in_branch.value,
         }
 
         data = dumps(data, default=str)

@@ -1623,7 +1623,8 @@ def kmz_boq(
     points_boq: gpd.GeoDataFrame,
     boq_data: tuple,
     folder: str,
-    device_in_site="OTB",
+    device_in_site: str = "OTB",
+    device_in_branch: str = "ODP",
     **kwargs,
 ):
     program = kwargs.get("program", "N/A")
@@ -1633,6 +1634,12 @@ def kmz_boq(
     lines_boq = lines_boq.copy()
     points_boq = points_boq.copy()
 
+    if device_in_branch == "" or device_in_branch == None:
+        device_in_branch = None
+
+    if device_in_site == "" or device_in_site == None:
+        device_in_site = None
+
     def safe_get_geometry(site_id):
         match = points_boq.loc[
             points_boq["site_id"].astype(str).str.strip() == str(site_id), "geometry"
@@ -1640,9 +1647,7 @@ def kmz_boq(
         if not match.empty:
             return match.iloc[0]
         else:
-            logger.info(
-                f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}."
-            )
+            logger.info(f"⚠️ Missing geometry for site_id: {site_id} in folder {folder}.")
             return None
 
     lines_boq["start"] = (
@@ -1681,9 +1686,7 @@ def kmz_boq(
     try:
         logger.info(f"ℹ️ Total Point {len(points_boq)}")
         ring = folder.split("/")[-1]
-        point_conn, connection = identify_connection(
-            ring=ring, target_fiber=lines_boq, target_point=points_boq
-        )
+        point_conn, connection = identify_connection(ring=ring, target_fiber=lines_boq, target_point=points_boq)
     except Exception as e:
         logger.error(f"Failed identify connection: {e}")
         return main_kml
@@ -1828,28 +1831,33 @@ def kmz_boq(
         size=3,
         popup=False,
     )
-    kml_updated = export_kml(
-        odp,
-        kml_updated,
-        filename,
-        subfolder=f"{folder}/ODP",
-        name_col="name",
-        icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
-        color="#00FF00",
-        size=0.8,
-        popup=False,
-    )
-    kml_updated = export_kml(
-        otb,
-        kml_updated,
-        filename,
-        subfolder=f"{folder}/OTB",
-        name_col="name",
-        icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
-        color="#00FF00",
-        size=0.8,
-        popup=False,
-    )
+
+    if device_in_branch is not None:
+        kml_updated = export_kml(
+            odp,
+            kml_updated,
+            filename,
+            subfolder=f"{folder}/{device_in_branch}",
+            name_col="name",
+            icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
+            color="#00FF00",
+            size=0.8,
+            popup=False,
+        )
+
+    if device_in_site is not None:
+        kml_updated = export_kml(
+            otb,
+            kml_updated,
+            filename,
+            subfolder=f"{folder}/{device_in_site}",
+            name_col="name",
+            icon="http://maps.google.com/mapfiles/kml/shapes/triangle.png",
+            color="#00FF00",
+            size=0.8,
+            popup=False,
+        )
+
     kml_updated = export_kml(
         closure,
         kml_updated,
@@ -1975,8 +1983,8 @@ def main_boq(
     export_dir: str,
     sep: str = ";",
     operator= Operator.XL,
-    boq_type: BoQType = BoQType.INTERSITE,
     ipl_route: str = IPLRoute.EXISTING_FIBER,
+    boq_type: BoQType = BoQType.INTERSITE,
     interval_pole_m: int = 80,
     cable_percentage: int = 10,
     cable_multiplier: int = 1,
@@ -1995,6 +2003,18 @@ def main_boq(
     boq_dir = os.path.join(export_dir, "BOQ")
     os.makedirs(boq_dir, exist_ok=True)
 
+    if isinstance(device_in_branch, DeviceType):
+        device_in_branch = device_in_branch.value
+    if isinstance(device_in_site, DeviceType):
+        device_in_site = device_in_site.value
+    if isinstance(connector_in_site, ConnectorType):
+        connector_in_site = connector_in_site.value
+    if isinstance(connector_in_branch, ConnectorType):
+        connector_in_branch = connector_in_branch.value
+
+    if (device_in_branch != DeviceType.ODP.value) and (device_in_site != DeviceType.ODP.value):
+        raise ValueError(f"🔴 ODP must be enabled, either in branch or in site.")
+
     start_time = time.time()
     points_boq, lines_boq = parallel_boq(
         points, lines, sep=sep, operator=operator, ipl_route=ipl_route, task_celery=task_celery
@@ -2008,7 +2028,7 @@ def main_boq(
     # KMZ
     start_time = time.time()
     ring_names = sorted(points_boq["ring_name"].dropna().unique().tolist())
-    output_kmz = os.path.join(boq_dir, "BOQ KMZ Design.kmz")
+    output_kmz = os.path.join(boq_dir, "KMZ Implementation.kmz")
 
     result_boq = compile_boq(
         points_boq,
@@ -2065,7 +2085,10 @@ def main_boq(
 
         if "region" in ring_points.columns:
             region = ring_points["region"].mode()[0]
-            folder = f"{region}/{ring}"
+            if region == "NA":
+                folder = ring
+            else: 
+                folder = f"{region}/{ring}"
         else:
             folder = ring
 
@@ -2075,6 +2098,8 @@ def main_boq(
                 lines_boq=ring_lines,
                 points_boq=ring_points,
                 boq_data=boq_data,
+                device_in_site=device_in_site,
+                device_in_branch=device_in_branch,
                 folder=folder,
                 vendor=vendor,
                 program=program,
@@ -2099,7 +2124,7 @@ def main_boq(
     # BOQ FORMAT RESULT
     start_time = time.time()
     match boq_type:
-        case BoQType.INTERSITE:
+        case BoQType.INTERSITE.value:
             boq_generation(
                 kmz_path=output_kmz, 
                 export_dir=boq_dir, 
@@ -2114,7 +2139,7 @@ def main_boq(
                 connector_in_branch = connector_in_branch,
                 program_name = program_name
             )
-        case BoQType.MMP:
+        case BoQType.MMP.value:
             boq_mmp(
                 kmz_path=output_kmz, 
                 export_dir=boq_dir, 
@@ -2133,21 +2158,21 @@ def main_boq(
     end_time = time.time()
     excel_time = round((end_time - start_time) / 60, 2)
 
-    logger.info(f"✅ All BOQ Process Done.")
-    logger.info(f"ℹ️ Time Consumed:")
-    logger.info(f"BOQ Parallel Time   : {boq_time:,} minutes")
-    logger.info(f"Excel Result Time   : {excel_time:,} minutes")
-    logger.info(f"KMZ Result Time     : {kmz_time:,} minutes")
-    logger.info(f"BOQ {operator.upper()} Time : {round((end_time-start_time)/60,2):,} minutes")
+    logger.info(f"✅ All KMZ IPL Process Done.")
+    logger.info(f"ℹ️ Time Consumed  :")
+    logger.info(f"KMZ Parallel Time : {boq_time:,} minutes")
+    logger.info(f"KMZ Excel Time    : {excel_time:,} minutes")
+    logger.info(f"KMZ Result Time   : {kmz_time:,} minutes")
+    logger.info(f"KMZ {operator.upper()} Time : {round((end_time-start_time)/60,2):,} minutes")
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DEBUG BOQ\Hasna_Intersite Design_Fix Route.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DEBUG BOQ\Hasna_Intersite Design_Fix Route"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\BAL-BA-DPR-0253;BAL-BA-DPR-0253.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\Export"
     sep= ";"
-    boq_type = BoQType.INTERSITE
+    boq_type = BoQType.MMP
     ipl_route = IPLRoute.EXISTING_FIBER
-    operator = Operator.TSEL
+    operator = Operator.XL
 
     match boq_type:
         case BoQType.INTERSITE:
@@ -2155,8 +2180,8 @@ if __name__ == "__main__":
             interval_pole_m = 80
             cable_percentage = 10
             cable_multiplier = 1
-            device_in_branch = "ODP"
-            device_in_site = "OTB"
+            device_in_branch = DeviceType.ODP
+            device_in_site = DeviceType.OTB
             sclc_enabled = False
 
         case BoQType.MMP:
@@ -2164,8 +2189,8 @@ if __name__ == "__main__":
             interval_pole_m = 60
             cable_percentage = 15
             cable_multiplier = 2
-            device_in_branch = "ODP"
-            device_in_site = "ODP"
+            device_in_branch = None
+            device_in_site = DeviceType.ODP
             sclc_enabled = False
 
     os.makedirs(export_dir, exist_ok=True)
@@ -2183,7 +2208,7 @@ if __name__ == "__main__":
         cable_multiplier=cable_multiplier,
         sclc_enabled = sclc_enabled,
         device_in_site=device_in_site,
-        device_in_branch=device_in_branch,
+        device_in_branch=None,
         program_name="MMP DMT"
     )
 
