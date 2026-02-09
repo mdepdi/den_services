@@ -842,8 +842,8 @@ async def implementation_intersite(
     if (device_in_branch != DeviceType.ODP) and (device_in_site != DeviceType.ODP):
         raise ValueError("🔴 ODP must be enabled, either in branch or in site.")
     
-    logger.info("device_in_site:", device_in_site, device_in_site.value)
-    logger.info("device_in_branch:", device_in_branch, device_in_branch.value)
+    logger.info(f"device_in_site: {device_in_site} '{device_in_site.value}'")
+    logger.info(f"device_in_branch: {device_in_branch} '{device_in_branch.value}'")
 
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
