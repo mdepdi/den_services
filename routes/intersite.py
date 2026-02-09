@@ -817,10 +817,10 @@ async def implementation_intersite(
     separator: Separator = Form(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
-    device_in_site: Optional[DeviceType|str] = Form(
+    device_in_site: Optional[str|DeviceType] = Form(
         None, description="Device to place in site."
     ),
-    device_in_branch: Optional[DeviceType|str] = Form(
+    device_in_branch: Optional[str|DeviceType] = Form(
         None, description="Device to place in branch."
     ),
     ipl_route: Optional[IPLRoute] = Form(
