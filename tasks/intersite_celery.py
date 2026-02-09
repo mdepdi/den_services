@@ -487,9 +487,6 @@ def task_ipl(self, data: dict):
 
         self.update_state(state="PROGRESS", meta={"status": "Processing BOQ data"})
 
-        print(f"Device in Site: {device_in_site}")
-        print(f"Device in Branch: {device_in_branch}")
-        
         result = main_boq(
             points=points,
             lines=lines,

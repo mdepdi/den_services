@@ -41,6 +41,12 @@ from tasks.intersite_celery import (
     task_ipl,
 )
 
+# ------------------------------------------------------
+# LOGGER
+# ------------------------------------------------------
+from core.logger import create_logger
+logger = create_logger(__file__)
+
 # EXPORT DIR
 UPLOAD_DIR = settings.UPLOAD_DIR
 EXPORT_DIR = settings.EXPORT_DIR
@@ -218,7 +224,7 @@ async def insert_ring(
 
     with open(kmz_path, "wb") as f:
         f.write(await kmz_design.read())
-    print(f"📥 Saved KMZ file → {kmz_path}")
+    logger.info(f"📥 Saved KMZ file → {kmz_path}")
 
     excel_suffix = os.path.splitext(insert_list.filename)[1].lower()
     if excel_suffix not in [".xlsx", ".xls", ".csv"]:
@@ -230,7 +236,7 @@ async def insert_ring(
     )
     with open(insert_path, "wb") as f:
         f.write(await insert_list.read())
-    print(f"📥 Saved Insert List → {insert_path}")
+    logger.info(f"📥 Saved Insert List → {insert_path}")
     _, _, _ = validate_insert(insert_path, kmz_path)
 
     # Params
@@ -246,7 +252,7 @@ async def insert_ring(
     )
 
     celery_task = task_insertring.apply_async(args=[params])
-    print(f"✅ Insert Task submitted with ID: {celery_task.id}")
+    logger.info(f"✅ Insert Task submitted with ID: {celery_task.id}")
 
     return {
         "message": "Insert ring task started!",
@@ -306,8 +312,8 @@ async def supervised_ring(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Separator         : {separator}")
-    print(f"ℹ️ Route Preference  : {route_preference}")
+    logger.info(f"ℹ️ Separator         : {separator}")
+    logger.info(f"ℹ️ Route Preference  : {route_preference}")
 
     date_today = datetime.now().strftime("%Y%m%d")
     supervised_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "Supervised")
@@ -331,7 +337,7 @@ async def supervised_ring(
         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_site_data_{uuid4().hex}.parquet",
     )
     site_data.to_parquet(temp_parquet_path, index=False)
-    print(f"📥 Temporary site data saved to: {temp_parquet_path}")
+    logger.info(f"📥 Temporary site data saved to: {temp_parquet_path}")
 
     try:
         data = {
@@ -343,7 +349,7 @@ async def supervised_ring(
         }
         data = dumps(data, default=str)
         celery_task = task_supervised.apply_async(args=[data])
-        print(f"✅ Supervised Task submitted with ID: {celery_task.id}")
+        logger.info(f"✅ Supervised Task submitted with ID: {celery_task.id}")
 
         return {
             "message": "Supervised fiberization task has been initiated.",
@@ -407,8 +413,8 @@ async def unsupervised_ring(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Separator         : {separator}")
-    print(f"ℹ️ Route Preference  : {route_preference}")
+    logger.info(f"ℹ️ Separator         : {separator}")
+    logger.info(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
         # LOAD DATA
@@ -446,8 +452,8 @@ async def unsupervised_ring(
     )
     site_data.to_parquet(temp_parquet_path, index=False)
     hubs_data.to_parquet(temp_hub_path, index=False)
-    print(f"📥 Temporary site data saved to : {temp_parquet_path}")
-    print(f"📥 Temporary hub data saved to  : {temp_hub_path}")
+    logger.info(f"📥 Temporary site data saved to : {temp_parquet_path}")
+    logger.info(f"📥 Temporary hub data saved to  : {temp_hub_path}")
 
     try:
         data = {
@@ -463,7 +469,7 @@ async def unsupervised_ring(
         }
         data = dumps(data, default=str)
         celery_task = task_unsupervised.apply_async(args=[data])
-        print(f"✅ Unsupervised Task submitted with ID: {celery_task.id}")
+        logger.info(f"✅ Unsupervised Task submitted with ID: {celery_task.id}")
 
         return {
             "message": "Unsupervised fiberization task has been initiated.",
@@ -521,8 +527,8 @@ async def fixroute_ring(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Separator         : {separator}")
-    print(f"ℹ️ Route Preference  : {route_preference}")
+    logger.info(f"ℹ️ Separator         : {separator}")
+    logger.info(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
         # LOAD DATA
@@ -538,7 +544,7 @@ async def fixroute_ring(
         f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_fixroute_{uuid4().hex}.xlsx",
     )
     fixroute_input.to_excel(excel_path, index=False)
-    print(f"📥 Temporary Excel data saved to: {excel_path}")
+    logger.info(f"📥 Temporary Excel data saved to: {excel_path}")
 
     try:
         data = {
@@ -617,8 +623,8 @@ async def polygon_intersite(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Separator         : {separator}")
-    print(f"ℹ️ Route Preference  : {route_preference}")
+    logger.info(f"ℹ️ Separator         : {separator}")
+    logger.info(f"ℹ️ Route Preference  : {route_preference}")
 
     try:
         suffix = os.path.splitext(polygon_file.filename)[1].lower()
@@ -628,7 +634,7 @@ async def polygon_intersite(
 
         if suffix in [".kml", ".kmz", ".gpkg", ".parquet", ".shp"]:
             polygon_gdf = read_gdf(tmp_fiber_path, geom_type="polygon")
-            print(f"📥 Reading polygon file: {polygon_file.filename}")
+            logger.info(f"📥 Reading polygon file: {polygon_file.filename}")
         else:
             return {
                 "error": f"Unsupported polygon file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."
@@ -651,8 +657,8 @@ async def polygon_intersite(
         sitelist.to_excel(xls, sheet_name="sitelist")
 
     polygon_gdf.to_parquet(polygon_path, index=False)
-    print(f"📥 Temporary Excel data saved to: {excel_path}")
-    print(f"📥 Temporary Polygon data saved to: {polygon_path}")
+    logger.info(f"📥 Temporary Excel data saved to: {excel_path}")
+    logger.info(f"📥 Temporary Polygon data saved to: {polygon_path}")
 
     try:
         data = {
@@ -721,8 +727,8 @@ async def topology_intersite(
         case _:
             graph_type = "route"
 
-    print(f"ℹ️ Separator         : {separator}")
-    print(f"ℹ️ Route Preference  : {route_preference}")
+    logger.info(f"ℹ️ Separator         : {separator}")
+    logger.info(f"ℹ️ Route Preference  : {route_preference}")
 
     # Read Excel file
     if excel_file is None:
@@ -747,7 +753,7 @@ async def topology_intersite(
 
         if suffix in [".kml", ".kmz", ".gpkg", ".parquet", ".shp"]:
             topology_gdf = read_gdf(tmp_fiber_path, geom_type="line")
-            print(f"📥 Reading topology file: {topology_file.filename}")
+            logger.info(f"📥 Reading topology file: {topology_file.filename}")
         else:
             return {
                 "error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."
@@ -769,8 +775,8 @@ async def topology_intersite(
         sitelist.to_excel(xls, sheet_name="sitelist")
 
     topology_gdf.to_parquet(topology_path, index=False)
-    print(f"📥 Temporary Excel data saved to: {excel_path}")
-    print(f"📥 Temporary Topology data saved to: {topology_path}")
+    logger.info(f"📥 Temporary Excel data saved to: {excel_path}")
+    logger.info(f"📥 Temporary Topology data saved to: {topology_path}")
 
     try:
         data = {
@@ -833,8 +839,11 @@ async def implementation_intersite(
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
-    if (device_in_branch != DeviceType.ODP.value) and (device_in_site != DeviceType.ODP.value):
-        raise ValueError(f"🔴 ODP must be enabled, either in branch or in site.")
+    if (device_in_branch != DeviceType.ODP) and (device_in_site != DeviceType.ODP):
+        raise ValueError("🔴 ODP must be enabled, either in branch or in site.")
+    
+    logger.info("device_in_site:", device_in_site, device_in_site.value)
+    logger.info("device_in_branch:", device_in_branch, device_in_branch.value)
 
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -857,13 +866,10 @@ async def implementation_intersite(
 
     point_kmz.to_parquet(points_path, index=False)
     line_kmz.to_parquet(lines_path, index=False)
-    print(f"📥 Temporary Points data saved to   : {points_path}")
-    print(f"📥 Temporary Lines data saved to    : {lines_path}")
+    logger.info(f"📥 Temporary Points data saved to   : {points_path}")
+    logger.info(f"📥 Temporary Lines data saved to    : {lines_path}")
 
     try:
-        print(f"Device in Site: {device_in_site}")
-        print(f"Device in Branch: {device_in_branch}")
-        
         data = {
             "points_path": points_path,
             "lines_path": lines_path,
