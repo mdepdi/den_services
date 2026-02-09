@@ -835,6 +835,11 @@ async def implementation_intersite(
 
     if (device_in_branch != DeviceType.ODP.value) and (device_in_site != DeviceType.ODP.value):
         raise ValueError(f"🔴 ODP must be enabled, either in branch or in site.")
+    
+    if isinstance(device_in_branch, DeviceType):
+        device_in_branch = device_in_branch.value
+    if isinstance(device_in_site, DeviceType):
+        device_in_site = device_in_site.value
 
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
@@ -861,6 +866,9 @@ async def implementation_intersite(
     print(f"📥 Temporary Lines data saved to    : {lines_path}")
 
     try:
+        print(f"Device in Site: {device_in_site}")
+        print(f"Device in Branch: {device_in_branch}")
+        
         data = {
             "points_path": points_path,
             "lines_path": lines_path,
