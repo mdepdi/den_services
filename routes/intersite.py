@@ -819,10 +819,10 @@ async def implementation_intersite(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     device_in_site: DeviceType | None = Form(
-        None, description="Device to place in site."
+        DeviceType.OTB, description="Device to place in site."
     ),
     device_in_branch: DeviceType | None = Form(
-        None, description="Device to place in branch."
+        DeviceType.ODP, description="Device to place in branch."
     ),
     ipl_route: Optional[IPLRoute] = Form(
         IPLRoute.EXISTING_FIBER, description="Route preference to identify as existing fiber."
