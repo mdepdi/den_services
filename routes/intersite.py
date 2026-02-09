@@ -102,6 +102,7 @@ class RoutePreference(str, Enum):
     SURGE_763 = "surge_763"
 
 class DeviceType(str, Enum):
+    NONE = "NONE"
     OTB = "OTB"
     ODP = "ODP"
 
@@ -842,8 +843,8 @@ async def implementation_intersite(
     if (device_in_branch != DeviceType.ODP) and (device_in_site != DeviceType.ODP):
         raise ValueError("🔴 ODP must be enabled, either in branch or in site.")
 
-    device_in_site = DeviceType(device_in_site) if device_in_site else None
-    device_in_branch = DeviceType(device_in_branch) if device_in_branch else None
+    device_in_site = None if device_in_site == DeviceType.NONE else DeviceType(device_in_site)
+    device_in_branch = None if device_in_branch == DeviceType.NONE else DeviceType(device_in_branch)
 
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
