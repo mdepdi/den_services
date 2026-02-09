@@ -102,7 +102,6 @@ class RoutePreference(str, Enum):
     SURGE_763 = "surge_763"
 
 class DeviceType(str, Enum):
-    NONE = None
     OTB = "OTB"
     ODP = "ODP"
 
