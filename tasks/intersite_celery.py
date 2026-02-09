@@ -467,6 +467,8 @@ def task_ipl(self, data: dict):
         boq_type = parsed_data.get("boq_type", "intersite")
         ipl_route = parsed_data.get("ipl_route", "existing_fiber")
         vendor = parsed_data.get("vendor", "TBG")
+        device_in_site = parsed_data.get("device_in_site", None)
+        device_in_branch = parsed_data.get("device_in_branch", None)
         sep = parsed_data.get("sep", "-")
 
         if DOCKER:
@@ -494,6 +496,8 @@ def task_ipl(self, data: dict):
             ipl_route=ipl_route,
             program=program,
             vendor=vendor,
+            device_in_branch=device_in_branch,
+            device_in_site=device_in_site,
             task_celery=self
         )
 

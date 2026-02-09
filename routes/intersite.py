@@ -812,10 +812,10 @@ async def implementation_intersite(
         Separator.SEMICOLON, description="Separator for segment identify near end and far end."
     ),
     device_in_site: Optional[DeviceType] = Form(
-        DeviceType.OTB, description="Device to place in site, if BOQ is True."
+        DeviceType.OTB, description="Device to place in site."
     ),
     device_in_branch: Optional[DeviceType] = Form(
-        DeviceType.ODP, description="Device to place in branch, if BOQ is True."
+        DeviceType.ODP, description="Device to place in branch."
     ),
     ipl_route: Optional[IPLRoute] = Form(
         IPLRoute.EXISTING_FIBER, description="Route preference to identify as existing fiber."
@@ -833,6 +833,8 @@ async def implementation_intersite(
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
+    if (device_in_branch != DeviceType.ODP.value) and (device_in_site != DeviceType.ODP.value):
+        raise ValueError(f"🔴 ODP must be enabled, either in branch or in site.")
 
     try:
         suffix = os.path.splitext(design_file.filename)[1].lower()
