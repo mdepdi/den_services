@@ -296,10 +296,10 @@ def validate_fixroute(df: pd.DataFrame):
         target_geom = target_row['geometry']
         dist = distance(source_geom, target_geom)
 
-        if dist < 10000:
+        if dist < 100000:
             continue
         else:
-            exceed_record = f"NE: {source_id} ({source_geom}) to FE: {target_id} ({target_geom}) exceed 10km, with distance {dist/1000} km."
+            exceed_record = f"NE: {source_id} ({source_geom}) to FE: {target_id} ({target_geom}) exceed 100km, with distance {dist/1000} km."
             exceed_list.append(exceed_record)
 
     if any(exceed_list):

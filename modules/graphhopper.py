@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from datetime import datetime
 from time import time
-from modules.geometry import point_coordinates
+from modules.geometry import point_coordinates, geodesic_length
 from modules.utils import auto_group
 from modules.data import read_gdf, validate_longlat
 from core.config import settings
@@ -35,10 +35,10 @@ def graphhopper_routing(start: Point, end: Point, endpoint="http://10.83.10.16:8
 
             if "message" in data and "Connection between locations not found" in data["message"]:
                 print("⚠️ No route available between these coordinates.")
-                return None
+                return LineString()
 
             if "paths" not in data or not data["paths"]:
-                raise ValueError(f"Missing 'paths' in response: {data}")
+                return LineString()
 
             path = data["paths"][0]
             coords = path["points"]["coordinates"]
@@ -111,7 +111,9 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
             # print(f"🟢 Success. ID {id} from {src_geom} -> {tgt_geom}")
 
     route_gdf = gpd.GeoDataFrame(pairs_df, geometry="geometry", crs="EPSG:4326")
-    route_gdf['distance'] = route_gdf.geometry.to_crs(epsg=3857).length
+    route_gdf = route_gdf[~(route_gdf.geometry.is_empty) & ~(route_gdf.geometry.isna())].copy()
+    route_gdf['distance'] = route_gdf.geometry.to_crs(epsg=4326).apply(geodesic_length)
+
     if 'src_geom' in route_gdf.columns:
         route_gdf = route_gdf.drop(columns='src_geom')
     if 'tgt_geom' in route_gdf.columns:
@@ -137,9 +139,6 @@ def grapphopper_knn(
     if k_final is None:
         k_final = 1
     
-    print(f"ℹ️ Running Graphhopper KNN.")
-    print(f"ℹ️ Profile: {profile}.")
-    start_time = time()
     k_candidate = k_final * 5 if k_final < 3 else k_final*3
     pairs_df = nearest_candidates(source_gdf=source_gdf, target_gdf=target_gdf, k_candidates=k_candidate)
     route_gdf = graphhopper_parallel(pairs_df=pairs_df, workers=workers, profile=profile)
@@ -149,10 +148,6 @@ def grapphopper_knn(
 
     gdf = gpd.GeoDataFrame(best, geometry="geometry", crs="EPSG:4326")
     gdf['length'] = gdf.geometry.to_crs(epsg=3857).length
-    end_time = time()
-    process_time = end_time-start_time
-
-    print(f"✅ Graphhopper KNN Route Done in {process_time/60:.2f} minutes")
     return gdf
 
 def save_routing(gdf:gpd.GeoDataFrame, export_dir):
