@@ -11,7 +11,7 @@ from datetime import datetime
 from time import time
 from modules.geometry import point_coordinates
 from modules.utils import auto_group
-from modules.data import read_gdf
+from modules.data import read_gdf, validate_longlat
 from core.config import settings
 
 MAINDATA_DIR = settings.MAINDATA_DIR
@@ -25,7 +25,7 @@ def graphhopper_routing(start: Point, end: Point, endpoint="http://10.83.10.16:8
         "points_encoded": "false"
     }
 
-    max_retry = 5
+    max_retry = 3
     retry = 0
 
     while retry < max_retry:
@@ -85,11 +85,15 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
     pairs_df = pairs_df.copy()
     with ProcessPoolExecutor(max_workers=workers) as ex:
         for idx, row in pairs_df.iterrows():
+            src_idx = row['src_idx']
+            tgt_idx = row['tgt_idx']
             source_geom = row['src_geom']
             target_geom = row['tgt_geom']
             task = ex.submit(graphhopper_routing, source_geom, target_geom, profile=profile)
             tasks[task] = {
                 "id": idx,
+                "src_idx": src_idx,
+                "tgt_idx": tgt_idx,
                 "src_geom": source_geom,
                 "tgt_geom": target_geom,
             }
@@ -117,7 +121,7 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
 def best_route(routing_df:gpd.GeoDataFrame, k_final:int=1):
    final=[]
    for idx, group in routing_df.groupby("src_idx"):
-      best = group.sort_values("distance").head(k_final).reset_index()
+      best = group.sort_values("distance").head(k_final).reset_index(drop=True)
       best['num'] = best.index + 1
       final.append(best)
    final = pd.concat(final, ignore_index=True)
@@ -136,11 +140,11 @@ def grapphopper_knn(
     print(f"ℹ️ Running Graphhopper KNN.")
     print(f"ℹ️ Profile: {profile}.")
     start_time = time()
-    k_candidate = k_final*5 if k_final < 3 else k_final*3
+    k_candidate = k_final * 5 if k_final < 3 else k_final*3
     pairs_df = nearest_candidates(source_gdf=source_gdf, target_gdf=target_gdf, k_candidates=k_candidate)
     route_gdf = graphhopper_parallel(pairs_df=pairs_df, workers=workers, profile=profile)
-    route_gdf = route_gdf.merge(source_gdf[['site_id','lat','long']], left_on='src_idx', right_index=True, suffixes=[None, '_src'])
-    route_gdf = route_gdf.merge(target_gdf[['site_id','lat','long']], left_on='tgt_idx', right_index=True, suffixes=[None, '_tgt'])
+    route_gdf = route_gdf.merge(source_gdf[['site_id','site_name','lat','long']].add_suffix("_a"), left_on='src_idx', right_index=True)
+    route_gdf = route_gdf.merge(target_gdf[['site_id','site_name','lat','long']].add_suffix("_b"), left_on='tgt_idx', right_index=True)
     best = best_route(route_gdf, k_final=k_final)
 
     gdf = gpd.GeoDataFrame(best, geometry="geometry", crs="EPSG:4326")
@@ -229,13 +233,30 @@ def distance_fiber(source_gdf:gpd.GeoDataFrame, export_dir:str, max_distance=100
 
 if __name__ == "__main__":
     # PROCESS ROUTING
-    source_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 5\Intersite Algorithm\Distance to ODC\Template Routing.xlsx"
+    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Template Routing.xlsx"
+    target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\ODC Telkom Sumatera.kmz"
     k_final = 1
-    source_gdf, target_gdf = verify_input(source_path)
+
+    source_gdf = read_gdf(source_path)
+    target_gdf = read_gdf(target_path, geom_type='point')
+    target_gdf['site_id'] = target_gdf['name']
+
+    if "site_name" not in source_gdf.columns:
+        source_gdf['site_name'] = source_gdf['name']
+    if "site_name" not in target_gdf.columns:
+        target_gdf['site_name'] = target_gdf['name']
+
+    if 'long' not in target_gdf.columns:
+        target_gdf['long'] = target_gdf.geometry.x
+        target_gdf['lat'] = target_gdf.geometry.y
+
+    source_gdf = validate_longlat(source_gdf)
+    target_gdf = validate_longlat(target_gdf)
+
     routing_gdf = grapphopper_knn(source_gdf, target_gdf, k_final=k_final, profile='car')
 
     # EXPORT DATA
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 5\Intersite Algorithm\Distance to ODC\Export"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Export"
     date_today = datetime.today().strftime("%Y-%m-%d")
     export_dir = os.path.join(export_dir, date_today)
     os.makedirs(export_dir, exist_ok=True)
@@ -245,30 +266,16 @@ if __name__ == "__main__":
     target_gdf.to_parquet(os.path.join(export_dir, "Target GDF.parquet"))
 
     # PROCESS DATA OPERASIONAL AKSES INTERNET
-    # source_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\POI Makassar\POI Classified.parquet"
-    # route_path = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Transnet.kmz"
+    # source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Template Routing.xlsx"
+    # route_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Compile RO.kmz"
     # source_gdf = read_gdf(source_path)
     # route_gdf = read_gdf(route_path, geom_type='line')
-    # source_gdf['site_id'] = source_gdf['name']
     # source_gdf['long'] = source_gdf.geometry.to_crs(epsg=4326).x
     # source_gdf['lat'] = source_gdf.geometry.to_crs(epsg=4326).y
+
     # source_gdf = source_gdf.to_crs(epsg=3857)
     # route_gdf = route_gdf.to_crs(epsg=3857)
-    # route_existing = route_gdf[route_gdf['folders'].str.lower().str.contains('existing')].copy()
-    # route_new = route_gdf[~route_gdf.index.isin(route_existing.index)].copy()
-    # source_gdf = gpd.sjoin_nearest(source_gdf, route_existing, max_distance=2000, distance_col='dist_existing', how='left').drop(columns='index_right')
-    # source_gdf = gpd.sjoin_nearest(source_gdf, route_new, max_distance=2000, distance_col='dist_new', how='left').drop(columns='index_right')
-    # source_gdf = source_gdf.dropna(subset=['dist_existing', 'dist_new'], how='all')
-    # source_gdf = source_gdf.sort_values('dist_existing')
-    # source_gdf = source_gdf.drop_duplicates('site_id')
-    # route_gdf.to_parquet(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export\Route Transnet.parquet")
-    # source_gdf.to_parquet(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export\POI Classified Mapped Transnet.parquet")
-    # source_gdf.to_excel(r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export\POI Classified Mapped Transnet.xlsx")
+    # route_gdf = gpd.sjoin_nearest(route_gdf, source_gdf, max_distance=5000, distance_col='dist', how='left').drop(columns='index_right')
 
-    # used_col = ['site_id', 'lat', 'long']
-    # for col in used_col:
-    #     if col not in source_gdf.columns:
-    #         raise ValueError(f"Column {col} not found for Source GDF")
-
-    # export_dir = r"D:\JACOBS\PROJECT\TASK\DESEMBER\Week 2\POI Potensial Distance to Transnet\Export"
-    # route_path = distance_fiber(source_gdf, export_dir=export_dir, max_distance=2000, fiber_route=route_new)
+    # export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Export"
+    # route_path = distance_fiber(source_gdf, export_dir=export_dir, max_distance=2000, fiber_route=route_gdf)

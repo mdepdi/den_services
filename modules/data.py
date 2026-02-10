@@ -180,9 +180,27 @@ def validate_longlat(df:pd.DataFrame, lon_col="long", lat_col="lat"):
         )
         df = df[~invalid_mask]
         df = df.reset_index(drop=True)
+
+    if n_invalid > 0 or n_swapped > 0:
+        raise ValueError(
+            f"✅ Coord Valid    : {n_valid:,} records.\n"
+            f"🔁 Swapped Coords : {n_swapped:,} records.\n"
+            f"❌ Invalid Coords : {n_invalid:,} records.\n\n"
+            f"Snippet Invalid Outside Indonesia Bounding Box: \n {bad_rows.to_string(index=False)}"
+        )
     return df
 
-def read_gdf(file: str|pd.DataFrame = None, **kwargs):
+def read_gdf(
+        file: str|pd.DataFrame = None, 
+        geom_type: str|None = None, 
+        long_col:str='long', 
+        lat_col:str='lat', 
+        header:int=0, 
+        crs:str="EPSG:4326", 
+        sheet_name:str|int=0, 
+        **kwargs
+        ):
+    
     if isinstance(file, str):
         filename = file
         extension = filename.split(".")[-1].lower()
@@ -199,11 +217,6 @@ def read_gdf(file: str|pd.DataFrame = None, **kwargs):
                 elif extension == "tab":
                     gdf = gpd.read_file(filename, driver="MapInfo File")
             elif extension == "xlsx":
-                crs = kwargs.get("crs", "EPSG:4326")
-                long_col = kwargs.get("long_col", "long")
-                lat_col = kwargs.get("lat_col", "lat")
-                sheet_name = kwargs.get("sheet_name", 0)
-                header = kwargs.get("header", 0)
                 df = pd.read_excel(filename, sheet_name=sheet_name, header=header)
                 long_col = find_best_match(long_col, df.columns.tolist(), 0.6)
                 lat_col = find_best_match(lat_col, df.columns.tolist(), 0.6)
@@ -227,11 +240,6 @@ def read_gdf(file: str|pd.DataFrame = None, **kwargs):
                     except Exception as e:
                         raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
             elif extension == "csv":
-                crs = kwargs.get("crs", "EPSG:4326")
-                long_col = kwargs.get("long_col", "long")
-                lat_col = kwargs.get("lat_col", "lat")
-                header = kwargs.get("header", 0)
-
                 df = pd.read_csv(filename)
                 long_col = find_best_match(long_col, df.columns.tolist())
                 lat_col = find_best_match(lat_col, df.columns.tolist())
@@ -255,7 +263,6 @@ def read_gdf(file: str|pd.DataFrame = None, **kwargs):
                     except Exception as e:
                         raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
             elif extension in ["kmz", "kml"]:
-                geom_type = kwargs.get("geom_type", None)
                 if geom_type is None:
                     raise ValueError(f"Geometry type must be selected between ['point', 'line', 'polygon']")
                 
@@ -275,10 +282,6 @@ def read_gdf(file: str|pd.DataFrame = None, **kwargs):
             raise ValueError(f"Error reading file: {str(e)}")
     elif isinstance(file, pd.DataFrame):
         df = file.copy()
-        crs = kwargs.get("crs", "EPSG:4326")
-        long_col = kwargs.get("long_col", "long")
-        lat_col = kwargs.get("lat_col", "lat")
-        header = kwargs.get("header", 0)
 
         long_col = find_best_match(long_col, df.columns.tolist())
         lat_col = find_best_match(lat_col, df.columns.tolist())
@@ -303,6 +306,9 @@ def read_gdf(file: str|pd.DataFrame = None, **kwargs):
                 raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
     else:
         raise ValueError("File must be a string representing the file path or dataframe format.")
+    
+    if crs is not None:
+        gdf = gdf.to_crs(crs)
 
     return gdf
 

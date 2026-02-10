@@ -806,27 +806,13 @@ async def topology_intersite(
 # ================
 @router.post("/implementation-intersite", tags=["Intersite"])
 async def implementation_intersite(
-    design_file: UploadFile = File(
-        None, description="Design file containing DEN intersite format (.kmz, .kml)."
-    ),
-    program: Optional[str] = Form(
-        "Implementation", description="Program name if 'program' column not provided."
-    ),
-    operator: Optional[Operator] = Form(
-        Operator.IOH, description="Operator to generate implementation KMZ algorithm."
-    ),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    device_in_site: DeviceType | None = Form(
-        DeviceType.OTB, description="Device to place in site."
-    ),
-    device_in_branch: DeviceType | None = Form(
-        DeviceType.ODP, description="Device to place in branch."
-    ),
-    ipl_route: Optional[IPLRoute] = Form(
-        IPLRoute.EXISTING_FIBER, description="Route preference to identify as existing fiber."
-    )
+    design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml)."),
+    program: Optional[str] = Form("Implementation", description="Program name if 'program' column not provided."),
+    operator: Optional[Operator] = Form(Operator.IOH, description="Operator to generate implementation KMZ algorithm."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    device_in_site: DeviceType | None = Form(DeviceType.OTB, description="Device to place in site."),
+    device_in_branch: DeviceType | None = Form(DeviceType.ODP, description="Device to place in branch."),
+    ipl_route: Optional[IPLRoute] = Form(IPLRoute.EXISTING_FIBER, description="Route preference to identify as existing fiber.")
 ):
     """
     Create Intersite Implementation KMZ with BOQ Report.

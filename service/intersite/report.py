@@ -105,6 +105,7 @@ def drm_format(
         province = ring_points['Provinsi'].mode()[0]
         city = ring_points['Kabkot'].mode()[0]
         vendor = "TBG"
+
         ne_ids = set(ring_lines['near_end'].astype(str))
         fe_ids = set(ring_lines['far_end'].astype(str))
 
@@ -130,8 +131,9 @@ def drm_format(
                 hub_1 = hubs['site_id'].astype(str).values[0]
                 hub_2 = hubs['site_id'].astype(str).values[-1]
             case _:
-                logger.error(f"🔴 Ring {ring} FO Hub exceeds, found {qty_hubs}.")
-                continue
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = None
+                logger.error(f"🟠 Ring {ring} FO Hub exceeds, found {qty_hubs}.")
             
         # Enrich Metadata
         route_type = None
@@ -169,8 +171,8 @@ def drm_format(
                     fe_station = bool(re.fullmatch(r'^[A-Za-z ]+', fe_name))
 
                     if ne_station or fe_station:
-                        ne_status = "Station" if ne_status else "Direct to Station"
-                        fe_status = "Station" if fe_status else "Direct to Station"
+                        ne_status = "Station" if ne_station else "Direct to Station"
+                        fe_status = "Station" if fe_station else "Direct to Station"
                     else:
                         ne_status = ne_site.get('site_type')
                         fe_status = fe_site.get('site_type')

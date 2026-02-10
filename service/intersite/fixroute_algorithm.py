@@ -9,6 +9,7 @@ import networkx as nx
 from datetime import datetime
 from time import time
 from shapely.ops import linemerge
+from shapely.measurement import distance
 from tqdm import tqdm
 
 from pathlib import Path
@@ -270,7 +271,7 @@ def validate_fixroute(df: pd.DataFrame):
             geom_ne = gpd.points_from_xy(df_ne["long"], df_ne["lat"])
             geom_fe = gpd.points_from_xy(df_fe["long"], df_fe["lat"])
         except Exception as e:
-            raise ValueError(e)
+            raise ValueError(f"Invalid coordinate input for Fix Routing: \n {e}")
 
     logger.info(f"ℹ️ Converting to GeoDataFrame...")
     gdf_ne = gpd.GeoDataFrame(df_ne, geometry=geom_ne, crs="EPSG:4326").to_crs(epsg=3857)
@@ -281,6 +282,29 @@ def validate_fixroute(df: pd.DataFrame):
     gdf_fe["site_name"] = gdf_fe['site_name'].astype(str)
     gdf_ne["point_type"] = "NE"
     gdf_fe["point_type"] = "FE"
+
+    logger.info(f"ℹ️ Check Near End > Far End Distance")
+    gdf_fe = gdf_fe.reset_index(drop=True)
+    gdf_ne = gdf_ne.reset_index(drop=True)
+
+    exceed_list = []
+    for idx, row in gdf_ne.iterrows():
+        source_id = row['site_id']
+        source_geom = row['geometry']
+        target_row = gdf_fe.loc[idx]
+        target_id = target_row['site_id']
+        target_geom = target_row['geometry']
+        dist = distance(source_geom, target_geom)
+
+        if dist < 10000:
+            continue
+        else:
+            exceed_record = f"NE: {source_id} ({source_geom}) to FE: {target_id} ({target_geom}) exceed 10km, with distance {dist/1000} km."
+            exceed_list.append(exceed_record)
+
+    if any(exceed_list):
+        raise ValueError(f"Eucledian Distance checking found {len(exceed_list)} records too far segments:\n {exceed_list}")
+
     logger.info(f"ℹ️ Validation completed.\n")
     return gdf_ne, gdf_fe
 
@@ -346,15 +370,16 @@ def main_fixroute(
 
     # EXPORT
     logger.info("🧩 Save Design Information")
-    save_intersite(updated_points, updated_routes, export_dir, method)
+    save_intersite(updated_points, updated_routes, export_dir, sep, method)
 
     logger.info("🏆 Fix Route export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest CMI 12 Sites.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\JAN\W4\Surge Sitelist Remark Task\Export\Sites Potential TBG Nearest CMI 12 Sites"
-    program ="Sites Direct to Station"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design\Template_Fixed_Route_Mas Orendo.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design\Star Design Existing Route Report"
+    program ="SURGE 1335"
+    sep="-"
     spof_threshold = 3000
 
 
@@ -367,8 +392,9 @@ if __name__ == "__main__":
         template_df= template_df,
         export_dir=export_dir,
         program=program,
+        sep=sep,
         spof_threshold=spof_threshold,
-        graph_type="weighted_roads"
+        graph_type="full_weighted"
     )
     end_time = time()
     elapsed_time = end_time - start_time

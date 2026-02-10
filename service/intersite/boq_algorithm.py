@@ -2167,12 +2167,12 @@ def main_boq(
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\BAL-BA-DPR-0253;BAL-BA-DPR-0253.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\Export"
-    sep= ";"
-    boq_type = BoQType.MMP
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design\Star Design Existing Route Report\Intersite Design_Fix Route.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design\Star Design Existing Route Report"
+    sep= "-"
+    boq_type = BoQType.INTERSITE
     ipl_route = IPLRoute.EXISTING_FIBER
-    operator = Operator.XL
+    operator = Operator.SURGE
 
     match boq_type:
         case BoQType.INTERSITE:
@@ -2208,7 +2208,7 @@ if __name__ == "__main__":
         cable_multiplier=cable_multiplier,
         sclc_enabled = sclc_enabled,
         device_in_site=device_in_site,
-        device_in_branch=None,
+        device_in_branch=device_in_branch,
         program_name="MMP DMT"
     )
 

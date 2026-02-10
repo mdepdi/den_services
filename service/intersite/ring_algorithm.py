@@ -1238,6 +1238,7 @@ def save_intersite(
     points: gpd.GeoDataFrame,
     paths: gpd.GeoDataFrame,
     export_dir: str,
+    sep:str=";",
     method: str = "Supervised",
     check_utils: bool = False
 ):
@@ -1287,7 +1288,7 @@ def save_intersite(
         kmz_path = save_kml(points, paths, topology, export_dir, method)
     
     # EXPORT DRM
-    drm = drm_format(kmz_path, export_dir)
+    drm = drm_format(kmz_path, export_dir, sep=sep)
 
     # # EXPORT EXCEL
     # excel_path = os.path.join(export_dir, f"Summary Report_Intersite_{method}.xlsx")
@@ -1427,7 +1428,7 @@ def main_supervised(
 
     # EXPORT
     logger.info("🧩 Save Design Information")
-    save_intersite(all_points, all_paths, export_dir, method)
+    save_intersite(all_points, all_paths, export_dir, method, sep=sep)
 
     logger.info("🏆 Supervised export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")

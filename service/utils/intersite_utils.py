@@ -71,17 +71,18 @@ def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator =
         points=points_cleaned,
         paths=lines_cleaned,
         export_dir=export_dir,
-        method="Cleaned Ring"
+        method="Cleaned Ring",
+        sep=sep
     )
 
     logger.info("🏆 Clean KM Design export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\COMPILE SURGE\Compiled FWA Surge Adjusted.kmz"
-    ringlist_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Clean_Ring List.xlsx"
+    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star_Design_results (10).kmz"
+    # ringlist_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Clean_Ring List.xlsx"
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\COMPILE SURGE\Export"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design"
     os.makedirs(export_dir, exist_ok=True)
 
     # ringlist = pd.read_excel(ringlist_file)
@@ -91,6 +92,6 @@ if __name__ == "__main__":
         kmz_path=design_path,
         export_dir=export_dir,
         ring_list=ringlist,
-        sep=Separator.SEMICOLON.value
+        sep=Separator.HYPHEN.value
     )
 

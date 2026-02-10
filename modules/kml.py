@@ -524,8 +524,9 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
                 hub_1 = hubs['site_id'].astype(str).values[0]
                 hub_2 = hubs['site_id'].astype(str).values[-1]
             case _:
-                errors.append(f"🔴 Ring {ring} FO Hub exceeds, found {qty_hubs}.")
-                continue
+                print(f"🟠 Ring {ring} FO Hub exceeds, found {qty_hubs}.")
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = None
             
         # Enrich Metadata
         route_type = None
@@ -568,8 +569,8 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
                     fe_station = bool(re.fullmatch(r'^[A-Za-z ]+', fe_name))
 
                     if ne_station or fe_station:
-                        ne_status = "Station" if ne_status else "Direct to Station"
-                        fe_status = "Station" if fe_status else "Direct to Station"
+                        ne_status = "Station" if ne_station else "Direct to Station"
+                        fe_status = "Station" if fe_station else "Direct to Station"
                     else:
                         ne_status = ne_site.get('site_type')
                         fe_status = fe_site.get('site_type')
@@ -588,8 +589,8 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
         raise ValueError(f"Please check the KMZ Design, found errors: \n {("\n").join(errors)}")
     
     print(f"ℹ️ Summary Validated Ring:")
-    print(f"ℹ️ Total Points      : {len(points_existing):,}")
-    print(f"ℹ️ Total LineString  : {len(points_existing):,}")
+    print(f"ℹ️ Total Points      : {len(points_existing):,} records.")
+    print(f"ℹ️ Total LineString  : {len(lines_existing):,} records.")
     return points_existing, lines_existing
 
 def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
