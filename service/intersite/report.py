@@ -490,6 +490,10 @@ def boq_mmp(
             seg_ctx = f"ring={ring_name} seg={seg_name} ne={seg_ne} fe={seg_fe}"
 
             site_row = colopriming_data.loc[colopriming_data["site_id"].astype(str) == str(seg_ne)].copy()
+            # if site_row.empty:
+            #     logger.error(f"Site Row not found with segment ne: {seg_ne}")
+            #     continue
+
             site_row = site_row.iloc[0] if not site_row.empty else pd.Series()
             site_name = site_row.get("site_name", None)
             lat = site_row.get("lat", None)
@@ -501,6 +505,10 @@ def boq_mmp(
             provinsi = site_row.get("provinsi", None)
 
             mmp_row = gdf_ring_sites[gdf_ring_sites["site_id"].astype(str) == str(seg_fe)].copy()
+            if mmp_row.empty:
+                logger.error(f"Ring {ring_name} MMP Row not found with segment fe: {seg_fe}")
+                continue
+
             mmp_row = mmp_row.to_crs(epsg=4326)
             mmp_row = mmp_row.iloc[0] if not mmp_row.empty else pd.Series()
             mmp_long = mmp_row.get("geometry", None).x
@@ -1468,9 +1476,16 @@ def boq_generation(
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\20250716-H2B2NewSiteCoverage-TBG-v9 (BoQ).kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\20250716-H2B2NewSiteCoverage-TBG-v9"
-    sep = "-"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL MMP Batch 6 IFORTE.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL MMP Batch 6 IFORTE"
+    sep = ";"
 
     os.makedirs(export_dir, exist_ok=True)
-    drm_format(kmz_path=kmz_path, export_dir=export_dir, sep=sep)
+    # drm_format(kmz_path=kmz_path, export_dir=export_dir, sep=sep)
+    boq_mmp(
+        kmz_path,
+        export_dir=export_dir,
+        operator="xl",
+        sep=sep,
+        program_name="IFORTE MMP"
+    )
