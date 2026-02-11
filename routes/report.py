@@ -184,7 +184,7 @@ async def drm_intersite(
 
 
 @router.post("/boq-intersite", tags=["Report"])
-async def boq_intersite(
+async def boq_intersite_route(
     ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml).",),
     operator: Operator = Form(Operator.XL, description="Operator to generate implementation KMZ algorithm."),
     separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
@@ -238,7 +238,6 @@ async def boq_intersite(
                 operator=operator,  
                 interval_pole_m = interval_pole_m,
                 cable_percentage = cable_percentage,
-                cable_multiplier = cable_multiplier,
                 sclc_enabled = sclc_enabled,
                 device_in_site = device_in_site,
                 device_in_branch = device_in_branch,
@@ -276,7 +275,7 @@ async def boq_intersite(
         )
 
 @router.post("/boq-mmp", tags=["Report"])
-async def boq_mmp(
+async def boq_mmp_route(
     ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml).",),
     operator: Operator = Form(Operator.XL, description="Operator to generate implementation KMZ algorithm."),
     separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),

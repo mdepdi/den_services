@@ -626,7 +626,7 @@ def boq_mmp(
             # Calculations
             # ---------------------------
             fo_factor = 1 + (cable_percentage/100)
-            calc_permission_pu = math.floor(len_bb_m + len_access_m - len_pole_m + sum(len_cable_by_core_m.get(core, 0) for core in len_cable_by_core_m.keys() if int(core) != 24))
+            calc_permission_pu = max(0, math.floor(len_bb_m + len_access_m - len_pole_m + sum(len_cable_by_core_m.get(core, 0) for core in len_cable_by_core_m.keys() if int(core) != 24)))
             calc_fo_cable_m = math.ceil(math.ceil(len_bb_m + len_access_m) * cable_multiplier * fo_factor / 100) * 100
             calc_closure_24_qty = qty_closure_new + (math.floor(calc_fo_cable_m / 4000) if calc_fo_cable_m >= 4000 else 0)
             calc_total_overlap_m = round((len_overlap_m + len_access_ext_m + len_prev_access_m + len_prev_access_ext_m if ring_name == prev_ring else len_overlap_m + len_access_ext_m) * fo_factor, 0)

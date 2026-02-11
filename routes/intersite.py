@@ -29,8 +29,6 @@ from service.intersite.fixroute_algorithm import validate_fixroute
 from service.intersite.topology_algorithm import validate_topology
 from service.intersite.poligonized_algorithm import validate_poligonize
 from service.intersite.insert_algorithm import validate_insert
-from service.intersite.report import drm_format
-from service.intersite.boq_algorithm import boq_generation, boq_mmp
 from tasks.intersite_celery import (
     task_insertring,
     task_supervised,
