@@ -25,8 +25,8 @@ app = FastAPI(
             "description": "Endpoints related to generate report."
         },
         {
-            "name": "Graphhopper",
-            "description": "Endpoints related to Graphhopper Routing services."
+            "name": "GraphHopper",
+            "description": "Endpoints related to GraphHopper Routing services."
         },
         {
             "name": "Utils",
@@ -73,6 +73,7 @@ async def root():
 # INCLUDE ROUTERS
 app.include_router(report.router, prefix="/report", tags=["Report"])
 app.include_router(intersite.router, prefix="/intersite", tags=["Intersite"])
+app.include_router(graphhopper.router, prefix="/graphhopper", tags=["GraphHopper"])
 app.include_router(fwa.router, prefix="/fwa", tags=["Fixed Wireless Access (FWA)"])
 app.include_router(utils.router, prefix="/utils", tags=["Utils"])
 
