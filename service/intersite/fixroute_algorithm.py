@@ -376,10 +376,10 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design\Template_Fixed_Route_Mas Orendo.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design\Star Design Existing Route Report"
-    program ="SURGE 1335"
-    sep="-"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\Valid Longlat For Yakub.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\Valid Longlat For Yakub"
+    program ="MMP IFORTE"
+    sep=";"
     spof_threshold = 3000
 
 

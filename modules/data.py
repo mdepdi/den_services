@@ -6,8 +6,10 @@ from starlette.datastructures import UploadFile
 from tqdm import tqdm
 import sys
 import os
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[1]
+sys.path.append(root)
 
 from modules.geometry import explode_lines, identify_centerline
 from modules.kml import read_kml
@@ -131,7 +133,7 @@ def retrieve_building(
 
     return city_building
 
-def validate_longlat(df:pd.DataFrame, lon_col="long", lat_col="lat"):
+def validate_longlat(df:pd.DataFrame | gpd.GeoDataFrame, lon_col="long", lat_col="lat"):
     # INDONESIA
     LON_MIN, LON_MAX = 94, 142
     LAT_MIN, LAT_MAX = -12, 8
@@ -275,7 +277,6 @@ def read_gdf(
                         return line
                     case 'polygon':
                         return polygon
-            
             else:
                 raise ValueError("Unsupported file format. Supported formats are: Parquet, GeoJSON, Shapefile, GPKG, and TAB.")
         except Exception as e:
@@ -314,7 +315,6 @@ def read_gdf(
 
 
 def read_df(file: UploadFile | str = None):
-
     if isinstance(file, str):
         filename = file
     elif isinstance(file, UploadFile):
@@ -347,82 +347,19 @@ def read_df(file: UploadFile | str = None):
         raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
     return df
 
-# def fiber_utilization(data: gpd.GeoDataFrame, target_fiber: gpd.GeoDataFrame=None, overlap=True, nodes=None, roads=None) -> gpd.GeoDataFrame:
-#     from modules.geometry import explode_lines
-#     from shapely.ops import linemerge
-#     from tqdm import tqdm
 
-#     print("🧩 Fiber Utilization Analysis ...")
-#     if target_fiber is None:
-#         target_fiber = gpd.read_parquet(f"{DATA_DIR}/FO TBG Only_01062025.parquet")
-
-#     # PREPARE DATA
-#     print("Preparing data...")
-#     data = data.reset_index(drop=True)
-#     data['num'] = data.index + 1
-#     if overlap:
-#         data = explode_lines(data)
-#     else:
-#         data, point_coords = identify_centerline(data, tolerance=0.5)
-#         data = data.drop_duplicates(subset='geometry')
-#     data = data.reset_index(drop=True)
-
-#     data = data.to_crs(epsg=3857)
-#     target_fiber = target_fiber.to_crs(epsg=3857)
-    
-#     if 'ring_name' in data.columns:
-#         ring_list = data['ring_name'].dropna().unique().tolist()
-#     else:
-#         data_buff = data.copy()
-#         data_buff['geometry'] = data_buff.geometry.buffer(5000)
-#         data_buff = data_buff.dissolve().explode(ignore_index=True)
-#         data_buff['ring_name'] = data_buff.index.apply(lambda x: f"Ring_{x+1}")
-#         data = gpd.sjoin(data, data_buff[['geometry', 'ring_name']], how='left', predicate='intersects').drop(columns=['index_right'])
-#         ring_list = data['ring_name'].dropna().unique().tolist()
-    
-#     if 'ref_fo' not in target_fiber.columns:
-#         fiber_buff = target_fiber.copy()
-#         fiber_buff['geometry'] = fiber_buff.buffer(20)
-
-#     calculated = []
-#     for ring in tqdm(ring_list, desc=f'Fiber Utilization Analysis'):
-#         ring_data = data[data['ring_name'] == ring].reset_index(drop=True)
+def get_unique_col(df: pd.DataFrame):
+    cols = df.columns
+    for col in cols:
+        if "no" in col.lower():
+            continue
         
-#         # ROADS
-#         hex_list = identify_hexagon(ring_data, type="convex")
-#         if not hex_list:
-#             raise ValueError("No hexagons identified. Please check the input data.")
-        
-#         # print("Retrieving roads and nodes...")
-#         if roads is None:
-#             roads = retrieve_roads(hex_list, type="roads")
-#         if nodes is None:
-#             nodes = retrieve_roads(hex_list, type="nodes")
-
-#         # CRS
-#         target_fiber = target_fiber.to_crs(epsg=3857)
-#         roads = roads.to_crs(epsg=3857)
-#         nodes = nodes.to_crs(epsg=3857)
-
-#         # FO BUFFER
-#         if 'ref_fo' not in ring_data.columns:
-#             nodes_sindex = nodes.sindex
-#             ring_data['nearest_node'] = ring_data['geometry'].apply(lambda geom: nodes.loc[nodes_sindex.nearest(geom)[1][0], 'node_id'])
-
-#             #  REF FO
-#             ref_fo = gpd.sjoin(nodes, fiber_buff[['geometry']], how='inner', predicate='intersects')
-#             ref_fo = ref_fo['node_id'].unique().tolist()
-#             ring_data['ref_fo'] = ring_data['nearest_node'].isin(ref_fo).astype(int)
-
-#         ring_data['fo_note'] = ring_data.apply(lambda x: 'Existing' if x['ref_fo'] == 1 else 'New', axis=1)
-#         ring_data = ring_data.dissolve(by=['num', 'fo_note']).reset_index()
-#         ring_data['geometry'] = ring_data.geometry.apply(lambda geom: linemerge(geom) if geom.geom_type == 'MultiLineString' else geom)
-#         ring_data['length'] = ring_data['geometry'].length.round(3)
-#         calculated.append(ring_data)
-
-#     calculated = pd.concat(calculated, ignore_index=True)
-#     calculated_gdf = gpd.GeoDataFrame(calculated, geometry='geometry')
-#     return calculated_gdf
+        unique = df[col].is_unique
+        if unique:
+            print(f"🟢 Found unique columns: {col}")
+            return col
+    return None
+    
 
 def fiber_utilization(data_gdf: gpd, overlap:bool=True):
     target_fiber = gpd.read_parquet(f"{DATA_DIR}/FO TBG Only_01062025.parquet")

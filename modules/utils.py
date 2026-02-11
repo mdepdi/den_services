@@ -556,7 +556,7 @@ def clutter_identification(
     sitelist: gpd.GeoDataFrame,
     buffer: int = 500,
     id_col: str = "site_id",
-    clutter_dir: str = r"D:\JACOBS\DATA\14. Grid\Buy V2\200m",
+    clutter_dir: str = rf"{MAINDATA_DIR}/14. Grid/Buy V2/200m",
     clutter_crs_epsg: int = 3857,
 ):
     sitelist = sitelist.copy()

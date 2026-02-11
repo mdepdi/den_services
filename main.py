@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.exceptions import HTTPException
-from routes import intersite, fwa, utils, report
+from routes import intersite, fwa, utils, report, graphhopper
 from core.config import settings
 from pathlib import Path
 
@@ -23,6 +23,10 @@ app = FastAPI(
         {
             "name": "Report",
             "description": "Endpoints related to generate report."
+        },
+        {
+            "name": "Graphhopper",
+            "description": "Endpoints related to Graphhopper Routing services."
         },
         {
             "name": "Utils",

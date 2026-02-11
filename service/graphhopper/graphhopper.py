@@ -24,12 +24,11 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 sys.path.append(root)
 
-from modules.kml import export_kml, sanitize_kml, validate_kmz_design, validate_kmz_ipl
 from modules.data import read_gdf, validate_longlat
 from modules.table import excel_styler
-from modules.utils import auto_group, admin_information
+from modules.utils import admin_information
 from modules.geometry import geodesic_length
-from modules.graphhopper import grapphopper_knn, distance_fiber
+from modules.graphhopper import graphhopper_knn
 from core.config import settings
 
 from service.intersite.ring_algorithm import save_intersite
@@ -43,7 +42,7 @@ DATA_DIR = settings.DATA_DIR
 from core.logger import create_logger
 logger = create_logger(__file__)
 
-def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k_final:int=1, cutoff:int=100000, task_celery=None):
+def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k_final:int=1, sep:str=";", cutoff:int=100000, task_celery=False):
     source_gdf = read_gdf(source_path, geom_type='point')
     target_gdf = read_gdf(target_path, geom_type='point')
 
@@ -89,10 +88,9 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
     source_gdf = source_gdf.reset_index(drop=True)
     target_gdf = target_gdf.reset_index(drop=True)
 
-    logger.info(f"ℹ️ Running Grapphopper | Nearest Point to Point.")
+    logger.info(f"ℹ️ Running Graphhopper | Nearest Point to Point.")
     start_time = time()
-
-    routing_gdf = grapphopper_knn(source_gdf, target_gdf, k_final=k_final, profile='car')
+    routing_gdf = graphhopper_knn(source_gdf, target_gdf, k_final=k_final, profile='car', task_celery=task_celery)
     routing_gdf['length'] = routing_gdf.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     # Export
@@ -106,7 +104,7 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
         raise ValueError(f"🔴 There is no routing result fulfill threshold {cutoff} m.")
 
     # Add Admin
-    routing_gdf['name'] = routing_gdf["site_id_a"] + ";" + routing_gdf["site_id_b"]
+    routing_gdf['name'] = routing_gdf["site_id_a"] + sep + routing_gdf["site_id_b"]
     
     routing_gdf.to_parquet(parquet_path, index=False)
     excel_styler(routing_gdf.drop(columns='geometry')).to_excel(excel_path, sheet_name='DEN Graphhopper Routing', index=False)
@@ -154,9 +152,9 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
         points=points_gdf,
         paths=routing_gdf,
         export_dir=export_dir,
-        sep=";",
+        sep=sep,
         method="Grapphopper Star"
-        )
+    )
     
     end_time = time()
     process_time = end_time-start_time

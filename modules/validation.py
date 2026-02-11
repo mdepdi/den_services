@@ -122,6 +122,8 @@ def input_unsupervised(sites, hubs) -> tuple:
     print(f"ℹ️ Total Hubs           : {len(hubs):,} points")
     
     return sites, hubs
+
+
 # INSERT RING
 def input_insertring(excel_file: str) -> tuple:
     used_sheets = ["New Sites", "Existing Sites", "Hub Sites"]

@@ -12,6 +12,7 @@ from time import time
 from modules.geometry import point_coordinates, geodesic_length
 from modules.utils import auto_group
 from modules.data import read_gdf, validate_longlat
+from modules.celery import report_state
 from core.config import settings
 
 MAINDATA_DIR = settings.MAINDATA_DIR
@@ -80,7 +81,7 @@ def nearest_candidates(source_gdf, target_gdf, k_candidates=10):
 
     return pd.DataFrame(pairs)
 
-def graphhopper_parallel(pairs_df, workers=8, profile='car'):
+def graphhopper_parallel(pairs_df, workers=8, profile='car', task_celery=False):
     tasks = {}
     pairs_df = pairs_df.copy()
     with ProcessPoolExecutor(max_workers=workers) as ex:
@@ -98,7 +99,8 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
                 "tgt_geom": target_geom,
             }
 
-        for f in tqdm(as_completed(tasks), total=len(tasks), desc="Routing"):
+        qty_task = len(task)
+        for num, f in tqdm(enumerate(as_completed(tasks), start=1), total=qty_task, desc="Graphopper Routing"):
             result = f.result()
             if result is None or result.is_empty:
                 continue
@@ -108,7 +110,10 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car'):
             src_geom = meta["src_geom"]
             tgt_geom = meta["tgt_geom"]
             pairs_df.at[id, 'geometry'] = result
-            # print(f"🟢 Success. ID {id} from {src_geom} -> {tgt_geom}")
+
+            # Celery Progress
+            if task_celery and (num % 10 == 0 or num == qty_task):
+                report_state(task_celery, state="PROGRESS", message="Graphhopper routing in progress, please wait.", current=num, total=qty_task)
 
     route_gdf = gpd.GeoDataFrame(pairs_df, geometry="geometry", crs="EPSG:4326")
     route_gdf = route_gdf[~(route_gdf.geometry.is_empty) & ~(route_gdf.geometry.isna())].copy()
@@ -129,21 +134,27 @@ def best_route(routing_df:gpd.GeoDataFrame, k_final:int=1):
    final = pd.concat(final, ignore_index=True)
    return final
 
-def grapphopper_knn(
+def graphhopper_knn(
       source_gdf:gpd.GeoDataFrame,
       target_gdf:gpd.GeoDataFrame,
       k_final:int=None,
       workers:int=10,
-      profile:str='car'
+      profile:str='car',
+      task_celery=False
 ):
     if k_final is None:
         k_final = 1
     
     k_candidate = k_final * 5 if k_final < 3 else k_final*3
     pairs_df = nearest_candidates(source_gdf=source_gdf, target_gdf=target_gdf, k_candidates=k_candidate)
-    route_gdf = graphhopper_parallel(pairs_df=pairs_df, workers=workers, profile=profile)
+    route_gdf = graphhopper_parallel(pairs_df=pairs_df, workers=workers, profile=profile, task_celery=task_celery)
     route_gdf = route_gdf.merge(source_gdf[['site_id','site_name','lat','long']].add_suffix("_a"), left_on='src_idx', right_index=True)
     route_gdf = route_gdf.merge(target_gdf[['site_id','site_name','lat','long']].add_suffix("_b"), left_on='tgt_idx', right_index=True)
+
+    # Celery task
+    if task_celery:
+        report_state(task_celery, state="PROGRESS", message=f"Filtering {k_final} best route.")
+
     best = best_route(route_gdf, k_final=k_final)
 
     gdf = gpd.GeoDataFrame(best, geometry="geometry", crs="EPSG:4326")
@@ -171,7 +182,7 @@ def verify_input(excel_file:str):
 def distance_fiber(source_gdf:gpd.GeoDataFrame, export_dir:str, max_distance=10000, fiber_route:gpd.GeoDataFrame|None=None):
     if fiber_route is not None:
         points_fiber = point_coordinates(fiber_route)
-        group = auto_group(points_fiber, distance=100)
+        group = auto_group(points_fiber, distance=300)
         points_fiber = gpd.sjoin(points_fiber, group[['geometry', 'region']]).drop(columns='index_right')
         points_fiber = points_fiber.drop_duplicates(subset='region')
         points_fiber.columns = points_fiber.columns.str.lower()
@@ -216,7 +227,7 @@ def distance_fiber(source_gdf:gpd.GeoDataFrame, export_dir:str, max_distance=100
     points_fiber = points_fiber.reset_index(drop=True)
     
     # RUNNING ROUTING
-    routing_gdf = grapphopper_knn(source_gdf, points_fiber, k_final=k_final, profile='pure_shortest')
+    routing_gdf = graphhopper_knn(source_gdf, points_fiber, k_final=k_final, profile='pure_shortest')
 
     # EXPORT DATA
     os.makedirs(export_dir, exist_ok=True)
@@ -248,7 +259,7 @@ if __name__ == "__main__":
     source_gdf = validate_longlat(source_gdf)
     target_gdf = validate_longlat(target_gdf)
 
-    routing_gdf = grapphopper_knn(source_gdf, target_gdf, k_final=k_final, profile='car')
+    routing_gdf = graphhopper_knn(source_gdf, target_gdf, k_final=k_final, profile='car')
 
     # EXPORT DATA
     export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Export"

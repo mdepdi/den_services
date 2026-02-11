@@ -146,14 +146,14 @@ async def drm_intersite(
         os.makedirs(export_loc, exist_ok=True)
 
         try:
-            start_time = time.time()
+            start_time = time()
             print(f"ℹ️ DRM Format Task Started")
             drm_format(
                 kmz_path=kmz_path, 
                 export_dir=export_loc, 
                 sep=separator.value,
             )
-            end_time = time.time()
+            end_time = time()
             excel_time = round((end_time - start_time) / 60, 2)
             print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
             print(f"✅ All DRM Format Process Done.")
@@ -229,7 +229,7 @@ async def boq_intersite(
         os.makedirs(export_loc, exist_ok=True)
 
         try:
-            start_time = time.time()
+            start_time = time()
             print(f"ℹ️ BOQ Generation Task Started")
             boq_generation(
                 kmz_path=kmz_path, 
@@ -246,7 +246,7 @@ async def boq_intersite(
                 connector_in_branch = connector_in_branch,
                 program_name = program_name
             )
-            end_time = time.time()
+            end_time = time()
             excel_time = round((end_time - start_time) / 60, 2)
             print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
             print(f"✅ All BOQ Process Done.")
@@ -324,7 +324,7 @@ async def boq_mmp(
         os.makedirs(export_loc, exist_ok=True)
 
         try:
-            start_time = time.time()
+            start_time = time()
             print(f"ℹ️ BOQ MMP Task Started")
             boq_mmp(
                 kmz_path=kmz_path, 
@@ -341,7 +341,7 @@ async def boq_mmp(
                 connector_in_branch = connector_in_branch,
                 program_name = program_name
             )
-            end_time = time.time()
+            end_time = time()
             excel_time = round((end_time - start_time) / 60, 2)
             print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
             print(f"✅ All BOQ MMP Process Done.")
