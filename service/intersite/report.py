@@ -54,6 +54,7 @@ def drm_format(
     kmz_path: str,
     export_dir: str,
     sep: str = ";",
+    project_name: str = "TBG Design"
 ):
         
     validated = validate_kmz_design(kmz_path, sep=sep)
@@ -328,11 +329,8 @@ def drm_format(
             cell.style = "RowStyle"
 
             if isinstance(value, (int, float)) and value is not None:
-                if ('long' in str(key).lower()) or ('lat' in str(key).lower()):
-                    continue
-
-                cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
 
     # Sites Sheet
     segment_sheet = wb["Lampiran Site"]
@@ -350,11 +348,8 @@ def drm_format(
             cell.style = "RowStyle"
 
             if isinstance(value, (int, float)) and value is not None:
-                if ('long' in str(key).lower()) or ('lat' in str(key).lower()):
-                    continue
-
-                cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
 
     # Summary Ring Sheet
     segment_sheet = wb["Summary Ring"]
@@ -372,14 +367,265 @@ def drm_format(
             cell.style = "RowStyle"
 
             if isinstance(value, (int, float)) and value is not None:
-                if ('long' in str(key).lower()) or ('lat' in str(key).lower()):
-                    continue
-
-                cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
 
     wb.save(output_path)
     logger.info("✅ DRM Excel format saved.")
+
+# DRM XL
+def drm_xl(
+    kmz_path: str,
+    export_dir: str,
+    sep: str = ";",
+    project_name: str = "XL Design"
+):
+        
+    validated = validate_kmz_design(kmz_path, sep=sep)
+    if validated is None:
+        logger.info(f"❌ Invalid KMZ Design: {kmz_path}")
+        return
+
+    # ---------------------------
+    # Inputs (GeoDataFrames)
+    # ---------------------------
+    points_kmz, lines_kmz = validated
+
+    # Check Admin Level
+    admin_col = {'Provinsi','Kabkot', 'Kecamatan', 'Desa'}
+    miss_col = admin_col - set(points_kmz.columns)
+
+    if miss_col:
+        logger.info(f"🌏 Add Admin Information (missing: {(", ").join(sorted(miss_col))})")
+        points_kmz = admin_information(points_kmz, level="desa")
+        lines_kmz = admin_information(lines_kmz, level="kabkot")
+        points_kmz = points_kmz.drop_duplicates(subset=["site_id", "ring_name"]).reset_index(drop=True)
+        lines_kmz = lines_kmz.drop_duplicates(subset=["segment", "ring_name"]).reset_index(drop=True)
+
+    lines_kmz['length'] = lines_kmz['geometry'].to_crs(epsg=4326).apply(geodesic_length)
+
+    colopriming_data = pd.read_excel(f"{DATA_DIR}/Sitelist Dec 2025.xlsx")
+    colopriming_data['site_id'] = colopriming_data['site_id'].astype(str)
+    colopriming_data = colopriming_data.set_index("site_id")
+
+    target_crs = 3857
+    points_kmz = points_kmz.to_crs(epsg=target_crs)
+    lines_kmz = lines_kmz.to_crs(epsg=target_crs)
+
+    points_grouped = points_kmz.groupby("ring_name")
+
+    # Container
+    segments_records = []
+    ring_records = []
+    recorded_sites = set()
+    ring_num = 1
+    for ring, ring_points in tqdm(points_grouped, desc="DRM Format Process Ring", total=len(points_grouped)):
+        ring_lines = lines_kmz[lines_kmz['ring_name'] == ring].copy()
+
+        if ring_lines.empty:
+            logger.error(f"🔴 Ring {ring} lines data not found.")
+            continue
+
+        # Ring Metadata
+        province = ring_points['Provinsi'].mode()[0]
+        city = ring_points['Kabkot'].mode()[0]
+        vendor = "TBG"
+
+        ne_ids = set(ring_lines['near_end'].astype(str))
+        fe_ids = set(ring_lines['far_end'].astype(str))
+
+        # Route
+        routes_length = ring_lines['length'].sum()
+
+        # Hub Sitelist
+        hubs = ring_points[ring_points['site_type'].astype(str).str.lower().str.contains("hub")].copy()
+        sitelist = ring_points[~(ring_points.index.isin(hubs.index))].copy()
+        hubs_ids = set(hubs['site_id'].astype(str))
+        sites_ids = set(sitelist['site_id'].astype(str))
+        qty_hubs = len(hubs)
+        qty_sites = len(sitelist)
+
+        match qty_hubs:
+            case 0:
+                logger.error(f"🔴 Ring {ring} FO Hub not found.")
+                continue
+            case 1:
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = None
+            case 2:
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = hubs['site_id'].astype(str).values[-1]
+            case _:
+                hub_1 = hubs['site_id'].astype(str).values[0]
+                hub_2 = None
+                logger.error(f"🟠 Ring {ring} FO Hub exceeds, found {qty_hubs}.")
+            
+        # Enrich Metadata
+        route_type = None
+        if qty_hubs == 1 and qty_sites == 1:
+            route_type = "Star"
+        elif qty_hubs == 1 and qty_sites > 1:
+            route_type = "Chain"
+        elif qty_hubs > 1 and qty_sites >= 1:
+            route_type = "Ring"
+
+        # Segments
+        span_num = 1
+        for idx, route in ring_lines.iterrows():
+            ne_id = route['near_end']
+            fe_id = route['far_end']
+
+            ne_site = ring_points[ring_points['site_id'].astype(str) == str(ne_id)].copy()
+            fe_site = ring_points[ring_points['site_id'].astype(str) == str(fe_id)].copy()
+            
+            if ne_site.empty:
+                raise ValueError(f"🔴 Near End site {ne_id} not found in ring {ring}.")
+
+            if fe_site.empty:
+                raise ValueError(f"🔴 Far End site {fe_id} not found in ring {ring}.")
+
+            ne_site = ne_site.iloc[0]
+            fe_site = fe_site.iloc[0]
+
+            # Enrich Metadata
+            match route_type:
+                case "Star" | "Chain":
+                    ne_name = str(ne_site.get("site_name", ""))
+                    fe_name = str(fe_site.get("site_name", ""))
+
+                    ne_station = bool(re.fullmatch(r'^[A-Za-z ]+', ne_name))
+                    fe_station = bool(re.fullmatch(r'^[A-Za-z ]+', fe_name))
+
+                    if ne_station or fe_station:
+                        ne_status = "Station" if ne_station else "Direct to Station"
+                        fe_status = "Station" if fe_station else "Direct to Station"
+                    else:
+                        ne_status = ne_site.get('site_type')
+                        fe_status = fe_site.get('site_type')
+
+                case "Ring":
+                    ne_status = ne_site.get('site_type')
+                    fe_status = fe_site.get('site_type')
+            
+            segment = {
+                "no": None,
+                "flp": "TBG",
+                "city_design": project_name,
+                "design_status": "Design Submit",
+                "ba_design": None,
+                "ba_design_status": None,
+                "ne_site_id": ne_site['site_id'],
+                "ne_site_name": ne_site.get('site_name', None) or ne_site.get('site_id', None),
+                "ne_lat": ne_site.get('lat', None),
+                "ne_long": ne_site.get('long', None),
+                "ne_priority": None,
+                "fe_site_id": fe_site['site_id'],
+                "fe_site_name": fe_site.get('site_name', None) or fe_site.get('site_id', None),
+                "fe_lat": fe_site.get('lat', None),
+                "fe_long": fe_site.get('long', None),
+                "fe_priority": None,
+                "link": route.get('segment', None) or str(ne_site['site_id']) + str(sep) + str(fe_site['site_id']),
+                "span_id": f"S{span_num:03}",
+                "plan_ring": f"R{ring_num:03}",
+                "type_design": route_type,
+                "length": (route['length'] * 1.15) / 1000, # km distance
+                "plan_distance_closure": None,
+                "detail": None
+            }
+
+            segments_records.append(segment)
+            span_num += 1
+
+        # Ring Record
+        ring_record = {
+            "no": None,
+            "ring_id": ring,
+            "total_site": qty_sites,
+            "pop_interconnection": (",").join(hubs['site_id'].unique().tolist()),
+            "route_type": route_type,
+            "total_distance": (routes_length * 1.15 / 1000),
+            "avg_per_site": round((routes_length * 1.15 / 1000) / qty_sites, 3),
+        }
+        ring_records.append(ring_record)
+        ring_num += 1
+    
+    # Compile DRM Summary
+    segments_records = pd.DataFrame(segments_records)
+    ring_records = pd.DataFrame(ring_records)
+
+    segments_records['no'] = segments_records.index + 1
+    ring_records['no'] = ring_records.index + 1
+
+    logger.info(f"ℹ️ Excel sheet 'Detail' written with {len(segments_records):,} records.")
+    logger.info(f"ℹ️ Excel sheet 'Summary' written with {len(ring_records):,} records.")
+
+
+    # ---------------------------
+    # Write Excel
+    # ---------------------------
+    template_path = os.path.join(DATA_DIR, "template", "drm", "Template_Design Approval_XL.xlsx")
+    output_path = os.path.join(export_dir, "Summary Report_Design Approval XL.xlsx")
+
+    if not os.path.exists(template_path):
+        raise ValueError("DRM template file not found in template directory.")
+
+    shutil.copy2(template_path, output_path)
+
+    # ---------------------------
+    # PROCESS DRM EXCEL
+    # ---------------------------
+    wb = load_workbook(output_path)
+
+    # Style
+    named_style = NamedStyle(name="RowStyle")
+    side_style = Side(style="thin", border_style="thin")
+    border = Border(left=side_style, right=side_style, top=side_style, bottom=side_style)
+    named_style.font = Font(name="Arial", size=10)
+    named_style.border = border
+
+    if "RowStyle" not in [s for s in wb.named_styles]:
+        wb.add_named_style(named_style)
+
+    # Segment Sheet
+    segment_sheet = wb["Detail"]
+    start_data_row = 2
+    col_index = {col: num for num, col in enumerate(segments_records.columns, start=1)}
+    for idx, record in enumerate(segments_records.to_dict("records")):
+        excel_row = start_data_row + idx
+
+        for key, value in record.items():
+            cell = segment_sheet.cell(
+                row = excel_row,
+                column = col_index[key],
+                value = value
+            )
+            cell.style = "RowStyle"
+
+            if isinstance(value, (int, float)) and value is not None:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
+
+    # Summary Ring Sheet
+    segment_sheet = wb["Summary"]
+    start_data_row = 2
+    col_index = {col: num for num, col in enumerate(ring_records.columns, start=1)}
+    for idx, record in enumerate(ring_records.to_dict("records")):
+        excel_row = start_data_row + idx
+
+        for key, value in record.items():
+            cell = segment_sheet.cell(
+                row = excel_row,
+                column = col_index[key],
+                value = value
+            )
+            cell.style = "RowStyle"
+
+            if isinstance(value, (int, float)) and value is not None:
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
+
+    wb.save(output_path)
+    logger.info("✅ Design Approval XL Excel format saved.")
 
 def boq_mmp(
     kmz_path: str,
@@ -389,7 +635,6 @@ def boq_mmp(
     interval_pole_m: int = 60,
     cable_percentage: int = 15,
     cable_multiplier: int = 2,
-    sclc_enabled: bool = False,
     device_in_site: DeviceType = DeviceType.ODP,
     device_in_branch: DeviceType = DeviceType.ODP,
     connector_in_site: ConnectorType = ConnectorType.SC,
@@ -771,11 +1016,8 @@ def boq_mmp(
             cell.style = "BOQ Row"
 
             if isinstance(value, (int, float)) and value is not None:
-                if ('long' in str(key).lower()) or ('lat' in str(key).lower()):
-                    continue
-
-                cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
 
     wb.save(output_path)
     logger.info("✅ BOQ Excel saved.")
@@ -1450,8 +1692,8 @@ def boq_generation(
             cell.style = "BOQ Row"
 
             if isinstance(value, (int, float)) and value is not None:
-                cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
 
     # BOQ PR Sheet
     boq_pr_sheet = wb["BOQ PR"]
@@ -1469,24 +1711,22 @@ def boq_generation(
             cell.style = "BOQ Row"
 
             if isinstance(value, (int, float)) and value is not None:
-                cell.number_format = "#,##0"
                 cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.number_format = "#,##0.000" if any(k in str(key).lower() for k in ['distance', 'km', 'dist', 'length', 'long', 'lat']) else "#,##0"
 
     wb.save(output_path)
     logger.info("✅ BOQ Excel saved.")
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL MMP Batch 6 IFORTE.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL MMP Batch 6 IFORTE"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DESIGN APPROVAL XL\20260127_Design Approval_ Bekasi.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DESIGN APPROVAL XL\20260127_Design Approval_ Bekasi"
     sep = ";"
 
     os.makedirs(export_dir, exist_ok=True)
-    # drm_format(kmz_path=kmz_path, export_dir=export_dir, sep=sep)
-    boq_mmp(
-        kmz_path,
+    drm_xl(
+        kmz_path=kmz_path,
         export_dir=export_dir,
-        operator="xl",
         sep=sep,
-        program_name="IFORTE MMP"
+        project_name="Trial XL Design Approval"
     )

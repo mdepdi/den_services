@@ -8,18 +8,18 @@ ENV_FILE = BASE_DIR / (".env.docker" if docker else ".env")
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Design and Engineering API Services"
-    VERSION: str = "0.1.0"
+    VERSION: str = "1.1.0"
     DEBUG: bool = True
 
     MAX_WORKERS: int
     DOCKER: bool
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
-    DATA_DIR: str
     MAINDATA_DIR: str
-    LOG_DIR: str
-    EXPORT_DIR: str
-    UPLOAD_DIR: str
+    DATA_DIR: str = f"{BASE_DIR}/data"
+    LOG_DIR: str = f"{BASE_DIR}/logs"
+    EXPORT_DIR: str = f"{BASE_DIR}/exports"
+    UPLOAD_DIR: str = f"{BASE_DIR}/uploads"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     class Config:

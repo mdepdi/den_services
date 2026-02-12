@@ -60,7 +60,7 @@ router = APIRouter()
 
 
 # ENDPOINT GRAPHHOPPER
-@router.post("/nearest_point", tags=["Graphhopper"])
+@router.post("/nearest_point", tags=["GraphHopper"])
 async def nearest_point(
     source_file: UploadFile = File(None, description="Source data to identify nearest point from. Defined as a sitelist."),
     target_file: UploadFile = File(None, description="Target data to identify nearest point to. Defined as a hub."),
@@ -168,7 +168,7 @@ async def nearest_point(
         return {"error": f"Failed to process data: {str(e)}"}
     
 # ENDPOINT NEAREST TO LINE
-@router.post("/nearest_line", tags=["Graphhopper"])
+@router.post("/nearest_line", tags=["GraphHopper"])
 async def nearest_line(
     source_file: UploadFile = File(None, description="Source data to identify nearest point from. Defined as a sitelist."),
     linestring_file: UploadFile = File(None, description="Linestring data to identify nearest point to. Defined as a hub."),

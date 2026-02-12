@@ -22,7 +22,7 @@ from core.config import settings
 from modules.data import read_gdf
 from modules.kml import read_kml, validate_kmz_design, validate_kmz_ipl
 
-from service.intersite.report import drm_format
+from service.intersite.report import drm_format, drm_xl
 from service.intersite.boq_algorithm import boq_generation, boq_mmp
 
 # EXPORT DIR
@@ -110,7 +110,9 @@ router = APIRouter()
 @router.post("/drm-intersite", tags=["Report"])
 async def drm_intersite(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml).",),
+    operator: Operator = Form(Operator.XL, description="Operator to generate design report based on."),
     separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    project_name: str = Form(None, description="Project name to write in DRM Report."),
 ):
     """
     Create DRM Report based on Design KMZ.
@@ -142,23 +144,33 @@ async def drm_intersite(
     extracted_design = validate_kmz_design(kmz_path, sep=separator.value)
     if extracted_design is not None:
         date_today = datetime.now().strftime("%Y%m%d")
-        export_loc = f"{EXPORT_DIR}/Intersite/DRM/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        export_loc = f"{EXPORT_DIR}/Intersite/{date_today}/DRM/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
         os.makedirs(export_loc, exist_ok=True)
 
         try:
             start_time = time()
             print(f"ℹ️ DRM Format Task Started")
-            drm_format(
-                kmz_path=kmz_path, 
-                export_dir=export_loc, 
-                sep=separator.value,
-            )
+            match operator:
+                case Operator.XL.value:
+                    drm_xl(
+                        kmz_path=kmz_path, 
+                        export_dir=export_loc, 
+                        sep=separator.value,
+                        project_name=project_name
+                    )
+                case _:
+                    drm_format(
+                        kmz_path=kmz_path, 
+                        export_dir=export_loc, 
+                        sep=separator.value,
+                        project_name=project_name
+                    )
             end_time = time()
             excel_time = round((end_time - start_time) / 60, 2)
             print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
             print(f"✅ All DRM Format Process Done.")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to build DRM: {e}")
 
         try:
             out_base = f"DRM_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
@@ -186,7 +198,7 @@ async def drm_intersite(
 @router.post("/boq-intersite", tags=["Report"])
 async def boq_intersite_route(
     ipl_file: UploadFile = File(None, description="Implementation file containing DEN intersite format (.kmz, .kml).",),
-    operator: Operator = Form(Operator.XL, description="Operator to generate implementation KMZ algorithm."),
+    operator: Operator = Form(Operator.XL, description="Operator to generate BoQ report based on."),
     separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
     program_name: Optional[str] =  Form("Intersite FO", description="Program name to write into BOQ"),
     interval_pole_m: Optional[int] = Form(80, description="Interval between pole in meters"),
@@ -225,7 +237,7 @@ async def boq_intersite_route(
     extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator.value)
     if extracted_ipl is not None:
         date_today = datetime.now().strftime("%Y%m%d")
-        export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        export_loc = f"{EXPORT_DIR}/Intersite/{date_today}/BOQ/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
         os.makedirs(export_loc, exist_ok=True)
 
         try:
@@ -285,7 +297,6 @@ async def boq_mmp_route(
     cable_multiplier: Optional[int] = Form(2, description="Multiplier for calculate FO cable distance"),
     device_in_site: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in site."),
     device_in_branch: Optional[DeviceType] = Form(DeviceType.ODP, description="Device to place in branch."),
-    sclc_enabled: Optional[bool] = Form(False, description="Set to True if SC LC enabled."),
     connector_in_site: Optional[ConnectorType] = Form(ConnectorType.SC, description="Connector to used in site"),
     connector_in_branch: Optional[ConnectorType] = Form(ConnectorType.SC, description="Connector to used in branch"),
 ):
@@ -319,7 +330,7 @@ async def boq_mmp_route(
     extracted_ipl = validate_kmz_ipl(kmz_path, sep=separator.value)
     if extracted_ipl is not None:
         date_today = datetime.now().strftime("%Y%m%d")
-        export_loc = f"{EXPORT_DIR}/Intersite/BOQ/{date_today}/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
+        export_loc = f"{EXPORT_DIR}/Intersite/{date_today}/BOQ/{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}_{uuid4().hex}"
         os.makedirs(export_loc, exist_ok=True)
 
         try:
@@ -333,7 +344,6 @@ async def boq_mmp_route(
                 interval_pole_m = interval_pole_m,
                 cable_percentage = cable_percentage,
                 cable_multiplier = cable_multiplier,
-                sclc_enabled = sclc_enabled,
                 device_in_site = device_in_site,
                 device_in_branch = device_in_branch,
                 connector_in_site = connector_in_site,
