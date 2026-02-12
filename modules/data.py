@@ -176,14 +176,10 @@ def validate_longlat(df:pd.DataFrame | gpd.GeoDataFrame, lon_col="long", lat_col
     if n_invalid > 0:
         bad_rows = df[invalid_mask].head()
         print(f"❌ Coord Invalid    : {n_invalid:,}")
-        print(
-            f"Found {n_invalid} invalid coordinate rows (outside Indonesia bbox). "
-            f"Sample:\n{bad_rows.to_string(index=False)}"
-        )
         df = df[~invalid_mask]
         df = df.reset_index(drop=True)
 
-    if n_invalid > 0 or n_swapped > 0:
+    if n_invalid > 0:
         raise ValueError(
             f"✅ Coord Valid    : {n_valid:,} records.\n"
             f"🔁 Swapped Coords : {n_swapped:,} records.\n"
@@ -240,7 +236,7 @@ def read_gdf(
                         print(f"Identified long column: {long_col}, lat column: {lat_col}")
                         print(f"🟢 Read dataframe done.")
                     except Exception as e:
-                        raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
+                        raise ValueError(f"Read GeoDataFrame Error: {e}")
             elif extension == "csv":
                 df = pd.read_csv(filename)
                 long_col = find_best_match(long_col, df.columns.tolist())
@@ -263,7 +259,7 @@ def read_gdf(
                         print(f"Identified long column: {long_col}, lat column: {lat_col}")
                         print(f"🟢 Read dataframe done.")
                     except Exception as e:
-                        raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
+                        raise ValueError(f"Read GeoDataFrame Error: {e}")
             elif extension in ["kmz", "kml"]:
                 if geom_type is None:
                     raise ValueError(f"Geometry type must be selected between ['point', 'line', 'polygon']")

@@ -99,9 +99,11 @@ def graphhopper_parallel(pairs_df, workers=8, profile='car', task_celery=False):
                 "tgt_geom": target_geom,
             }
 
-        qty_task = len(task)
-        for num, f in tqdm(enumerate(as_completed(tasks), start=1), total=qty_task, desc="Graphopper Routing"):
+        qty_task = len(tasks)
+        num = 0
+        for f in tqdm(as_completed(tasks), total=qty_task, desc="Graphopper Routing"):
             result = f.result()
+            num += 1
             if result is None or result.is_empty:
                 continue
 

@@ -83,8 +83,12 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
     target_gdf = validate_longlat(target_gdf)
     source_gdf = admin_information(source_gdf)
     target_gdf = admin_information(target_gdf)
+
+    source_gdf["site_id"] = source_gdf["site_id"].astype(str)
+    target_gdf["site_id"] = target_gdf["site_id"].astype(str)
     source_gdf["site_type"] = "Site List"
     target_gdf["site_type"] = "FO Hub"
+
     source_gdf = source_gdf.reset_index(drop=True)
     target_gdf = target_gdf.reset_index(drop=True)
 
@@ -104,7 +108,7 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
         raise ValueError(f"🔴 There is no routing result fulfill threshold {cutoff} m.")
 
     # Add Admin
-    routing_gdf['name'] = routing_gdf["site_id_a"] + sep + routing_gdf["site_id_b"]
+    routing_gdf['name'] = routing_gdf["site_id_a"].astype(str) + str(sep) + routing_gdf["site_id_b"].astype(str)
     
     routing_gdf.to_parquet(parquet_path, index=False)
     excel_styler(routing_gdf.drop(columns='geometry')).to_excel(excel_path, sheet_name='DEN Graphhopper Routing', index=False)
@@ -162,11 +166,11 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
 
 if __name__ == "__main__":
     # PROCESS ROUTING
-    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\Template Routing.xlsx"
-    target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\ODC Telkom Sumatera.kmz"
+    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\TRIAL ODC\Source.xlsx"
+    target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\TRIAL ODC\Target.xlsx"
     k_final = 1
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\GH Service"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\TRIAL ODC"
     os.makedirs(export_dir, exist_ok=True)
 
     nearest_point_to_point(source_path, target_path, export_dir, k_final=1, cutoff=100000)
