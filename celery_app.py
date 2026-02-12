@@ -10,6 +10,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         'tasks.intersite_celery',
+        'tasks.graphhopper_celery',
         'tasks.fwa_celery'
         ],
 )
