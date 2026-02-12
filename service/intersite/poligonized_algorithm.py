@@ -177,11 +177,19 @@ def polygonize_algo(sitelist_gdf:gpd.GeoDataFrame, hubs_gdf:gpd.GeoDataFrame, po
         print(f"🔴 Ring data empty.")
         return None
 
-def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, spof_threshold:int=3000, graph_type:str="full_weighted", **kwargs):
+def main_poligonized(
+        excel_path:str, 
+        polygon_file:str, 
+        export_dir:str, 
+        spof_threshold:int=3000, 
+        graph_type:str="full_weighted",
+        sep:str=";",
+        operator:str="xl",
+        **kwargs
+    ):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Poligon Based")
-    sep = kwargs.get("sep", "-")
     task_celery = kwargs.get("task_celery", None)
 
     logger.info(f"🌏 Starting Intersite")
@@ -209,6 +217,7 @@ def main_poligonized(excel_path:str, polygon_file:str, export_dir:str, spof_thre
         vendor=vendor,
         method=method,
         sep=sep,
+        operator=operator,
         graph_type=graph_type,
         spof_threshold=spof_threshold,
         task_celery=task_celery

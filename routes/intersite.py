@@ -178,25 +178,12 @@ async def fiberization_task(task_id: str):
 # =============================
 @router.post("/insert_ring", tags=["Intersite"])
 async def insert_ring(
-    insert_list: UploadFile = File(
-        ..., description="Excel file containing potential sitelist to insert."
-    ),
-    kmz_design: UploadFile = File(
-        ..., description="KMZ file containing existing design plan."
-    ),
-    max_member: int = Form(
-        12, description="Maximum number of members to consider for insertion."
-    ),
-    max_distance: int = Form(
-        3000, description="Maximum distance consider for insertion."
-    ),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    operator: Optional[Operator] = Form(
-        Operator.IOH,
-        description="Operator to define separator of near end far end from 'Route' folders.",
-    ),
+    insert_list: UploadFile = File(..., description="Excel file containing potential sitelist to insert."),
+    kmz_design: UploadFile = File(..., description="KMZ file containing existing design plan."),
+    max_member: int = Form(12, description="Maximum number of members to consider for insertion."),
+    max_distance: int = Form(3000, description="Maximum distance consider for insertion."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    operator: Optional[Operator] = Form(Operator.IOH,description="Operator to define separator of near end far end from 'Route' folders.",),
 ):
     """
     Create Intersite design based on **Insert Alghorithm**.
@@ -344,6 +331,7 @@ async def supervised_ring(
             "spof_threshold": spof_threshold,
             "program": program,
             "sep": separator.value,
+            "operator": operator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -362,22 +350,15 @@ async def supervised_ring(
 # UNSUPERVISED
 @router.post("/unsupervised", tags=["Intersite"])
 async def unsupervised_ring(
-    excel_file: UploadFile = File(
-        None, description="Excel file containing sitelist and hubs sheet."
-    ),
+    excel_file: UploadFile = File(None, description="Excel file containing sitelist and hubs sheet."),
     member_expectation: int = Form(10, description="Member expectation in one ring."),
     max_distance: int = Form(10000, description="Maximum distance to route."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
-    drop_existings: bool = Form(
-        False, description="Drop ring if not conatining new site."
-    ),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    route_preference: Optional[RoutePreference] = Form(
-        RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
+    drop_existings: bool = Form(False, description="Drop ring if not conatining new site."),
+    operator: Optional[Operator] = Form(Operator.XL, description="Operator for intersite design project."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design based on **Unsupervised Alghorithm**, the clustering based on our service.
@@ -464,6 +445,7 @@ async def unsupervised_ring(
             "program": program,
             "spof_threshold": spof_threshold,
             "sep": separator.value,
+            "operator": operator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -482,17 +464,12 @@ async def unsupervised_ring(
 # FIX ROUTE
 @router.post("/fixroute", tags=["Intersite"])
 async def fixroute_ring(
-    excel_file: UploadFile = File(
-        None, description="Excel file containing fix route template."
-    ),
+    excel_file: UploadFile = File(None, description="Excel file containing fix route template."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: Optional[str] = Form(None, description="Program name if not defined"),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    route_preference: Optional[RoutePreference] = Form(
-        RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
+    operator: Optional[Operator] = Form(Operator.XL, description="Operator for intersite design project."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design based on **Fix Route Alghorithm**.
@@ -551,6 +528,7 @@ async def fixroute_ring(
             "spof_threshold": spof_threshold,
             "program": program,
             "sep": separator.value,
+            "operator": operator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -568,22 +546,13 @@ async def fixroute_ring(
 # POLYGON BASED INTERSITE
 @router.post("/polygon-intersite", tags=["Intersite"])
 async def polygon_intersite(
-    excel_file: UploadFile = File(
-        None, description="Excel file containing sitelist and hubs sheet."
-    ),
-    polygon_file: UploadFile = File(
-        None, description="Polygon file to process (.kmz, .kml, .parquet, .gpkg, etc)."
-    ),
+    excel_file: UploadFile = File(None, description="Excel file containing sitelist and hubs sheet."),
+    polygon_file: UploadFile = File(None, description="Polygon file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
-    program: Optional[str] = Form(
-        "Fiberization", description="Program name if needed."
-    ),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    route_preference: Optional[RoutePreference] = Form(
-        RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
+    program: Optional[str] = Form("Fiberization", description="Program name if needed."),
+    operator: Optional[Operator] = Form(Operator.XL, description="Operator for intersite design project."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design **Polygon Based**.
@@ -666,6 +635,7 @@ async def polygon_intersite(
             "spof_threshold": spof_threshold,
             "program": program,
             "sep": separator.value,
+            "operator": operator.value,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -684,23 +654,13 @@ async def polygon_intersite(
 @router.post("/topology-intersite", tags=["Intersite"])
 async def topology_intersite(
     excel_file: UploadFile = File(None, description="Excel file containing sitelist."),
-    topology_file: UploadFile = File(
-        None, description="Topology file to process (.kmz, .kml, .parquet, .gpkg, etc)."
-    ),
+    topology_file: UploadFile = File(None, description="Topology file to process (.kmz, .kml, .parquet, .gpkg, etc)."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
-    distance_tolerance: int = Form(
-        500,
-        description="Distance tolerance in meters to identify point surrounding topology.",
-    ),
-    program: Optional[str] = Form(
-        "Fiberization", description="Program name if needed."
-    ),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    route_preference: Optional[RoutePreference] = Form(
-        RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
+    distance_tolerance: int = Form(500, description="Distance tolerance in meters to identify point surrounding topology."),
+    program: Optional[str] = Form("Fiberization", description="Program name if needed."),
+    operator: Optional[Operator] = Form(Operator.XL, description="Operator for intersite design project."),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design **Topology Based**.
@@ -782,9 +742,10 @@ async def topology_intersite(
             "excel_path": excel_path,
             "topology_path": topology_path,
             "spof_threshold": spof_threshold,
-            "distance_tolerance": distance_tolerance,
             "program": program,
             "sep": separator.value,
+            "operator": operator.value,
+            "distance_tolerance": distance_tolerance,
             "graph_type": graph_type,
         }
         data = dumps(data, default=str)
@@ -859,9 +820,9 @@ async def implementation_intersite(
             "points_path": points_path,
             "lines_path": lines_path,
             "program": program,
-            "operator": operator,
             "ipl_route": ipl_route,
             "sep": separator.value,
+            "operator": operator,
             "device_in_site": device_in_site,
             "device_in_branch": device_in_branch,
         }

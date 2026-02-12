@@ -103,6 +103,7 @@ def task_supervised(self, data: dict):
         area_col = parsed_data.get("area_col", 'region')
         cluster_col = parsed_data.get("cluster_col", 'ring_name')
         sep = parsed_data.get("sep", ';')
+        operator = parsed_data.get("operator", 'xl')
 
         if DOCKER:
             if "/mnt/" not in site_path:
@@ -124,6 +125,7 @@ def task_supervised(self, data: dict):
             spof_threshold=spof_threshold,
             method=method,
             sep=sep,
+            operator=operator,
             program=program,
             task_celery=self
         )
@@ -178,6 +180,7 @@ def task_unsupervised(self, data: dict):
         drop_existings = parsed_data.get("drop_existings", False)
         program = parsed_data.get("program", 'Supervised Intersite')
         sep = parsed_data.get("sep", ';')
+        operator = parsed_data.get("operator", 'xl')
         graph_type = parsed_data.get("graph_type", "full_weighted")
 
         if DOCKER:
@@ -206,6 +209,7 @@ def task_unsupervised(self, data: dict):
             spof_threshold=spof_threshold,
             drop_existings=drop_existings,
             sep=sep,
+            operator=operator,
             graph_type=graph_type,
             program=program,
             task_celery=self
@@ -252,8 +256,9 @@ def task_fixroute(self, data: dict):
         template_path = parsed_data.get("template_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         program = parsed_data.get("program", 'Fix Route Fiberization')
-        sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
+        sep = parsed_data.get("sep", "-")
+        operator = parsed_data.get("operator", 'xl')
 
         if DOCKER:
             if "/mnt/" not in template_path:
@@ -271,6 +276,7 @@ def task_fixroute(self, data: dict):
             export_dir=export_loc,
             program=program,
             sep=sep,
+            operator=operator,
             graph_type=graph_type,
             spof_threshold=spof_threshold,
             task_celery=self
@@ -318,9 +324,10 @@ def task_polygon_intersite(self, data: dict):
         excel_path = parsed_data.get("excel_path")
         polygon_path = parsed_data.get("polygon_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
-        sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Polygon Based Fiberization')
+        sep = parsed_data.get("sep", "-")
+        operator = parsed_data.get("operator", 'xl')
         
         if DOCKER:
             if "/mnt/" not in excel_path:
@@ -339,9 +346,10 @@ def task_polygon_intersite(self, data: dict):
             polygon_file=polygon_path,
             export_dir=export_loc,
             program=program,
-            sep=sep,
             graph_type=graph_type,
             spof_threshold=spof_threshold,
+            sep=sep,
+            operator=operator,
             task_celery=self
         )
 
@@ -390,9 +398,10 @@ def task_topology_intersite(self, data: dict):
         topology_path = parsed_data.get("topology_path")
         spof_threshold = parsed_data.get("spof_threshold", 3000)
         distance_tolerance = parsed_data.get("distance_tolerance", 500)
-        sep = parsed_data.get("sep", "-")
         graph_type = parsed_data.get("graph_type", "full_weighted")
         program = parsed_data.get("program", 'Topology Based Fiberization')
+        sep = parsed_data.get("sep", "-")
+        operator = parsed_data.get("operator", 'xl')
         
         if DOCKER:
             if "/mnt/" not in excel_path:
@@ -414,6 +423,7 @@ def task_topology_intersite(self, data: dict):
             distance_tolerance=distance_tolerance,
             program=program,
             sep=sep,
+            operator=operator,
             graph_type=graph_type,
             task_celery=self
         )

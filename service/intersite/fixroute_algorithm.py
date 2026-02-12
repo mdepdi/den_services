@@ -311,7 +311,8 @@ def validate_fixroute(df: pd.DataFrame):
 def main_fixroute(
     template_df: pd.DataFrame,
     export_dir: str,
-    sep:str = "-",
+    sep:str=";",
+    operator:str="xl",
     spof_threshold: int = 3000,
     graph_type: str = "full_weighted",
     **kwargs
@@ -370,7 +371,7 @@ def main_fixroute(
 
     # EXPORT
     logger.info("🧩 Save Design Information")
-    save_intersite(updated_points, updated_routes, export_dir, sep, method)
+    save_intersite(updated_points, updated_routes, export_dir, sep, operator, method)
 
     logger.info("🏆 Fix Route export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")

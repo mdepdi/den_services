@@ -35,7 +35,7 @@ from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
 from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection, fiber_utilization
 from modules.table import sanitize_header, detect_week, excel_styler
 from modules.kml import export_kml, sanitize_kml
-from service.intersite.report import drm_format
+from service.intersite.report import drm_format, drm_xl
 
 
 # ------------------------------------------------------
@@ -1239,6 +1239,7 @@ def save_intersite(
     paths: gpd.GeoDataFrame,
     export_dir: str,
     sep:str=";",
+    operator:str|None=None,
     method: str = "Supervised",
     check_utils: bool = False
 ):
@@ -1288,7 +1289,15 @@ def save_intersite(
         kmz_path = save_kml(points, paths, topology, export_dir, method)
     
     # EXPORT DRM
-    drm = drm_format(kmz_path, export_dir, sep=sep)
+    match operator:
+        case "xl":
+            drm = drm_xl(
+                kmz_path=kmz_path,
+                export_dir=export_dir,
+                sep=sep,
+            )
+        case _:
+            drm = drm_format(kmz_path, export_dir, sep=sep)
 
     # # EXPORT EXCEL
     # excel_path = os.path.join(export_dir, f"Summary Report_Intersite_{method}.xlsx")
@@ -1336,6 +1345,8 @@ def main_supervised(
     export_loc: str = "./exports",
     area_col: str = "region",
     cluster_col="ring_name",
+    sep=";",
+    operator="xl",
     fo_expand: gpd.GeoDataFrame = None,
     spof_threshold: int = 3000,
     graph_type: str = "full_weighted",
@@ -1347,7 +1358,6 @@ def main_supervised(
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Supervised")
     task_celery = kwargs.get("task_celery", None)
-    sep = kwargs.get("sep", "-")
 
     if "site_id" in site_data.columns:
         site_data["site_id"] = site_data["site_id"].astype(str)
@@ -1428,7 +1438,7 @@ def main_supervised(
 
     # EXPORT
     logger.info("🧩 Save Design Information")
-    save_intersite(all_points, all_paths, export_dir, method, sep=sep)
+    save_intersite(all_points, all_paths, export_dir, method, sep=sep, operator=operator)
 
     logger.info("🏆 Supervised export completed.")
     logger.info(f"ℹ️ All files saved to: {export_dir}")

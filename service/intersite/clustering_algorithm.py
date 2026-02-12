@@ -931,6 +931,8 @@ def main_unsupervised(
     spof_threshold=3000,
     fo_expand=None,
     boq=False,
+    sep=";",
+    operator="xl",
     graph_type="full_weighted",
     **kwargs
 ):
@@ -1014,6 +1016,8 @@ def main_unsupervised(
         spof_threshold=spof_threshold,
         vendor=vendor,
         graph_type=graph_type,
+        sep=sep,
+        operator=operator,
         **kwargs
     )
 

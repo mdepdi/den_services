@@ -201,11 +201,20 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     mapped = mapped.reset_index(drop=True)
     return mapped_fix
 
-def main_topology(excel_path:str, line_file:str, export_dir:str, spof_threshold:int=3000, distance_tolerance:int=500, graph_type:str="full_weighted", **kwargs):
+def main_topology(
+    excel_path:str,
+    line_file:str,
+    export_dir:str,
+    spof_threshold:int=3000,
+    distance_tolerance:int=500,
+    graph_type:str="full_weighted",
+    sep:str=";",
+    operator:str="xl",
+    **kwargs
+    ):
     vendor = kwargs.get("vendor", "TBG")
     program = kwargs.get("program", "Fiberization")
     method = kwargs.get("method", "Topology Based")
-    sep = kwargs.get("sep", "-")
     task_celery = kwargs.get("task_celery", None)
 
     logger.info(f"🌏 Starting Intersite")
@@ -241,6 +250,7 @@ def main_topology(excel_path:str, line_file:str, export_dir:str, spof_threshold:
         vendor=vendor,
         spof_threshold=spof_threshold,
         sep=sep,
+        operator=operator,
         method=method,
         graph_type=graph_type,
         task_celery=task_celery
