@@ -487,6 +487,7 @@ def boq_mmp(
             seg_name = seg_row["name"]
             seg_ne = seg_row["near_end"]
             seg_fe = seg_row["far_end"]
+            
             seg_ctx = f"ring={ring_name} seg={seg_name} ne={seg_ne} fe={seg_fe}"
 
             site_row = colopriming_data.loc[colopriming_data["site_id"].astype(str) == str(seg_ne)].copy()
@@ -504,9 +505,9 @@ def boq_mmp(
             kabupaten = site_row.get("kabupaten", None)
             provinsi = site_row.get("provinsi", None)
 
-            mmp_row = gdf_ring_sites[gdf_ring_sites["site_id"].astype(str) == str(seg_fe)].copy()
+            mmp_row = gdf_ring_sites.copy()
             if mmp_row.empty:
-                logger.error(f"Ring {ring_name} MMP Row not found with segment fe: {seg_fe}")
+                logger.error(f"Ring {ring_name} MMP row empty.")
                 continue
 
             mmp_row = mmp_row.to_crs(epsg=4326)
