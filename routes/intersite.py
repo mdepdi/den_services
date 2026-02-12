@@ -52,35 +52,15 @@ DATA_DIR = settings.DATA_DIR
 
 
 class NewRingSchema(BaseModel):
-    excel_file: UploadFile = File(
-        None,
-        description="Excel file containing ring data. Must be containing columns: 'site_id', 'site_name', 'site_type', 'lat', 'long', 'region', 'ring_name', 'flag'",
-    )
-    fiber_route: UploadFile = File(
-        None, description="GPKG, Parquet, or Shapefile containing fiber route data."
-    )
+    excel_file: UploadFile = File( None, description="Excel file containing ring data. Must be containing columns: 'site_id', 'site_name', 'site_type', 'lat', 'long', 'region', 'ring_name', 'flag'",)
+    fiber_route: UploadFile = File( None, description="GPKG, Parquet, or Shapefile containing fiber route data.")
     method: str = Form(..., description="Method to use: 'supervised' or 'unsupervised'")
 
-
 class InsertRingSchema(BaseModel):
-    excel_file: UploadFile = (
-        File(..., description="Excel file containing ring data to insert."),
-    )
-    previous_fiber: UploadFile = (
-        File(
-            ...,
-            description="GPKG, Parquet, or Shapefile containing previous fiber data.",
-        ),
-    )
-    previous_points: UploadFile = (
-        File(
-            ...,
-            description="GPKG, Parquet, or Shapefile containing previous points data.",
-        ),
-    )
-    max_member: int = Form(
-        12, description="Maximum number of members to consider for insertion."
-    )
+    excel_file: UploadFile = (File(..., description="Excel file containing ring data to insert."))
+    previous_fiber: UploadFile = (File(..., description="GPKG, Parquet, or Shapefile containing previous fiber data."))
+    previous_points: UploadFile = (File(..., description="GPKG, Parquet, or Shapefile containing previous points data."))
+    max_member: int = Form(12, description="Maximum number of members to consider for insertion.")
 
 
 class Operator(str, Enum):
@@ -255,12 +235,9 @@ async def supervised_ring(
     excel_file: UploadFile = File(None, description="Excel file containing ring data."),
     spof_threshold: int = Form(3000, description="SPOF tolerance in meters."),
     program: str = Form("Fiberization", description="Program name if needed."),
-    separator: Separator = Form(
-        Separator.SEMICOLON, description="Separator for segment identify near end and far end."
-    ),
-    route_preference: Optional[RoutePreference] = Form(
-        RoutePreference.FIBER, description="Route preference for intersite design."
-    ),
+    separator: Separator = Form(Separator.SEMICOLON, description="Separator for segment identify near end and far end."),
+    operator: Optional[Operator] = Form(Operator.XL, description="Operator for intersite design project."),
+    route_preference: Optional[RoutePreference] = Form(RoutePreference.FIBER, description="Route preference for intersite design."),
 ):
     """
     Create Intersite design based on **Supervised Alghorithm**, you need to define the cluster first.
