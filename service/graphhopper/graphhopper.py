@@ -94,7 +94,7 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
 
     logger.info(f"ℹ️ Running Graphhopper | Nearest Point to Point.")
     start_time = time()
-    routing_gdf = graphhopper_knn(source_gdf, target_gdf, k_final=k_final, profile='car', task_celery=task_celery)
+    routing_gdf = graphhopper_knn(source_gdf, target_gdf, k_final=k_final, profile='custom_car', task_celery=task_celery)
     routing_gdf['length'] = routing_gdf.geometry.to_crs(epsg=4326).apply(geodesic_length)
 
     # Export
