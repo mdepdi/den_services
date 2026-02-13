@@ -60,8 +60,6 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
 
-    line_gdf.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Export\Line.parquet")
-
     # ----------------------------------------------------------------------
     # Ensure Required Columns
     # ----------------------------------------------------------------------
