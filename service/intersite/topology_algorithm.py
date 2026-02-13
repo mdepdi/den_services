@@ -18,7 +18,7 @@ sys.path.append(root)
 from service.intersite.fixroute_algorithm import main_fixroute, validate_fixroute
 from modules.table import sanitize_header
 from modules.data import read_gdf, validate_longlat
-from modules.utils import auto_group
+from modules.utils import auto_group, admin_information
 from core.logger import create_logger
 from core.config import settings
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -72,11 +72,16 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         sitelist_gdf['site_name'] = sitelist_gdf['site_id']
 
     if 'region' not in sitelist_gdf.columns:
-        group = auto_group(sitelist_gdf)
-        sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']], how='left').drop(columns='index_right')
-        sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
+        # group = auto_group(sitelist_gdf)
+        # sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']], how='left').drop(columns='index_right')
+        # sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
+        sitelist_gdf = admin_information(sitelist_gdf)
+        sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["site_id", "Provinsi"])
+        sitelist_gdf['region'] = sitelist_gdf['Provinsi']
 
+    # ------------------
     # SANITIZE SITE NAME
+    # ------------------
     sitelist_gdf['site_id'] = (
         sitelist_gdf['site_id']
         .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
@@ -283,7 +288,7 @@ if __name__ == "__main__":
     export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Export"
     program = "Sample Topologi Data"
     sep=";"
-    graph_type = "existing_fiber"
+    graph_type = "weighted_roads"
     operator = 'surge'
 
     result = main_topology(

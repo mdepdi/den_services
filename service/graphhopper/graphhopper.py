@@ -166,12 +166,11 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
 
 if __name__ == "__main__":
     # PROCESS ROUTING
-    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\TRIAL ODC\Source.xlsx"
-    target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\TRIAL ODC\Target.xlsx"
+    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\Export\Sites Outside 3758 in Buffer 10KM Star.xlsx"
+    target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\pole_KAI_clean_V2 - Copy.xlsx"
     k_final = 1
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE ODC TSEL\TRIAL ODC"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\Export GH"
     os.makedirs(export_dir, exist_ok=True)
 
-    nearest_point_to_point(source_path, target_path, export_dir, k_final=1, cutoff=100000)
-
+    nearest_point_to_point(source_path, target_path, export_dir, k_final=1, cutoff=10000)

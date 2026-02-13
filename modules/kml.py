@@ -13,6 +13,7 @@ from tqdm import tqdm
 from shapely.geometry import Point, LineString, Polygon
 from modules.table import sanitize_header
 from modules.geometry import geodesic_length
+from modules.utils import admin_information
 
 class Separator(str, Enum):
     SEMICOLON = ";"
@@ -542,6 +543,7 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
             route_type = "Chain"
         elif qty_hubs > 1 and qty_sites >= 1:
             route_type = "Ring"
+        
 
         # Segments
         for idx, route in ring_lines.iterrows():

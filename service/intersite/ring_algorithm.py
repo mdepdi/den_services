@@ -32,7 +32,7 @@ from itertools import permutations
 from core.logger import create_logger
 from modules.data import validate_longlat
 from modules.h3_route import identify_hexagon, retrieve_roads, build_graph
-from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection, fiber_utilization
+from modules.utils import auto_group, spof_detection, create_topology, route_path, dropwire_connection, fiber_utilization, admin_information
 from modules.table import sanitize_header, detect_week, excel_styler
 from modules.kml import export_kml, sanitize_kml
 from service.intersite.report import drm_format, drm_xl
@@ -1135,6 +1135,8 @@ def save_kml(
     points = points.to_crs(epsg=4326).reset_index(drop=True)
     paths = paths.to_crs(epsg=4326).reset_index(drop=True)
     topology = topology.to_crs(epsg=4326).reset_index(drop=True)
+    points = points.sort_values(by=['region', 'ring_name']).copy()
+    paths = paths.sort_values(by=['region', 'ring_name']).copy()
 
     main_kml = simplekml.Kml()
     region_list = points['region'].dropna().unique().tolist()
@@ -1277,6 +1279,7 @@ def save_intersite(
         fo_utilization = gpd.GeoDataFrame()
         paths['cable_new'] = 0
         paths['cable_existing'] = 0
+    
     
     # EXPORT PARQUET
     metadata_dir = os.path.join(export_dir, "Metadata")
