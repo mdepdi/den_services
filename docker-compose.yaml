@@ -61,7 +61,7 @@ services:
       - ./data:/mnt/data:ro
       - ./uploads:/mnt/uploads:rw
       - ./exports:/mnt/exports:rw
-      - "/d/JACOBS/DATA:/mnt/data_raw:ro"
+      - "/d/JACOBS/DATA:/mnt/data_raw:rw"
     ports:
       - "8000:8000"
     env_file:
