@@ -59,6 +59,7 @@ def validate_topology(excel_path:str):
 def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, distance_tolerance:int=500, vendor='TBG', program='Intersite'):
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
+    line_gdf = line_gdf.drop(columns=['ring_name','region'], errors='ignore')
 
     # ----------------------------------------------------------------------
     # Ensure Required Columns
@@ -74,6 +75,18 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         group = auto_group(sitelist_gdf)
         sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']], how='left').drop(columns='index_right')
         sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
+
+    # SANITIZE SITE NAME
+    sitelist_gdf['site_id'] = (
+        sitelist_gdf['site_id']
+        .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+    )
+
+    sitelist_gdf['site_name'] = (
+        sitelist_gdf['site_name']
+        .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+    )
+
 
     # ----------------------------------------------------------------------
     # Validate line geometries
@@ -248,6 +261,7 @@ def main_topology(
 
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Starting Fix Route Topology Based"})
+        
     result = main_fixroute(
         template_df=site_data,
         export_dir=design_dir,

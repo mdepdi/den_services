@@ -1163,6 +1163,20 @@ def save_kml(
             "program": "Program" if "program" in region_points.columns else "N/A",
             "geometry": "geometry",
         }
+
+        # SANITIZE SITE NAME
+        points['site_id'] = (
+            points['site_id']
+            .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+        )
+
+        points['site_name'] = (
+            points['site_name']
+            .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+        )
+        topology['name'] = (topology['name'].str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True))
+        paths['name'] = (paths['name'].str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True))
+
         available_col = [col for col in used_columns.keys() if col in region_points.columns]
         ring_list = region_points['ring_name'].dropna().unique().tolist()
         for ring in tqdm(ring_list, desc=f"Processing rings in {region}"):
@@ -1176,6 +1190,7 @@ def save_kml(
             if ring_points.empty:
                 print(f"No Points found in region {region} ring {ring}")
                 raise
+            
             topology_ring = topology_region[topology_region['ring_name'] == ring].copy()
             topology_ring = topology_ring.dissolve(by='ring_name').reset_index()
             topology_ring['geometry'] = topology_ring.geometry.apply( lambda geom: linemerge(geom) if type(geom) == MultiLineString else geom)

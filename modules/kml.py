@@ -447,13 +447,19 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
     for ring, line_ring in lines_existing.groupby("ring_name"):
         available = {req for name in line_ring['folder_name'].str.lower() for req in line_folder if req in name}
         missing = line_folder - available
+        if lines_existing.empty:
+            continue
+
         if missing:
             raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
     
-    point_folder = {'hub', 'site'}
+    point_folder = {'hub'}
     for ring, point_ring in points_existing.groupby("ring_name"):
         available = {req for name in point_ring['folder_name'].str.lower() for req in point_folder if req in name}
         missing = point_folder - available
+        if points_existing.empty:
+            continue
+
         if missing:
             raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
 
@@ -651,6 +657,9 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     for ring, line_ring in lines_data.groupby("ring_name"):
         available = {req for name in line_ring['folder_name'].str.lower() for req in line_folder if req in name}
         missing = line_folder - available
+        if lines_data.empty:
+            continue
+
         if missing:
             print(f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ.")
     
@@ -658,6 +667,9 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     for ring, point_ring in points_data.groupby("ring_name"):
         available = {req for name in point_ring['folder_name'].str.lower() for req in point_folder if req in name}
         missing = point_folder - available
+        if points_data.empty:
+            continue
+
         if missing:
             print(f"Ring '{ring}' is missing folders {sorted(missing)} in implementation KMZ.")
     
