@@ -707,6 +707,7 @@ def bill_of_quantity(
         backbone = line_geom
         # if access_ne:
         #     backbone = shapely.difference(backbone, access_ne)
+        
         if access_fe:
             backbone = shapely.difference(backbone, access_fe)
         lines.at[idx, "backbone"] = backbone.wkt
@@ -718,7 +719,7 @@ def bill_of_quantity(
     fo_route_clip = fo_route[fo_route.geometry.intersects(union_lines)].copy()
     fo_route_clip["geometry"] = fo_route_clip.geometry.buffer(30)
 
-    _ = substring_overlay(lines, fo_route_clip)
+    # _ = substring_overlay(lines, fo_route_clip)
     existing_route = gpd.overlay(lines, fo_route_clip, how="intersection", keep_geom_type=True)
 
     lines["fo_exist"] = [{} for _ in range(len(lines))]
