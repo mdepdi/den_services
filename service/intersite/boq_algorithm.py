@@ -731,9 +731,7 @@ def bill_of_quantity(
         lines = obstacle_detection(lines, sep=sep)
         return points, lines
 
-    existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(
-        drop=True
-    )
+    existing_route = existing_route[["id_line", "fiber", "geometry"]].reset_index(drop=True)
     existing_route = existing_route.dissolve(["id_line", "fiber"]).reset_index()
     existing_route["geometry"] = existing_route.geometry.apply(
         lambda g: linemerge(g) if g.geom_type == "MultiLineString" else g
