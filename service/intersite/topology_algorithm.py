@@ -60,6 +60,8 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
 
+    line_gdf.to_parquet(r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Export\Line.parquet")
+
     # ----------------------------------------------------------------------
     # Ensure Required Columns
     # ----------------------------------------------------------------------
@@ -97,6 +99,10 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
         ring_name = row.get("ring_name", None)
+
+        if ring_name == "":
+            ring_name = None
+        
         if geom.geom_type == 'MultiLineString':
             merged = linemerge(geom)
             if merged.geom_type == "MultiLineString":
@@ -199,6 +205,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     mapped = mapped.drop_duplicates(['ring_name', 'site_id'])
     mapped = mapped.drop_duplicates(['ring_name', 'geometry'])
     mapped = mapped.reset_index(drop=True)
+    
     return mapped_fix
 
 def main_topology(
@@ -259,12 +266,12 @@ def main_topology(
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Sitelist 5k + Station Surge.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Compiled FWA Surge 04022026_West Java_Denny.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Test Topologi Based\Export\West Java Denny"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Template_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Topology.kml"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Export"
     program = "Sample Topologi Data"
     sep=";"
-    graph_type = "surge_763"
+    graph_type = "existing_fiber"
     operator = 'surge'
 
     result = main_topology(

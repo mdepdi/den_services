@@ -251,6 +251,7 @@ def parallel_fixroute(
 
 def validate_fixroute(df: pd.DataFrame):
     df = sanitize_header(df, lowercase=True)
+    
     col_ne = df.columns[df.columns.str.contains("_a")].tolist() + ["ring_name", "region"]
     col_fe = df.columns[df.columns.str.contains("_b")].tolist() + ["ring_name", "region"]
 
