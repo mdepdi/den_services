@@ -68,7 +68,7 @@ async def task_homepass(
         tmp_boundary.write(boundary_file.file.read())
         tmp_boundary_path = tmp_boundary.name
     
-    if suffix in ['kmz', 'kml', '.gpkg', '.parquet', '.shp']:
+    if suffix in ['.kmz', '.kml', '.gpkg', '.parquet', '.shp']:
         boundary_gdf = read_gdf(tmp_boundary_path, geom_type="polygon")
         logger.info(f"📥 Reading boundary file: {boundary_file.filename}")
     else:
@@ -144,7 +144,7 @@ async def task_poi_remark(
         tmp_sitelist.write(sitelist.file.read())
         tmp_sitelist_path = tmp_sitelist.name
     
-    if suffix in ['xlsx','kmz', 'kml', '.gpkg', '.parquet', '.shp']:
+    if suffix in ['.xlsx','.kmz', '.kml', '.gpkg', '.parquet', '.shp']:
         sitelist_gdf = read_gdf(tmp_sitelist_path, geom_type="point")
         logger.info(f"📥 Reading sitelist file: {sitelist.filename}")
     else:
