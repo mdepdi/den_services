@@ -169,7 +169,7 @@ async def insert_ring(
     Create Intersite design based on **Insert Alghorithm**.
 
     **Template Insert Ring**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Insert_Ring.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Template_Insert_Ring.xlsx)
 
     **Note:**
     - KMZ Data should be formatted as DEN intersite design rules.
@@ -252,7 +252,7 @@ async def supervised_ring(
     - flag
 
     **Template Supervised Fiberization**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Supervised_Fiberization.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Template_Supervised_Fiberization.xlsx)
 
     **Note:**
     - Site type should containing 'FO Hub' for interconnection source.
@@ -342,7 +342,7 @@ async def unsupervised_ring(
     Excel file must be containing **'sitelist'** and **'hubs'** sheet.
 
     **Template Unsupervised Fiberization**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Unsupervised_Fiberization.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Template_Unsupervised_Fiberization.xlsx)
 
     **Note:**
     - Hubs should containing 'FO Hub' for interconnection source.
@@ -453,7 +453,7 @@ async def fixroute_ring(
     Excel file must be containing **Near End (NE)** as source and **Far End (FE)** as target.
 
     **Template Unsupervised Fiberization**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Fixed_Route.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Template_Fixed_Route.xlsx)
 
     **Note:**
     - Fix Route will running based on region and ring name. Make sure to order the ring from start hub to end hub.
@@ -536,10 +536,10 @@ async def polygon_intersite(
     Excel file must be containing **'sitelist'** and **'hubs'** sheet.
 
     **Template Polygon Based**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Polygon_Based.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Template_Polygon_Based.xlsx)
 
     **Sample Polygon**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Polygon_Sample.kmz)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Polygon_Sample.kmz)
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
@@ -644,10 +644,10 @@ async def topology_intersite(
     Excel file must be containing ['site_id', 'site_name','long', 'lat'].
 
     **Template Topology Based**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Template_Topology_Based.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Template_Topology_Based.xlsx)
 
     **Sample Topology**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/Topology_Sample.kmz)
+    [🟢 Download Here](http://10.83.10.16:8000/template/Topology_Sample.kmz)
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
@@ -755,7 +755,7 @@ async def implementation_intersite(
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List'].
 
     **Input Design Sample**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    [🟢 Download Here](http://10.83.10.16:8000/template/BOQ_Design_Sample.kmz)
     """
 
     date_today = datetime.now().strftime("%Y%m%d")

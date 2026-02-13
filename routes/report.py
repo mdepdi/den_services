@@ -119,7 +119,7 @@ async def drm_intersite(
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List'].
 
     **Input KMZ Design Sample**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Design_Sample.kmz)
+    [🟢 Download Here](http://10.83.10.16:8000/template/BOQ_Design_Sample.kmz)
     """
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -215,7 +215,7 @@ async def boq_intersite_route(
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List', 'Route Backbone', 'Route Akses', 'Pole Eksisting', 'FO Existing', and so on].
 
     **Input KMZ Implementation Sample**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Implementation_Sample.kmz)
+    [🟢 Download Here](http://10.83.10.16:8000/template/BOQ_Implementation_Sample.kmz)
     """
 
     date_today = datetime.now().strftime("%Y%m%d")
@@ -305,7 +305,7 @@ async def boq_mmp_route(
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List', 'Route Backbone', 'Route Akses', 'Pole Eksisting', 'FO Existing', and so on].
 
     **Input KMZ Implementation Sample**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/BOQ_Implementation_Sample.kmz)
+    [🟢 Download Here](http://10.83.10.16:8000/template/BOQ_Implementation_Sample.kmz)
     """
 
     date_today = datetime.now().strftime("%Y%m%d")

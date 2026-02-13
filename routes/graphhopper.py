@@ -72,7 +72,7 @@ async def nearest_point(
     Create Direct Routing based on **Graphhopper Services**.
 
     **Template Nearest Point**  
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/graphhopper/Template_Graphhopper_Routing.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/graphhopper/Template_Graphhopper_Routing.xlsx)
 
     **Note:**   
     - Make sure the latitude and longitude is not reversed.
@@ -180,7 +180,7 @@ async def nearest_line(
     Create Direct Routing to Linestring based on **Graphhopper Services**.
 
     **Template Nearest Point**
-    [🟢 Download Here](http://10.83.10.16:8000/download-template/graphhopper/Template_Graphhopper_Routing.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/graphhopper/Template_Graphhopper_Routing.xlsx)
 
     **Note:**
     - Make sure the latitude and longitude is not reversed.
