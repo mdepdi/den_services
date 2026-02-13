@@ -705,8 +705,8 @@ def bill_of_quantity(
 
         # --- BACKBONE ---
         backbone = line_geom
-        if access_ne:
-            backbone = shapely.difference(backbone, access_ne)
+        # if access_ne:
+        #     backbone = shapely.difference(backbone, access_ne)
         if access_fe:
             backbone = shapely.difference(backbone, access_fe)
         lines.at[idx, "backbone"] = backbone.wkt
