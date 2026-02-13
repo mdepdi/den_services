@@ -499,7 +499,7 @@ def auto_group(data_gdf:gpd.GeoDataFrame, distance=25000):
     return groups
 
 def fiber_utilization(data_gdf: gpd.GeoDataFrame, tolerance:int=20) -> gpd.GeoDataFrame:
-    target_fiber = gpd.read_parquet(f"{MAINDATA_DIR}/06. FO TBG/Compile FO Route Only June 2025/FO TBG Only_01062025.parquet")
+    target_fiber = gpd.read_parquet(f"{MAINDATA_DIR}/06. FO TBG/Compile TBG FO Route Only (22 Januari 2026)/Compile TBG FO Route Only (22 Januari 2026)-Add Unicom.parquet")
     target_fiber = target_fiber.to_crs(epsg=3857)
     data_gdf = data_gdf.to_crs(epsg=3857)
 
@@ -606,7 +606,7 @@ def clutter_identification(
         # Classify
         bins = [-float("inf"), 519, 1559, 3639, float("inf")]
         labels = ["Rural", "Sub Urban", "Urban", "Dense Urban"]
-        summary["clutter_class"] = pd.cut(
+        summary["clutter"] = pd.cut(
             summary["building_count"],
             bins=bins,
             labels=labels,
@@ -618,7 +618,7 @@ def clutter_identification(
         island_idx = sitelist.index[sitelist["Island"] == island]
         island_df = sitelist.loc[island_idx, [id_col]].merge(summary, on=id_col, how="left")
         sitelist.loc[island_idx, "building_count"] = island_df["building_count"].values
-        sitelist.loc[island_idx, "clutter_class"] = island_df["clutter_class"].values
+        sitelist.loc[island_idx, "clutter"] = island_df["clutter"].values
 
         print(f"🟢 Clutter identification {island} done.")
 

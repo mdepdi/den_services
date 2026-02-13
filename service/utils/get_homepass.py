@@ -1,7 +1,9 @@
 import os
 import sys
+from pathlib import Path
 
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
 import pandas as pd
 import geopandas as gpd

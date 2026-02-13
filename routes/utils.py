@@ -18,10 +18,12 @@ from time import time
 from enum import Enum
 
 from core.config import settings
+from core.logger import create_logger
 from modules.data import read_gdf, read_df
 from modules.kml import validate_kmz_design
 from service.utils.get_homepass import get_homepass
 from service.utils.intersite_utils import takeout_ring
+from service.utils.poi_remarking import poi_remarking
 
 # EXPORT DIR
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -32,6 +34,12 @@ DATA_DIR = settings.DATA_DIR
 # ROUTER
 # ========
 router = APIRouter()
+
+
+# ========
+# LOGGER
+# ========
+logger = create_logger(__file__)
 
 # =====
 # CLASS
@@ -53,7 +61,7 @@ async def task_homepass(
     Returns a ZIP file with the results.
     """
     # Read boundary data
-    print(f"🌏 Execute | Get Homepass")
+    logger.info(f"🌏 Execute | Get Homepass")
     filename = os.path.basename(boundary_file.filename).split(".")[0]
     suffix = os.path.splitext(boundary_file.filename)[1].lower()
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_boundary:
@@ -62,7 +70,7 @@ async def task_homepass(
     
     if suffix in ['kmz', 'kml', '.gpkg', '.parquet', '.shp']:
         boundary_gdf = read_gdf(tmp_boundary_path, geom_type="polygon")
-        print(f"📥 Reading boundary file: {boundary_file.filename}")
+        logger.info(f"📥 Reading boundary file: {boundary_file.filename}")
     else:
         raise HTTPException(status_code=400, detail="Unsupported boundary file format. Supported formats are KMZ, KML, GPKG, Parquet, and Shapefile.")
     
@@ -108,9 +116,82 @@ async def task_homepass(
         filename=os.path.basename(zip_path),
     )
 
-# ===================
-# GENERATE DRM FORMAT
-# ===================
+# =============================
+# POI REMARKING
+# =============================
+@router.post("/poi_remark", tags=["Utils"])
+async def task_poi_remark(
+    sitelist: UploadFile = File(..., description="XLSX, GPKG, Parquet, or Shapefile containing sitelist data."),
+    ):
+    """
+    POI remarking tools to identify surrounding poi of interest from each sites.    
+    Must be containing columns: 
+    - site_id
+    - lat
+    - long
+    - clutter (optional)
+    - poi_distance (optional)   
+    
+    **Template POI Remarking Based**
+    [🟢 Download Here](http://10.83.10.16:8000/download-template/utils/Template_POI Remarking.xlsx)
+    
+    Returns a ZIP file with the results.
+    """
+    # Read sitelist data
+    logger.info(f"🌏 Execute | POI Remarking")
+    filename = os.path.basename(sitelist.filename).split(".")[0]
+    suffix = os.path.splitext(sitelist.filename)[1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sitelist:
+        tmp_sitelist.write(sitelist.file.read())
+        tmp_sitelist_path = tmp_sitelist.name
+    
+    if suffix in ['xlsx','kmz', 'kml', '.gpkg', '.parquet', '.shp']:
+        sitelist_gdf = read_gdf(tmp_sitelist_path, geom_type="point")
+        logger.info(f"📥 Reading sitelist file: {sitelist.filename}")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported sitelist file format. Supported formats are KMZ, KML, GPKG, Parquet, and Shapefile.")
+
+    try:
+        poi_remarked = poi_remarking(sitelist_gdf)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {e}")
+    
+    # --- save outputs ---
+    job_id = uuid4().hex[:8]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_base = f"POI Remarking_{filename}_{job_id}"
+
+    result_dir = os.path.join(EXPORT_DIR, "Utils", "POI Remarking")
+    os.makedirs(result_dir, exist_ok=True)
+    zip_path = f"{result_dir}/{out_base}.zip"
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # CSV
+            csv_path = f"{result_dir}/{out_base}.csv"
+            poi_remarked.drop(columns="geometry").to_csv(csv_path, index=False)
+            zf.write(csv_path, arcname=os.path.basename(csv_path))
+            os.remove(csv_path)
+
+            # PARQUET
+            parquet = f"{result_dir}/{out_base}.parquet"
+            poi_remarked.to_parquet(parquet, index=False)
+            zf.write(parquet, arcname=os.path.basename(parquet))
+            os.remove(parquet)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
+
+    # --- FileResponse ---
+    return FileResponse(
+        path=zip_path,
+        media_type="application/zip",
+        filename=os.path.basename(zip_path),
+    )
+
+# =======================
+# INTERSITE TAKE OUT RING
+# =======================
 @router.post("/intersite-takeout-ring", tags=["Utils"])
 async def intersite_takeout_ring(
     design_file: UploadFile = File(None, description="Design file containing DEN intersite format (.kmz, .kml).",),
@@ -143,7 +224,7 @@ async def intersite_takeout_ring(
 
     with open(kmz_path, "wb") as buffer:
         shutil.copyfileobj(design_file.file, buffer)
-        print(f"ℹ️ File copied into local storage.")
+        logger.info(f"ℹ️ File copied into local storage.")
 
     # Process Ring List
     ring_list = read_df(ringlist_file)
@@ -155,7 +236,7 @@ async def intersite_takeout_ring(
 
     try:
         start_time = time.time()
-        print(f"ℹ️ Takeout Ring Design Task Started")
+        logger.info(f"ℹ️ Takeout Ring Design Task Started")
         takeout_ring(
             kmz_path=kmz_path,
             ring_list=ring_list,
@@ -164,8 +245,8 @@ async def intersite_takeout_ring(
         )
         end_time = time.time()
         excel_time = round((end_time - start_time) / 60, 2)
-        print(f"ℹ️ Time Consumed:{excel_time:,} minutes")
-        print(f"✅ All Takeout Ring Design Process Done.")
+        logger.info(f"ℹ️ Time Consumed:{excel_time:,} minutes")
+        logger.info(f"✅ All Takeout Ring Design Process Done.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to build BOQ: {e}")
 
@@ -180,7 +261,7 @@ async def intersite_takeout_ring(
                     export_file_path = os.path.join(root, export_file)
                     arcname = os.path.relpath(export_file_path, export_loc)
                     zipf.write(export_file_path, arcname)
-        print(f"📦 Result files zipped.")
+        logger.info(f"📦 Result files zipped.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
 

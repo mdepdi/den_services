@@ -189,7 +189,7 @@ def validate_longlat(df:pd.DataFrame | gpd.GeoDataFrame, lon_col="long", lat_col
     return df
 
 def read_gdf(
-        file: str|pd.DataFrame = None, 
+        file: str|pd.DataFrame|gpd.GeoDataFrame = None, 
         geom_type: str|None = None, 
         long_col:str='long', 
         lat_col:str='lat', 
@@ -301,6 +301,15 @@ def read_gdf(
                 print(f"🟢 Read dataframe done.")
             except Exception as e:
                 raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
+    elif isinstance(file, gpd.GeoDataFrame):
+        gdf = file.copy()
+        gdf[long_col] = gdf.geometry.to_crs(epsg=4326).x
+        gdf[lat_col] = gdf.geometry.to_crs(epsg=4326).y
+        try:
+            gdf = validate_longlat(gdf, lon_col=long_col, lat_col=lat_col)
+            print(f"🟢 Read dataframe done.")
+        except Exception as e:
+            raise ValueError("DataFrame must contain 'long' and 'lat' columns.")
     else:
         raise ValueError("File must be a string representing the file path or dataframe format.")
     

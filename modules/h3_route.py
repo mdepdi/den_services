@@ -296,7 +296,7 @@ def reference_fo(road_gdf: gpd.GeoDataFrame, node_gdf: gpd.GeoDataFrame, ref_gdf
         tuple: A set of reference fiber optic node IDs and a GeoDataFrame of roads within the buffered area.
     """
     if ref_gdf is None or ref_gdf.empty:
-        ref_gdf = gpd.read_parquet(f"{MAINDATA_DIR}/06. FO TBG/Compile FO Route Only June 2025/FO TBG Only_01062025.parquet")
+        ref_gdf = gpd.read_parquet(f"{MAINDATA_DIR}/06. FO TBG/Compile TBG FO Route Only (22 Januari 2026)/Compile TBG FO Route Only (22 Januari 2026)-Add Unicom.parquet")
 
     if ref_gdf.crs != 'EPSG:3857':
         ref_gdf = ref_gdf.to_crs('EPSG:3857')
