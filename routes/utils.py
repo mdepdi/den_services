@@ -133,7 +133,7 @@ async def task_poi_remark(
     - poi_distance (optional)   
     
     **Template POI Remarking Based**
-    [🟢 Download Here](http://10.83.10.16:8000/template/utils/Template_POI_Remarking.xlsx)
+    [🟢 Download Here](http://10.83.10.16:8000/template/utils/Template_POI_Remarking.xlsx)  
     Returns a ZIP file with the results.
     """
     # Read sitelist data
@@ -201,7 +201,7 @@ async def intersite_takeout_ring(
     Create DRM Report based on Design KMZ.
     KMZ file must be containing ['Connection', 'Route', 'FO Hub', 'Site List'].
 
-    **Input KMZ Design Sample**
+    **Input KMZ Design Sample** 
     [🟢 Download Here](http://10.83.10.16:8000/template/BOQ_Design_Sample.kmz)
     """
 
