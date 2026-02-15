@@ -18,14 +18,18 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Polygon, box
+from shapely.ops import unary_union
+from shapely.measurement import distance
 from tqdm import tqdm
 
 # ======================================================
 # PATHS & MODULE IMPORTS
 # ======================================================
-sys.path.append(r"D:\JACOBS\SERVICE\API")
+from pathlib import Path
+root = Path(__file__).resolve().parents[2]
+sys.path.append(root)
 
-from modules.table import excel_styler, sanitize_header  # noqa: F401 (styler optional)
+from modules.table import excel_styler, sanitize_header
 from modules.data import read_gdf
 from core.config import settings
 
@@ -632,8 +636,9 @@ def clean_sectors_overlaps(
     if "site_id" not in sectors.columns:
         raise ValueError("clean_sectors_overlaps requires 'site_id' in sectors")
 
-    sectors["__protected"] = sectors["site_id"].astype(str).isin(accepted_set)
+    sectors["__protected"] = np.where(sectors["site_id"].astype(str).isin(accepted_set), 1, 0)
     sectors["__sst"] = np.where(sectors["tower_type"].str.lower().str.contains("sst"), 1, 0)
+    protected_sites = site_data[site_data['site_id'].astype(str).isin(accepted_set)].copy()
 
     # -------------------------
     # 2) Ensure total_homepass exists
@@ -699,7 +704,6 @@ def clean_sectors_overlaps(
         )
 
     conflict_pairs: list[tuple[int, int]] = []
-
     for _, row in joined.iterrows():
         i = int(row["sec_idx_l"])
         j = int(row["sec_idx_r"])
@@ -737,16 +741,16 @@ def clean_sectors_overlaps(
     #    sector_index: 3 > 2 > 1
     # -------------------------
     dropped_idx: set[int] = set()
-
     def sector_row_score(row: pd.Series) -> tuple:
         site_score = compute_priority_score(
             row,
             score_map=score_map,
-            numeric_cols={"hp_site": 3, "total_homepass" : 1},
+            numeric_cols={"dist_protected":5, "hp_site": 3, "total_homepass" : 1},
         )
         sector_score = (int(row['__protected']), *site_score)
         return sector_score
 
+    # Process Conflict
     for i, j in conflict_pairs:
         if i in dropped_idx or j in dropped_idx:
             continue
@@ -755,6 +759,16 @@ def clean_sectors_overlaps(
         row_j = sectors.loc[j]
         if row_i["__protected"] == 1 and row_j["__protected"] == 1:
             continue
+
+        geom_i = row_i['geometry']
+        geom_j = row_j['geometry']
+        union_geom = unary_union([geom_i, geom_j])
+        dist = protected_sites.geometry.distance(union_geom)
+        protected_nearest_geom = protected_sites.loc[dist.idxmin(), "geometry"]
+        dist_i = distance(geom_i, protected_nearest_geom)
+        dist_j = distance(geom_j, protected_nearest_geom)
+        sectors.at[i, 'dist_protected'] = dist_i
+        sectors.at[j, 'dist_protected'] = dist_j
 
         score_i = sector_row_score(row_i)
         score_j = sector_row_score(row_j)
@@ -953,6 +967,7 @@ def parallel_region(
         # 8) Classification
         region_calc["market_class"] = region_calc["total_homepass"].map(classify_market)
         sectors["market_class"] = sectors["total_homepass"].map(classify_market)
+        sectors["homepass_adjusted"] = np.where(sectors["total_homepass"] < 300, sectors["total_homepass"], 300 )
 
         # 9) Optional checkpoint export
         if export_path:
@@ -1122,17 +1137,23 @@ if __name__ == "__main__":
             "PKP": 3,
             "GIHON": 3,
             "PROTELINDO":2,
+            "PTI":2,
             "CMI":2,
             "DMT":2,
             "PKP (ALFA)": 1,
             "__default__":1
         },
-        "site_type": {
-            "GREEN FIELD": 3,
-            "GREENFIELD": 3,
-            "ROOF TOP": 1,
+        "priority": {
+            "P1": 3,
+            "P2": 1,
             "__default__":1
-        },
+        }
+        # "site_type": {
+        #     "GREEN FIELD": 3,
+        #     "GREENFIELD": 3,
+        #     "ROOF TOP": 1,
+        #     "__default__":1
+        # },
         # "batch_list": {
         #     "Batch 1": 10,
         #     "Batch 2": 10,
@@ -1170,33 +1191,20 @@ if __name__ == "__main__":
         # },
     }
 
-    # SECTOR_SCORE_MAP = {
-    #     "Site Type": {
-    #         "GREEN FIELD": 3,
-    #         "ROOF TOP": 1,
-    #     },
-    #     "Tower Type": {
-    #         "SST": 3,
-    #         "MONO_POLE": 1,
-    #     },
-    # }
-
-    # SITES_NUMERIC_COLS = {"total_homepass": 1.0}
-
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Alfamart 9k Asessment Potential\MYREP"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SURGE FWA ADJUSTEMNT\Export"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\JAN\W3\Alfamart 9k Asessment Potential\Sitelist to Process\Sitelist MyRep v2.parquet"
-    sitelist = read_gdf(sitelist_path, sheet_name='Sitelist')
+    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SURGE FWA ADJUSTEMNT\Selection Status, Project Plan and Progress 202600202 - Sitelist Only.xlsx"
+    sitelist = read_gdf(sitelist_path, sheet_name="All Sites")
     sitelist = sanitize_header(sitelist, lowercase=True)
-    print(sitelist.columns)
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
     # sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)
     sitelist["long"] = sitelist.geometry.to_crs(4326).x
     sitelist["lat"] = sitelist.geometry.to_crs(4326).y
-    sitelist["site_type"] = sitelist["site_type"].fillna("unknown")
+    # sitelist["site_type"] = sitelist["site_type"].fillna("unknown")
     # sitelist["tower_type"] = sitelist["tower_type"].fillna("unknown")
+    sitelist['priority'] = sitelist["priority"].astype(str)
 
     sitelist = sitelist.drop_duplicates("site_id").reset_index(drop=True)
     print(f"ℹ️ Total Sitelist to Process: {len(sitelist):,}")

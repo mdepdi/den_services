@@ -247,15 +247,16 @@ def parse_geom(coords, geom_type):
 
     return None
 
-def parse_placemark(pm, folder_name, full_path):
+def parse_placemark(pm, folder_name, full_path, source_prefix=""):
     rows = []
     name = pm.find("name").text if pm.find("name") else "Unnamed"
     desc = pm.find("description").text if pm.find("description") else ""
     data = parse_extdata(pm)
 
     for geom_type in ["Point", "LineString", "Polygon"]:
-        geom_tag = pm.find(geom_type)
-        if geom_tag and geom_tag.find("coordinates"):
+        for geom_tag in pm.find_all(geom_type):
+            if not geom_tag.find("coordinates"):
+                continue
             coords = geom_tag.find("coordinates").text.strip()
             geometry = parse_geom(coords, geom_type)
             if geometry:
@@ -264,6 +265,7 @@ def parse_placemark(pm, folder_name, full_path):
                     "folders": full_path,
                     "folder_name": folder_name,
                     "description": desc,
+                    "source": source_prefix,
                     **data,
                     "geometry": geometry,
                 }
@@ -272,7 +274,7 @@ def parse_placemark(pm, folder_name, full_path):
 
 
 
-def parse_folder(folder, parent_name=None):
+def parse_folder(folder, parent_name=None, source_prefix=""):
     results = []
     folder_name = folder.find("name").text if folder.find("name") else "Unnamed Folder"
     folder_name = folder_name.strip()
@@ -280,11 +282,11 @@ def parse_folder(folder, parent_name=None):
 
     # Parse Placemark
     for pm in folder.find_all("Placemark", recursive=False):
-        results.extend(parse_placemark(pm, folder_name, full_path))
+        results.extend(parse_placemark(pm, folder_name, full_path, source_prefix=source_prefix))
 
     # Recursive folders
     for sub in folder.find_all("Folder", recursive=False):
-        results.extend(parse_folder(sub, parent_name=full_path))
+        results.extend(parse_folder(sub, parent_name=full_path, source_prefix=source_prefix))
     return results
 
 
@@ -294,10 +296,10 @@ def parse_doc(doc, parent=None, source_prefix=""):
 
     full_doc = f"{parent};{doc_name}" if parent else doc_name
     for pm in doc.find_all("Placemark", recursive=False):
-        result.extend(parse_placemark(pm, folder_name=doc_name, full_path=full_doc))
+        result.extend(parse_placemark(pm, folder_name=doc_name, full_path=full_doc, source_prefix=source_prefix))
 
     for f in doc.find_all("Folder", recursive=False):
-        result.extend(parse_folder(f))
+        result.extend(parse_folder(f, parent_name=full_doc, source_prefix=source_prefix))
 
     for sub_doc in doc.find_all("Document", recursive=False):
         result.extend(parse_doc(sub_doc, parent=full_doc, source_prefix=source_prefix))
@@ -392,13 +394,13 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
     points_kmz = sanitize_header(points_kmz)
     lines_kmz = sanitize_header(lines_kmz)
     
-    points_existing = points_kmz[points_kmz['folder_name'].str.lower().str.contains('site|hub|akses')].copy()
-    lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route')].copy()
+    points_existing = points_kmz[points_kmz['folder_name'].str.lower().str.contains('site|hub|akses', na=False)].copy()
+    lines_existing = lines_kmz[lines_kmz['folder_name'].str.lower().str.contains('route', na=False)].copy()
 
     # CLEAN UNUSED DATA
-    points_existing = points_existing[~points_existing['folder_name'].str.lower().str.contains("closure|odp|otb|obstacle")]
-    points_existing = points_existing[~points_existing['name'].str.lower().str.contains("connection|closure|odp |otb |obstacle")]
-    lines_existing = lines_existing[~lines_existing['folder_name'].str.lower().str.contains("bb|backbone|existing")]
+    points_existing = points_existing[~points_existing['folder_name'].str.lower().str.contains("closure|odp|otb|obstacle", na=False)]
+    points_existing = points_existing[~points_existing['name'].str.lower().str.contains("connection|closure|odp |otb |obstacle", na=False)]
+    lines_existing = lines_existing[~lines_existing['folder_name'].str.lower().str.contains("bb|backbone|existing", na=False)]
 
     # SURGE ADJUSTMENT
     points_existing['folders'] = points_existing['folders'].str.replace("akses|Akses|AKSES", "FO Hub", regex=True)
@@ -607,7 +609,7 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     lines_kmz = gpd.GeoDataFrame(lines_kmz, geometry='geometry', crs='EPSG:4326')  
     points_kmz = sanitize_header(points_kmz)
     lines_kmz = sanitize_header(lines_kmz)
-    points_data = points_kmz[~points_kmz['name'].str.lower().str.contains('connection')].copy()
+    points_data = points_kmz[~points_kmz['name'].str.lower().str.contains('connection', na=False)].copy()
     lines_data = lines_kmz.copy()
 
     # POINT DATA
@@ -645,8 +647,16 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     lines_data['far_end']   = lines_data['segment'].str.split(sep).str[-1]
     lines_data['geometry']  = lines_data.geometry.force_2d()
     lines_data['ring_name'] = lines_data['folders'].str.split(">").str[-2]
-    lines_data['program']   = lines_data['Program'] if "Program" in lines_data.columns else lines_data['folders'].str.extract(r'>([A-Za-z0-9_-]{6,})>')
-    lines_data['region']    = lines_data['Region'] if "Region" in lines_data.columns else lines_data['folders'].str.extract(r'>([A-Z0-9]{3,6})>')
+    lines_data['program'] = (
+        lines_data['Program']
+        if "Program" in lines_data.columns
+        else lines_data['folders'].str.extract(r'>(?P<program>[A-Za-z0-9_-]{6,})>')["program"]
+    )
+    lines_data['region'] = (
+        lines_data['Region']
+        if "Region" in lines_data.columns
+        else lines_data['folders'].str.extract(r'>(?P<region>[A-Z0-9]{3,6})>')["region"]
+    )
     lines_data['fo_note']   = 'merged'
     lines_data['core']      = lines_extracted['core']
     lines_data['program']   = lines_data['program'].fillna("NA")
@@ -699,15 +709,15 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     topology = lines_data[lines_data['name'].str.lower().str.strip() == 'connection'].copy()
     route = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'route'].copy()
 
-    backbone = lines_data[lines_data['folder_name'].str.lower().str.contains('backbone')].copy()
-    access = lines_data[lines_data['folder_name'].str.lower().str.contains('access|akses')].copy()
+    backbone = lines_data[lines_data['folder_name'].str.lower().str.contains('backbone', na=False)].copy()
+    access = lines_data[lines_data['folder_name'].str.lower().str.contains('access|akses', na=False)].copy()
     fo_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'fo existing'].copy()
     pole_exist = lines_data[lines_data['folder_name'].str.lower().str.strip() == 'pole existing'].copy()
 
     # Points
-    sites_data = points_data[points_data['folder_name'].str.lower().str.contains('site') | points_data['folder_name'].str.lower().str.contains('hub')].copy()
-    fo_hub = sites_data[sites_data['folder_name'].str.lower().str.contains('hub')].copy()
-    sitelist = sites_data[sites_data['folder_name'].str.lower().str.contains('site')].copy()
+    sites_data = points_data[points_data['folder_name'].str.lower().str.contains('site', na=False) | points_data['folder_name'].str.lower().str.contains('hub', na=False)].copy()
+    fo_hub = sites_data[sites_data['folder_name'].str.lower().str.contains('hub', na=False)].copy()
+    sitelist = sites_data[sites_data['folder_name'].str.lower().str.contains('site', na=False)].copy()
     ring_list = set(sitelist['ring_name'].astype(str))
 
     near_set = set(route['near_end'].astype(str))
@@ -755,15 +765,15 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
 
     # DEVICES DATA
     devices = ['odp', 'otb', 'closure']
-    devices_mask = points_data['folder_name'].str.lower().str.contains('|'.join(devices))
+    devices_mask = points_data['folder_name'].str.lower().str.contains('|'.join(devices), na=False)
     devices_data = points_data[devices_mask].copy()
     devices_data['device_name'] = devices_data['name'].str.strip().astype(str)
     devices_data = devices_data.drop(columns=['site_id'])
     devices_data['device_type'] = np.select(
         [
-            devices_data['folder_name'].str.lower().str.contains('closure'),
-            devices_data['folder_name'].str.lower().str.contains('odp'),
-            devices_data['folder_name'].str.lower().str.contains('otb'),
+            devices_data['folder_name'].str.lower().str.contains('closure', na=False),
+            devices_data['folder_name'].str.lower().str.contains('odp', na=False),
+            devices_data['folder_name'].str.lower().str.contains('otb', na=False),
         ],
         [ "Closure", "ODP", "OTB"],
         default="Unknown"
@@ -852,17 +862,17 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
                 segment_line = identifier
                 devices_data.at[idx, 'segment'] = segment_line
 
-    odp = devices_data[devices_data['folder_name'].str.lower().str.contains('odp')].copy()
-    otb = devices_data[devices_data['folder_name'].str.lower().str.contains('otb')].copy()
-    closure = devices_data[devices_data['folder_name'].str.lower().str.contains('closure')].copy()
+    odp = devices_data[devices_data['folder_name'].str.lower().str.contains('odp', na=False)].copy()
+    otb = devices_data[devices_data['folder_name'].str.lower().str.contains('otb', na=False)].copy()
+    closure = devices_data[devices_data['folder_name'].str.lower().str.contains('closure', na=False)].copy()
 
     # Obstacle
-    obstacle = points_data[points_data['folder_name'].str.lower().str.contains('obstacle')].copy()
+    obstacle = points_data[points_data['folder_name'].str.lower().str.contains('obstacle', na=False)].copy()
     obstacle['obstacle_type'] = np.select(
         [
-            obstacle['name'].str.lower().str.contains('rail|kai'),
-            obstacle['name'].str.lower().str.contains('toll'),
-            obstacle['name'].str.lower().str.contains('bridge'),
+            obstacle['name'].str.lower().str.contains('rail|kai', na=False),
+            obstacle['name'].str.lower().str.contains('toll', na=False),
+            obstacle['name'].str.lower().str.contains('bridge', na=False),
         ],
         ['Railway','Toll Road','Bridge'],
         default='Not Defined'
@@ -873,9 +883,9 @@ def validate_kmz_ipl(filepath:str, sep: Separator = Separator.SEMICOLON.value):
     obstacle["segment"]  = obstacle["near_end"] + sep + obstacle["far_end"]
     
     # METADATA
-    odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('_ext'), 1, 0)
-    otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('_ext'), 1, 0)
-    closure['ext_note'] = np.where(closure['name'].str.lower().str.contains('_ext'), 1, 0)
+    odp['ext_note'] = np.where(odp['name'].str.lower().str.contains('_ext', na=False), 1, 0)
+    otb['ext_note'] = np.where(otb['name'].str.lower().str.contains('_ext', na=False), 1, 0)
+    closure['ext_note'] = np.where(closure['name'].str.lower().str.contains('_ext', na=False), 1, 0)
 
     data_compiled = [points_data, lines_data, fo_hub, sitelist, odp, otb, closure,
                      topology, route, backbone, access, fo_exist, pole_exist, obstacle]
