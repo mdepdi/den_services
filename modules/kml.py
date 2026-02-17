@@ -399,7 +399,7 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
 
     # CLEAN UNUSED DATA
     points_existing = points_existing[~points_existing['folder_name'].str.lower().str.contains("closure|odp|otb|obstacle", na=False)]
-    points_existing = points_existing[~points_existing['name'].str.lower().str.contains("connection|closure|odp |otb |obstacle", na=False)]
+    # points_existing = points_existing[~points_existing['name'].str.lower().str.contains("connection|closure|odp |otb |obstacle", na=False)]
     lines_existing = lines_existing[~lines_existing['folder_name'].str.lower().str.contains("bb|backbone|existing", na=False)]
 
     # SURGE ADJUSTMENT

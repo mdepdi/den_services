@@ -1169,15 +1169,15 @@ def save_kml(
         # SANITIZE SITE NAME
         points['site_id'] = (
             points['site_id']
-            .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+            .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
         )
 
         points['site_name'] = (
             points['site_name']
-            .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+            .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
         )
-        topology['name'] = (topology['name'].str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True))
-        paths['name'] = (paths['name'].str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True))
+        topology['name'] = (topology['name'].str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True))
+        paths['name'] = (paths['name'].str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True))
 
         available_col = [col for col in used_columns.keys() if col in region_points.columns]
         ring_list = region_points['ring_name'].dropna().unique().tolist()

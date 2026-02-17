@@ -20,7 +20,10 @@ import geopandas as gpd
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 from shapely.measurement import distance
+from shapely.affinity import rotate
 from tqdm import tqdm
+
+EPSG_METRIC = 3857
 
 # ======================================================
 # PATHS & MODULE IMPORTS
@@ -270,132 +273,6 @@ def compute_priority_score(
     return tuple(parts)
 
 
-def clean_sites_overlaps(
-    sites: gpd.GeoDataFrame,
-    max_distance: float = 300,
-    tolerance: float = 10.0,
-    protect_list=None,
-    hp_col: str = "total_homepass",
-    score_map: dict = {}
-) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
-    """
-    Clean overlapping site buffers.
-
-    Rules:
-    - Build a buffer around each site (max_distance).
-    - If two buffers overlap more than `tolerance` % (on either buffer),
-      one site is dropped.
-    - Priority to KEEP:
-        1) Protected sites (in protect_list)
-        2) Higher homepass (hp_col)
-
-    Returns
-    -------
-    kept : GeoDataFrame
-        Sites that survive the cleaning.
-    dropped : GeoDataFrame
-        Sites that are removed.
-    """
-    if sites.empty:
-        return sites.copy(), sites.iloc[0:0].copy()
-
-    gdf = sites.to_crs(3857).copy().reset_index(drop=True)
-
-    if hp_col not in gdf.columns:
-        gdf[hp_col] = 0
-
-    if "site_id" not in gdf.columns:
-        raise ValueError("clean_sites_overlaps requires a 'site_id' column")
-
-    protect_set = set(str(x) for x in (protect_list or []))
-    gdf["__protected"] = gdf["site_id"].astype(str).isin(protect_set)
-
-    # buffers & area
-    gdf["__buf"] = gdf.geometry.buffer(max_distance)
-    gdf["__area"] = gdf["__buf"].area
-
-    buf_gdf = gpd.GeoDataFrame(
-        {"site_idx": gdf.index, "geometry": gdf["__buf"]},
-        geometry="geometry",
-        crs=gdf.crs,
-    )
-
-    joined = gpd.sjoin(
-        buf_gdf,
-        buf_gdf,
-        how="inner",
-        predicate="intersects",
-        lsuffix="l",
-        rsuffix="r",
-    )
-    joined = joined[joined["site_idx_l"] < joined["site_idx_r"]]
-
-    if joined.empty:
-        print("ℹ️ No overlapping sites found.")
-        kept = gdf.drop(columns=["__buf", "__area", "__protected"])
-        return kept.reset_index(drop=True), gdf.iloc[0:0].copy()
-
-    conflict_pairs: list[tuple[int, int]] = []
-    def site_row_score(idx):
-        row = gdf.iloc[idx]
-        return compute_priority_score(
-            row,
-            score_map=score_map,
-            numeric_cols={"total_homepass" : 1},
-        )
-
-    for _, row in joined.iterrows():
-        i = int(row["site_idx_l"])
-        j = int(row["site_idx_r"])
-
-        inter = gdf.at[i, "__buf"].intersection(gdf.at[j, "__buf"])
-        if inter.is_empty:
-            continue
-
-        inter_area = inter.area
-        if inter_area == 0:
-            continue
-
-        area_i = gdf.at[i, "__area"]
-        area_j = gdf.at[j, "__area"]
-
-        pct_i = 100 * inter_area / area_i if area_i > 0 else 0
-        pct_j = 100 * inter_area / area_j if area_j > 0 else 0
-
-        if max(pct_i, pct_j) >= tolerance:
-            conflict_pairs.append((i, j))
-
-    if not conflict_pairs:
-        print("ℹ️ Overlaps exist but below tolerance.")
-        kept = gdf.drop(columns=["__buf", "__area", "__protected"])
-        return kept.reset_index(drop=True), gdf.iloc[0:0].copy()
-
-
-
-    dropped_idx: set[int] = set()
-    for i, j in conflict_pairs:
-        if i in dropped_idx or j in dropped_idx:
-            continue
-
-        # if both protected, keep both
-        if gdf.at[i, "__protected"] and gdf.at[j, "__protected"]:
-            continue
-
-        score_i = site_row_score(i)
-        score_j = site_row_score(j)
-        
-        loser = j if  score_i>= score_j else i
-        dropped_idx.add(loser)
-
-    keep_idx = [i for i in gdf.index if i not in dropped_idx]
-
-    kept = gdf.loc[keep_idx].drop(columns=["__buf", "__area", "__protected"])
-    dropped = gdf.loc[list(dropped_idx)].drop(columns=["__buf", "__area", "__protected"])
-
-    print(f"ℹ️ Sites kept: {len(kept)}, Sites dropped: {len(dropped)}")
-    return kept.reset_index(drop=True), dropped.reset_index(drop=True)
-
-
 # ======================================================
 # CLASSIFICATION UTILITIES
 # ======================================================
@@ -485,8 +362,10 @@ def sectorize_site(args):
             )
             counts = joined.groupby("sector_id").size()
             sectors["total_homepass"] = sectors["sector_id"].map(counts).fillna(0)
+            sectors["total_ceil"] = np.where(sectors['total_homepass'] > 400, 400 * 0.75, round(sectors["total_homepass"] * 0.75, 2))
         else:
             sectors["total_homepass"] = 0
+            sectors["total_ceil"] = 0
 
         sectors["__differ"] = abs(sectors["total_homepass"] - threshold)
         valid = sectors["total_homepass"] >= threshold
@@ -517,22 +396,22 @@ def parallel_sectorize(
     if sites_gdf.empty:
         return gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:3857")
 
-    sites = sites_gdf.to_crs(3857).reset_index(drop=True)
-    homepass = homepass.to_crs(3857).reset_index(drop=True)
+    sites = sites_gdf.to_crs(EPSG_METRIC).reset_index(drop=True)
+    homepass = homepass.to_crs(EPSG_METRIC).reset_index(drop=True)
 
     sindex = homepass.sindex
     site_args = []
 
     for _, s in sites.iterrows():
-        if 'buffer_distance' in s:
-            distance = s.get('buffer_distance', 0)
-            # print(f"using buffer distance: {distance}")
+        site_distance = distance
+        if "buffer_distance" in s:
+            site_distance = s.get("buffer_distance", distance)
 
-        buff = s.geometry.buffer(distance)
+        buff = s.geometry.buffer(site_distance)
         idx = sindex.query(buff, predicate="intersects")
         hp = homepass.iloc[idx].reset_index(drop=True)
         site_args.append(
-            (s, hp, distance, angle, threshold)
+            (s, hp, site_distance, angle, threshold)
         )
 
     results = []
@@ -593,12 +472,138 @@ def _assign_buildings_unique(
     return building_acc.reset_index(drop=True)
 
 
+def clean_sites_overlaps(
+    sites: gpd.GeoDataFrame,
+    max_distance: float = 300,
+    tolerance: float = 10.0,
+    protect_list=None,
+    hp_col: str = "total_homepass",
+    score_map: dict | None = None,
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+    """
+    Clean overlapping site buffers.
+
+    Rules:
+    - Build a buffer around each site (max_distance).
+    - If two buffers overlap more than `tolerance` % (on either buffer),
+      one site is dropped.
+    - Priority to KEEP:
+        1) Protected sites (in protect_list)
+        2) Higher homepass (hp_col)
+
+    Returns
+    -------
+    kept : GeoDataFrame
+        Sites that survive the cleaning.
+    dropped : GeoDataFrame
+        Sites that are removed.
+    """
+    if sites.empty:
+        return sites.copy(), sites.iloc[0:0].copy()
+
+    score_map = score_map or {}
+    gdf = sites.to_crs(EPSG_METRIC).copy().reset_index(drop=True)
+
+    if hp_col not in gdf.columns:
+        gdf[hp_col] = 0
+
+    if "site_id" not in gdf.columns:
+        raise ValueError("clean_sites_overlaps requires a 'site_id' column")
+
+    protect_set = set(str(x) for x in (protect_list or []))
+    gdf["__protected"] = gdf["site_id"].astype(str).isin(protect_set)
+
+    # buffers & area
+    gdf["__buf"] = gdf.geometry.buffer(max_distance)
+    gdf["__area"] = gdf["__buf"].area
+    
+
+    buf_gdf = gpd.GeoDataFrame(
+        {"site_idx": gdf.index, "geometry": gdf["__buf"]},
+        geometry="geometry",
+        crs=gdf.crs,
+    )
+
+    joined = gpd.sjoin(
+        buf_gdf,
+        buf_gdf,
+        how="inner",
+        predicate="intersects",
+        lsuffix="l",
+        rsuffix="r",
+    )
+    joined = joined[joined["site_idx_l"] < joined["site_idx_r"]]
+
+    if joined.empty:
+        print("ℹ️ No overlapping sites found.")
+        kept = gdf.drop(columns=["__buf", "__area", "__protected"])
+        return kept.reset_index(drop=True), gdf.iloc[0:0].copy()
+
+    conflict_pairs: list[tuple[int, int]] = []
+    def site_row_score(idx):
+        row = gdf.iloc[idx]
+        return compute_priority_score(
+            row,
+            score_map=score_map,
+            numeric_cols={hp_col: 1},
+        )
+
+    for _, row in joined.iterrows():
+        i = int(row["site_idx_l"])
+        j = int(row["site_idx_r"])
+
+        inter = gdf.at[i, "__buf"].intersection(gdf.at[j, "__buf"])
+        if inter.is_empty:
+            continue
+
+        inter_area = inter.area
+        if inter_area == 0:
+            continue
+
+        area_i = gdf.at[i, "__area"]
+        area_j = gdf.at[j, "__area"]
+
+        pct_i = 100 * inter_area / area_i if area_i > 0 else 0
+        pct_j = 100 * inter_area / area_j if area_j > 0 else 0
+
+        if max(pct_i, pct_j) >= tolerance:
+            conflict_pairs.append((i, j))
+
+    if not conflict_pairs:
+        print("ℹ️ Overlaps exist but below tolerance.")
+        kept = gdf.drop(columns=["__buf", "__area", "__protected"])
+        return kept.reset_index(drop=True), gdf.iloc[0:0].copy()
+
+
+
+    dropped_idx: set[int] = set()
+    for i, j in conflict_pairs:
+        if i in dropped_idx or j in dropped_idx:
+            continue
+
+        # if both protected, keep both
+        if gdf.at[i, "__protected"] and gdf.at[j, "__protected"]:
+            continue
+
+        score_i = site_row_score(i)
+        score_j = site_row_score(j)
+        
+        loser = j if  score_i>= score_j else i
+        dropped_idx.add(loser)
+
+    keep_idx = [i for i in gdf.index if i not in dropped_idx]
+    kept = gdf.loc[keep_idx].drop(columns=["__buf", "__area", "__protected"])
+    dropped = gdf.loc[list(dropped_idx)].drop(columns=["__buf", "__area", "__protected"])
+    print(f"ℹ️ Sites kept: {len(kept)}, Sites dropped: {len(dropped)}")
+
+    return kept.reset_index(drop=True), dropped.reset_index(drop=True)
+
 def clean_sectors_overlaps(
     site_data: gpd.GeoDataFrame,
     sectors: gpd.GeoDataFrame,
     buildings: gpd.GeoDataFrame,
     accepted_list: list,
-    score_map: dict,
+    score_map: dict | None,
     tolerance: float = 10.0,
     **_,
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame]:
@@ -620,12 +625,13 @@ def clean_sectors_overlaps(
     - No remaining cross-site sector pair overlaps above tolerance.
     - For the same site, sectors are allowed to overlap.
     """
+    score_map = score_map or {}
     if sectors.empty:
         return sectors, sectors, buildings
 
-    sectors = sectors.to_crs(3857).reset_index(drop=True)
-    buildings = buildings.to_crs(3857).reset_index(drop=True)
-    site_data = site_data.to_crs(3857).reset_index(drop=True)
+    sectors = sectors.to_crs(EPSG_METRIC).reset_index(drop=True)
+    buildings = buildings.to_crs(EPSG_METRIC).reset_index(drop=True)
+    site_data = site_data.to_crs(EPSG_METRIC).reset_index(drop=True)
     score_keys = ["site_id"] + [key for key in list(score_map.keys()) if key not in sectors.columns]
     sectors = sectors.merge(site_data[score_keys], on="site_id", how="inner")
 
@@ -637,8 +643,10 @@ def clean_sectors_overlaps(
         raise ValueError("clean_sectors_overlaps requires 'site_id' in sectors")
 
     sectors["__protected"] = np.where(sectors["site_id"].astype(str).isin(accepted_set), 1, 0)
-    sectors["__sst"] = np.where(sectors["tower_type"].str.lower().str.contains("sst"), 1, 0)
+    tower_series = sectors.get("tower_type", pd.Series(index=sectors.index, dtype=str)).astype(str)
+    sectors["__sst"] = np.where(tower_series.str.lower().str.contains("sst", na=False), 1, 0)
     protected_sites = site_data[site_data['site_id'].astype(str).isin(accepted_set)].copy()
+    has_protected = not protected_sites.empty
 
     # -------------------------
     # 2) Ensure total_homepass exists
@@ -660,10 +668,7 @@ def clean_sectors_overlaps(
                 .rename("total_homepass")
                 .astype(int)
             )
-            sectors["total_homepass"] = (
-                sectors["sector_id"].map(hp_per_sector).fillna(0).astype(int)
-            )
-
+            sectors["total_homepass"] = (sectors["sector_id"].map(hp_per_sector).fillna(0).astype(int))
     # -------------------------
     # 3) Extract sector index (1/2/3) from sector_id
     # -------------------------
@@ -722,6 +727,7 @@ def clean_sectors_overlaps(
         if inter.is_empty:
             continue
 
+        # Calculate Intersection
         inter_area = inter.area
         if inter_area == 0:
             continue
@@ -738,14 +744,14 @@ def clean_sectors_overlaps(
     # -------------------------
     # 5) Resolve conflicts
     #    Score: protected > total_homepass > sector_index
-    #    sector_index: 3 > 2 > 1
     # -------------------------
     dropped_idx: set[int] = set()
     def sector_row_score(row: pd.Series) -> tuple:
         site_score = compute_priority_score(
             row,
-            score_map=score_map,
-            numeric_cols={"dist_protected":5, "hp_site": 3, "total_homepass" : 1},
+            # score_map=score_map,
+            score_map={},
+            numeric_cols={"intersect_reversed":8, "dist_protected":5, "hp_site": 3, "total_homepass" : 1},
         )
         sector_score = (int(row['__protected']), *site_score)
         return sector_score
@@ -759,19 +765,26 @@ def clean_sectors_overlaps(
         row_j = sectors.loc[j]
         if row_i["__protected"] == 1 and row_j["__protected"] == 1:
             continue
+            
+        site_i = row_i["site_id"]
+        site_j = row_j["site_id"]
+        geom_i = site_data.loc[site_data["site_id"].astype(str) == str(site_i), "geometry"].values[0]
+        geom_j = site_data.loc[site_data["site_id"].astype(str) == str(site_j), "geometry"].values[0]
+        if has_protected:
+            union_geom = unary_union([geom_i, geom_j])
+            dist = protected_sites.geometry.distance(union_geom)
+            protected_nearest_geom = protected_sites.loc[dist.idxmin(), "geometry"]
 
-        geom_i = row_i['geometry']
-        geom_j = row_j['geometry']
-        union_geom = unary_union([geom_i, geom_j])
-        dist = protected_sites.geometry.distance(union_geom)
-        protected_nearest_geom = protected_sites.loc[dist.idxmin(), "geometry"]
-        dist_i = distance(geom_i, protected_nearest_geom)
-        dist_j = distance(geom_j, protected_nearest_geom)
-        sectors.at[i, 'dist_protected'] = dist_i
-        sectors.at[j, 'dist_protected'] = dist_j
+            dist_i = distance(geom_i, protected_nearest_geom)
+            dist_j = distance(geom_j, protected_nearest_geom)
+            sectors.at[i, "dist_protected"] = dist_i if dist_i > 0 else 10e6
+            sectors.at[j, "dist_protected"] = dist_j if dist_j > 0 else 10e6
+        else:
+            sectors.at[i, "dist_protected"] = 0.0
+            sectors.at[j, "dist_protected"] = 0.0
 
-        score_i = sector_row_score(row_i)
-        score_j = sector_row_score(row_j)
+        score_i = sector_row_score(sectors.loc[i])
+        score_j = sector_row_score(sectors.loc[j])
 
         # keep higher score, drop lower
         loser = j if score_i >= score_j else i
@@ -796,6 +809,118 @@ def clean_sectors_overlaps(
     print(f"✅ Final accepted sectors: {len(accepted)} | Dropped: {len(dropped)} ")
     return accepted, dropped, building_acc
 
+def spin_sectors(point_data: gpd.GeoDataFrame, sector_data: gpd.GeoDataFrame, building_data: gpd.GeoDataFrame):
+    point_indexed = point_data.drop_duplicates("site_id").set_index("site_id")
+    sector_data['center'] = sector_data['site_id'].map(point_indexed['geometry'])
+    region = point_data['region'].mode()[0]
+
+    # Full Sector
+    max_sector = point_data['total_sectors'].max()
+    full_sector = point_data[point_data['total_sectors'] == max_sector].copy()
+    full_sector = sector_data[sector_data['site_id'].astype(str).isin(full_sector['site_id'].astype(str))].copy()
+    dissolved_full = full_sector['geometry'].union_all()
+
+    # Process Rotation
+    rotate_sector = point_data[point_data['total_sectors'] < max_sector].copy()
+    rotate_sector = rotate_sector.sort_values("total_sectors", ascending=False)
+    rotate_sector = rotate_sector.groupby('total_sectors', sort=False)
+
+    # Building for Rotation
+    rotation_building = building_data.copy()
+    full_building = gpd.sjoin(rotation_building, full_sector[['geometry']], how="inner").copy()
+    rotation_building = rotation_building[~(rotation_building.index.isin(full_building.index))].copy()
+
+    for num_sector, rotate_data in rotate_sector:
+        if num_sector == 0:
+            sector_data.loc[sector_data["site_id"].astype(str).isin(rotate_data["site_id"].astype(str)), "optimal_rotation"] = 0
+            continue
+
+        print(f"ℹ️ Region {region} > Process Total Sector: {num_sector}") 
+        grouped_site = rotate_data.groupby("site_id")
+        rotation_degrees = 360
+
+        for site_id, site_point in grouped_site:
+            site_sector = sector_data[sector_data["site_id"].astype(str) == str(site_id)].copy()
+            sector_ids = site_sector.index
+
+            # Union Geom
+            full_geom = site_sector['geometry'].union_all()
+            area = full_geom.area
+
+            # Accepted Geom
+            acc_sector = site_sector[site_sector["sector_note"].str.lower().str.contains("accepted")].copy()
+            union_geom = acc_sector['geometry'].union_all()
+            center = site_sector['center'].values[0]
+
+            best_isec_pct = None
+            best_building = None
+            best_rotation = None
+            best_geom = None
+            best_building_idx = None
+
+            # Rotate Sector
+            for i in range(0, rotation_degrees, 5):
+                rotated_geom = rotate(union_geom, angle=i, origin=center)
+                rotate_isec = rotated_geom.intersection(dissolved_full)
+
+                # Calc Intersection
+                isec_area = rotate_isec.area
+                isec_pct = round((isec_area / area) * 100, 3)
+                
+                if best_isec_pct is None or isec_pct <= best_isec_pct:
+                    best_isec_pct = isec_pct
+                else:
+                    continue
+
+                # Check New Accepted if Possible
+                dup_sector = site_sector.copy()
+                dup_sector['geometry'] = site_sector.apply(lambda r: rotate(r.geometry, i, r.center), axis=1)
+                dup_clean = dup_sector[~(dup_sector.intersects(full_geom))].copy()
+                num_clean = len(dup_clean)
+                clean_ids = dup_clean['sector_id'].unique().tolist()
+
+                if num_clean > num_sector:
+                    print(f"🔥 {site_id} Found new clean sector.")
+                    acc_sector = site_sector[site_sector["sector_id"].isin(clean_ids)].copy()
+                    union_geom = acc_sector['geometry'].union_all()
+                    rotated_geom = rotate(union_geom, angle=i, origin=center)
+                    sector_data.loc[site_sector, "sector_note"] = "Accepted Sector"
+                    sector_data.loc[site_sector, "total_sector"] = num_clean
+
+                # Calc Building
+                rotate_building = rotation_building[rotation_building.intersects(rotated_geom)].copy()
+                count_building = len(rotate_building)
+
+                # Calculate iteration
+                if best_building is None or count_building >= best_building:
+                    best_rotation = i
+                    best_geom = rotated_geom
+                    best_building = count_building
+                    best_building_idx = rotate_building.index
+                    sector_data.loc[sector_data["site_id"].astype(str) == str(site_id), 'optimal_rotation'] = best_rotation
+                    # print(f"🟢 Site {site_id} got optimal rotation at {i} degree. Intersect Pct: {isec_pct} | Trimmed Building: {count_building:<10} records")
+
+            # Update Building
+            if best_building is not None and len(best_building_idx) > 0:
+                rotation_building = rotation_building[~(rotation_building.index.isin(best_building_idx))].copy()
+                dissolved_full = unary_union([dissolved_full, best_geom])
+
+    sector_data['optimal_rotation'] = sector_data['optimal_rotation'].fillna(0)
+    sector_data['geometry'] = sector_data.apply(lambda r: rotate(r.geometry, r.optimal_rotation, origin=r.center), axis=1)
+    print(f"🟢 Region {region} Spin sectors complete.")
+    
+    # Adjust Azimuth
+    sector_data['azimuth'] = sector_data['azimuth'] - sector_data['optimal_rotation']
+    sector_data['azimuth_start'] = sector_data['azimuth_start'] - sector_data['optimal_rotation']
+    sector_data['azimuth_end'] = sector_data['azimuth_end'] - sector_data['optimal_rotation']
+    sector_data['azimuth'] = np.where(sector_data["azimuth"] >= 360, sector_data["azimuth"] - 360, sector_data["azimuth"])
+    sector_data['azimuth_start'] = np.where(sector_data["azimuth_start"] >= 360, sector_data["azimuth_start"] - 360, sector_data["azimuth_start"])
+    sector_data['azimuth_end'] = np.where(sector_data["azimuth_end"] >= 360, sector_data["azimuth_end"] - 360, sector_data["azimuth_end"])
+    sector_data['azimuth'] = np.where(sector_data["azimuth"] < 0, sector_data["azimuth"] + 360, sector_data["azimuth"])
+    sector_data['azimuth_start'] = np.where(sector_data["azimuth_start"] < 0, sector_data["azimuth_start"] + 360, sector_data["azimuth_start"])
+    sector_data['azimuth_end'] = np.where(sector_data["azimuth_end"] < 0, sector_data["azimuth_end"] + 360, sector_data["azimuth_end"])
+    return sector_data
+
 
 # ======================================================
 # REGION PROCESSING
@@ -810,7 +935,7 @@ def parallel_region(
     clean_overlap: bool = False,
     accepted_ids: set[str] | None = None,
     export_path: str | None = None,
-    score_map: dict = {}
+    score_map: dict | None = None
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """
     Process a single region:
@@ -822,6 +947,7 @@ def parallel_region(
     - Optionally clean sector overlaps
     - Aggregate sector stats back to site level
     """
+    score_map = score_map or {}
     region = region_data["region"].mode().values[0]
     print(f"🧩 Region {region} | {len(region_data):,} sites")
 
@@ -844,14 +970,14 @@ def parallel_region(
     try:
         # 1) Get buildings by hex coverage
         hex_list = identify_hexagon(region_data, type="convex")
-        buildings = retrieve_building(hex_list).to_crs(3857)
+        buildings = retrieve_building(hex_list).to_crs(EPSG_METRIC)
 
         if buildings.empty:
             print(f"⚠️ Region {region}: no buildings found.")
             return region_data, gpd.GeoDataFrame(), gpd.GeoDataFrame()
 
         # 2) Filter buildings to FWA buffer around region sites
-        buffered = region_data.to_crs(3857).copy()
+        buffered = region_data.to_crs(EPSG_METRIC).copy()
         buffered["geometry"] = buffered.geometry.buffer(distance_fwa)
         buildings = gpd.sjoin(
             buildings,
@@ -891,6 +1017,7 @@ def parallel_region(
             "Overlap with Others",
         )
         region_calc['hp_site'] = region_calc['total_homepass']
+
         
         # 4) Sectorize
         sectors = parallel_sectorize(
@@ -902,13 +1029,40 @@ def parallel_region(
             threshold=threshold_sector,
             max_workers=max_workers,
         )
-        sectors = sectors.merge(region_calc[['site_id', 'hp_site']], how='left', on='site_id')
 
         if sectors.empty:
             print(f"⚠️ Region {region}: no sectors generated.")
             return region_calc, sectors, buildings
 
         # 5) Sector overlap cleaning + building assignment
+        # Calculate Percentage
+        kept_geom = site_keep.copy()
+        if "buffer_distance" not in kept_geom.columns:
+            kept_geom['buffer_distance'] = distance_fwa
+
+        kept_geom['geometry'] = kept_geom.buffer(kept_geom['buffer_distance'])
+        kept_geom = kept_geom['geometry'].union_all()
+
+        region_calc['intersect_pct'] = 0.0
+        for idx, row in region_calc.iterrows():
+            if row['note'] == "Main Selected":
+                overlap_percentage = 0.0
+                region_calc.at[idx, 'intersect_pct'] = overlap_percentage
+                continue
+
+            geom = row['geometry']
+            buffer = row.get("buffer_distance", distance_fwa)
+            buffer_geom = geom.buffer(buffer)
+            
+            isec_geom = geom.intersection(kept_geom)
+            isec_area = isec_geom.area
+            buffer_area = buffer_geom.area
+
+            overlap_percentage = 100 * isec_area / buffer_area if buffer_area > 0 else 0
+            region_calc.at[idx, 'intersect_pct'] = round(overlap_percentage, 2) if region_calc.at[idx, 'intersect_pct'] < overlap_percentage else region_calc.at[idx, 'intersect_pct']
+        region_calc['intersect_reversed'] = 100 - region_calc["intersect_pct"]
+
+        sectors = sectors.merge(region_calc[['site_id', 'hp_site', 'intersect_reversed']], how='left', on='site_id')
         if clean_overlap:
             sectors_accept, sectors_dropped, _ = clean_sectors_overlaps(
                 site_data=region_calc,
@@ -919,55 +1073,66 @@ def parallel_region(
                 tolerance=10.0,
                 score_map=score_map
             )
-            building_join = gpd.sjoin(
-                buildings,
-                sectors[["geometry", "site_id", "sector_id"]],
-                how="inner",
-                predicate="intersects",
-            ).drop(columns="index_right", errors="ignore")
+            sectors = pd.concat([sectors_accept, sectors_dropped])
         else:
-            building_join = gpd.sjoin(
-                buildings,
-                sectors[["geometry", "site_id", "sector_id"]],
-                how="inner",
-                predicate="intersects",
-            ).drop(columns="index_right", errors="ignore")
+            sectors_accept = sectors.copy()
 
-        # 6) Aggregate homepass class to sector level
+        # Aggregate Total Sector
         accepted = set(sectors_accept['sector_id'].astype(str))
-        accepted_ids = set(sectors_accept['site_id'].astype(str))
+        accepted_site_ids = set(sectors_accept['site_id'].astype(str))
         sectors['sector_note'] = np.where(
             sectors["sector_id"].astype(str).isin(accepted),
             "Accepted Sector",
             "Dropped Sector",
         )
         region_calc['note'] = np.where(
-            region_calc["site_id"].astype(str).isin(accepted_ids),
+            region_calc["site_id"].astype(str).isin(accepted_site_ids),
             "Main Selected",
             "Overlap with Others",
         )
-        total_hp_sector = (building_join.groupby("sector_id").size().rename("total_homepass"))
-        sectors["total_homepass"] = (sectors["sector_id"].map(total_hp_sector).fillna(0).astype(int))
-
-        # 7) Aggregate sector stats to site level
-        agg_dict = {"sector_id": "count", "total_homepass": "sum"}
         sector_summary = (
             sectors[sectors['sector_note'] == 'Accepted Sector'].groupby("site_id")
-            .agg(agg_dict)
+            .agg({"sector_id": "count"})
             .rename(columns={"sector_id": "total_sectors"})
             .reset_index()
         )
 
-        # Drop old total_homepass from region_calc and join new one
+        region_calc = region_calc.merge(sector_summary, on="site_id", how="left")
+        region_calc["total_sectors"] = region_calc["total_sectors"].fillna(0).astype(int)
+
+        # =============
+        # Spin Sectors
+        # =============
+        sectors = spin_sectors(
+                point_data=region_calc,
+                sector_data=sectors,
+                building_data=buildings
+            )
+
+        # Building Count
+        building_join = gpd.sjoin(
+            buildings,
+            sectors[["geometry", "site_id", "sector_id"]],
+            how="inner",
+            predicate="intersects",
+        ).drop(columns="index_right", errors="ignore")
+
         if "total_homepass" in region_calc.columns:
             region_calc = region_calc.drop(columns="total_homepass")
 
-        region_calc = (region_calc.merge(sector_summary, on="site_id", how="left"))
+        total_hp_sector = (building_join.groupby("sector_id").size().rename("total_homepass"))
+        sectors["total_homepass"] = (sectors["sector_id"].map(total_hp_sector).fillna(0).astype(int))
+        sectors["homepass_adjusted"] = np.where(sectors['total_homepass'] > 400, 400 * 0.75, round(sectors["total_homepass"] * 0.75, 0) )
+        summary_hp_site = (
+            sectors[sectors['sector_note'] == 'Accepted Sector'].groupby("site_id")
+            .agg({'total_homepass': 'sum', 'homepass_adjusted': 'sum'})
+            .reset_index()
+        )
+        region_calc = region_calc.merge(summary_hp_site, on="site_id", how="left")
 
         # 8) Classification
         region_calc["market_class"] = region_calc["total_homepass"].map(classify_market)
         sectors["market_class"] = sectors["total_homepass"].map(classify_market)
-        sectors["homepass_adjusted"] = np.where(sectors["total_homepass"] < 300, sectors["total_homepass"], 300 )
 
         # 9) Optional checkpoint export
         if export_path:
@@ -1012,7 +1177,7 @@ def main_fwa(
     distance_fwa: float = 500,
     max_workers: int = 8,
     accepted_ids: set[str] | None = None,
-    score_map: dict = {}
+    score_map: dict | None = None
 ) -> str:
     """
     Main FWA pipeline:
@@ -1025,6 +1190,7 @@ def main_fwa(
     zip_path : str
         Path to zipped FWA result.
     """
+    score_map = score_map or {}
     start = time.time()
     total_sites = len(data_gdf)
 
@@ -1191,12 +1357,13 @@ if __name__ == "__main__":
         # },
     }
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SURGE FWA ADJUSTEMNT\Export"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SURGE FWA ADJUSTEMNT\Export\Debug\Spinned"
     os.makedirs(export_dir, exist_ok=True)
 
-    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SURGE FWA ADJUSTEMNT\Selection Status, Project Plan and Progress 202600202 - Sitelist Only.xlsx"
-    sitelist = read_gdf(sitelist_path, sheet_name="All Sites")
+    sitelist_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SURGE FWA ADJUSTEMNT\Sample_Debug.xlsx"
+    sitelist = read_gdf(sitelist_path, sheet_name="Sheet1")
     sitelist = sanitize_header(sitelist, lowercase=True)
+    
     sitelist["company"] = sitelist["company"].astype(str).str.upper().str.strip()
     # sitelist["tower_type"] = sitelist["tower_type"].astype(str).str.upper().str.strip()
     sitelist["site_id"] = sitelist["site_id"].astype(str)

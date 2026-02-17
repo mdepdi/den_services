@@ -84,12 +84,12 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     # ------------------
     sitelist_gdf['site_id'] = (
         sitelist_gdf['site_id']
-        .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+        .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
     )
 
     sitelist_gdf['site_name'] = (
         sitelist_gdf['site_name']
-        .str.replace(r"[()\[\]/\s.\-<>\"':&]+", "_", regex=True)
+        .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
     )
 
 
@@ -111,6 +111,9 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         if is_unique_id:
             logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
             line_gdf['ring_name'] = line_gdf['name']
+        else:
+            logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
+            line_gdf['ring_name'] = line_gdf['name'] + "_" + line_gdf.index.astype(str)
 
     for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
@@ -283,10 +286,10 @@ def main_topology(
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Template_Topology_Based.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Topology.kml"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG ANDO\Export"
-    program = "Sample Topologi Data"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Template_Topology_Based.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site"
+    program = "3152 Topology"
     sep=";"
     graph_type = "weighted_roads"
     operator = 'surge'
@@ -297,6 +300,7 @@ if __name__ == "__main__":
         export_dir=export_dir,
         sep=sep,
         program=program,
+        operator=operator,
         graph_type=graph_type,
         distance_tolerance=500
     )

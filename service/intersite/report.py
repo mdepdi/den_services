@@ -1719,14 +1719,21 @@ def boq_generation(
 
 
 if __name__ == "__main__":
-    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DESIGN APPROVAL XL\20260127_Design Approval_ Bekasi.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DESIGN APPROVAL XL\20260127_Design Approval_ Bekasi"
+    kmz_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site\Topology_Based\Intersite Design_Topology Based.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site\Topology_Based"
     sep = ";"
 
     os.makedirs(export_dir, exist_ok=True)
-    drm_xl(
+    # drm_xl(
+    #     kmz_path=kmz_path,
+    #     export_dir=export_dir,
+    #     sep=sep,
+    #     project_name="Trial XL Design Approval"
+    # )
+
+    drm_format(
         kmz_path=kmz_path,
         export_dir=export_dir,
         sep=sep,
-        project_name="Trial XL Design Approval"
+        project_name="Topology 3152"
     )
