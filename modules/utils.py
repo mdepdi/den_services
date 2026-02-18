@@ -554,7 +554,7 @@ def fiber_utilization(data_gdf: gpd.GeoDataFrame, tolerance:int=20) -> gpd.GeoDa
 
 def clutter_identification(
     sitelist: gpd.GeoDataFrame,
-    buffer: int = 500,
+    buffer: int = 2000,
     id_col: str = "site_id",
     clutter_dir: str = rf"{MAINDATA_DIR}/14. Grid/Buy V2/200m",
     clutter_crs_epsg: int = 3857,
@@ -570,8 +570,8 @@ def clutter_identification(
     # Prepare output columns
     if "building_count" not in sitelist.columns:
         sitelist["building_count"] = pd.NA
-    if "clutter_class" not in sitelist.columns:
-        sitelist["clutter_class"] = pd.NA
+    if "clutter" not in sitelist.columns:
+        sitelist["clutter"] = pd.NA
 
     # Buffer only for spatial matching
     sitelist_buffered = sitelist[[id_col, "Island", "geometry"]].copy()

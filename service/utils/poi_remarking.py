@@ -22,7 +22,7 @@ from core.config import settings
 
 MAINDATA_DIR = settings.MAINDATA_DIR
 poi_list = [
-    f"{MAINDATA_DIR}/17. Point of Interest/Categorized/20260213_POI Enterprise/POI Classified Enterprise.parquet",
+    f"{MAINDATA_DIR}/17. Point of Interest/Categorized/20260218_POI Enterprise/POI Classified Enterprise.parquet",
     f"{MAINDATA_DIR}/17. Point of Interest/Categorized/20260213_POI Minimarket/POI Classified Minimarket.parquet",
     f"{MAINDATA_DIR}/17. Point of Interest/Raw/POI Scrap Traditional Store Compile.parquet",
     f"{MAINDATA_DIR}/17. Point of Interest/Raw/POI Scrap Compile FnB.parquet",

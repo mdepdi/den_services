@@ -880,7 +880,7 @@ def spin_sectors(point_data: gpd.GeoDataFrame, sector_data: gpd.GeoDataFrame, bu
                 clean_ids = dup_clean['sector_id'].unique().tolist()
 
                 if num_clean > num_sector:
-                    print(f"🔥 {site_id} Found new clean sector.")
+                    print(f"🔥 {site_id} found new clean sector.")
                     acc_sector = site_sector[site_sector["sector_id"].isin(clean_ids)].copy()
                     union_geom = acc_sector['geometry'].union_all()
                     rotated_geom = rotate(union_geom, angle=i, origin=center)
