@@ -13,6 +13,8 @@ class Settings(BaseSettings):
 
     MAX_WORKERS: int
     DOCKER: bool
+    FLOWER_USER: str
+    FLOWER_PWD: str
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
     MAINDATA_DIR: str

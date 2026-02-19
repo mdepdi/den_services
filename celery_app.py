@@ -17,30 +17,46 @@ celery_app = Celery(
 
 # Configure Celery
 celery_app.conf.update(
-    task_serializer='json',
-    result_serializer='json',
-    accept_content=['json'],
-    timezone='Asia/Jakarta',
-    enable_utc=False,  
-    
-    # Worker configuration
-    # worker_concurrency=4,
-    # worker_max_memory_per_child=4 * 1024 * 1024 * 1024,
-    worker_max_tasks_per_child=10,
+    # Serialization
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+
+    # Time
+    timezone="Asia/Jakarta",
+    enable_utc=False,
+
+    # Worker fairness
     worker_prefetch_multiplier=1,
-    
-    # Connection settings
+    worker_max_tasks_per_child=10,
+    task_track_started=True,
+    task_acks_late=False,
+    task_reject_on_worker_lost=False,
+
+    # Limits
+    task_soft_time_limit=10*60,
+    task_time_limit=15*60,
+
+    # Broker reliability
     broker_connection_retry_on_startup=True,
     broker_connection_retry=True,
-    broker_connection_max_retries=10,
+    broker_connection_max_retries=3,
     broker_heartbeat=10,
-    broker_pool_limit=10,
+    broker_pool_limit=5,
+
+    # Event
+    worker_send_task_events=True,
+    task_send_sent_event=True,
+
+    # Results
+    result_expires=60*60*24,
 
     # Queue settings
     task_queues=(
         Queue('concurrent', routing_key='tasks.concurrent.#'),
         Queue('heavy', routing_key='tasks.heavy.#'),
     ),
+
     task_default_queue='concurrent',
     task_routes={
         'tasks.concurrent.*': {'queue': 'concurrent', 'routing_key': 'tasks.concurrent.default'},

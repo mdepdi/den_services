@@ -150,8 +150,8 @@ def graphhopper_knn(
     k_candidate = k_final * 5 if k_final < 3 else k_final*3
     pairs_df = nearest_candidates(source_gdf=source_gdf, target_gdf=target_gdf, k_candidates=k_candidate)
     route_gdf = graphhopper_parallel(pairs_df=pairs_df, workers=workers, profile=profile, task_celery=task_celery)
-    route_gdf = route_gdf.merge(source_gdf[['site_id','site_name','lat','long']].add_suffix("_a"), left_on='src_idx', right_index=True)
-    route_gdf = route_gdf.merge(target_gdf[['site_id','site_name','lat','long']].add_suffix("_b"), left_on='tgt_idx', right_index=True)
+    route_gdf = route_gdf.merge(source_gdf[['site_id','site_name', 'site_type', 'lat','long']].add_suffix("_a"), left_on='src_idx', right_index=True)
+    route_gdf = route_gdf.merge(target_gdf[['site_id','site_name', 'site_type', 'lat','long']].add_suffix("_b"), left_on='tgt_idx', right_index=True)
 
     # Celery task
     if task_celery:

@@ -378,9 +378,9 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\Valid Longlat For Yakub.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\BOQ\Valid Longlat For Yakub"
-    program ="MMP IFORTE"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Export\20260219_060735_Graphhopper_Nearest_Point_Task\Grapphopper_Routing_Result.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Export\Fix Route"
+    program ="Star Design Surge"
     sep=";"
     spof_threshold = 3000
 

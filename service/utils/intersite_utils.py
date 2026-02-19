@@ -1,6 +1,3 @@
-# ===============
-# ROUTE EXTRACTOR
-# ===============
 import os
 import sys
 import time
@@ -79,10 +76,10 @@ def takeout_ring(kmz_path: str, export_dir: str, ring_list:list, sep:Separator =
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star_Design_results (10).kmz"
+    design_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\FWA Surge 818 Site 19022026.kmz"
     # ringlist_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W1\DRM FORMAT\Clean_Ring List.xlsx"
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DISTANCE SURGE 1367\Star Design"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\FWA Surge 818 Site 19022026"
     os.makedirs(export_dir, exist_ok=True)
 
     # ringlist = pd.read_excel(ringlist_file)
@@ -92,6 +89,6 @@ if __name__ == "__main__":
         kmz_path=design_path,
         export_dir=export_dir,
         ring_list=ringlist,
-        sep=Separator.HYPHEN.value
+        sep=Separator.SEMICOLON.value
     )
 

@@ -165,7 +165,7 @@ def task_supervised(self, data: dict):
         raise e
 
 # TASK FOR UNSUPERVISED RING
-@celery_app.task(name="tasks.heavy.unsupervised_ring", bind=True, max_retries=1, default_retry_delay=60)
+@celery_app.task(name="tasks.heavy.unsupervised_ring", bind=True, max_retries=0, default_retry_delay=60)
 def task_unsupervised(self, data: dict):
     try:
         print(f"🌏 Celery Intersite | Unsupervised Task Started | Task ID: {self.request.id}")

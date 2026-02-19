@@ -107,12 +107,6 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
     if len(routing_gdf) == 0:
         raise ValueError(f"🔴 There is no routing result fulfill threshold {cutoff} m.")
 
-    # Add Admin
-    routing_gdf['name'] = routing_gdf["site_id_a"].astype(str) + str(sep) + routing_gdf["site_id_b"].astype(str)
-    
-    routing_gdf.to_parquet(parquet_path, index=False)
-    excel_styler(routing_gdf.drop(columns='geometry')).to_excel(excel_path, sheet_name='DEN Graphhopper Routing', index=False)
-
     # Intersite Format
     points_list = []
     record_region = {}
@@ -146,11 +140,16 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
         points_list.append(far_end)
 
     points_df = pd.DataFrame(points_list)
-
     points_geom = gpd.points_from_xy(points_df['long'], points_df['lat'], crs="EPSG:4326")
     points_gdf = gpd.GeoDataFrame(points_df, geometry=points_geom)
     points_gdf = points_gdf.sort_values(by=['region', 'ring_name'])
     
+    # Add Admin
+    routing_gdf['name'] = routing_gdf["site_id_a"].astype(str) + str(sep) + routing_gdf["site_id_b"].astype(str)
+    
+    routing_gdf.to_parquet(parquet_path, index=False)
+    excel_styler(routing_gdf.drop(columns='geometry')).to_excel(excel_path, sheet_name='DEN Graphhopper Routing', index=False)
+
     # Save Intersite
     save_intersite(
         points=points_gdf,
@@ -165,12 +164,23 @@ def nearest_point_to_point(source_path: str, target_path: str, export_dir:str, k
     logger.info(f"✅ Grapphopper | Nearest Point to Point | Done in {process_time/60:.2f} minutes.")
 
 if __name__ == "__main__":
-    # PROCESS ROUTING
-    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\Export\Sites Outside 3758 in Buffer 10KM Star.xlsx"
-    target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\pole_KAI_clean_V2 - Copy.xlsx"
+    # PROCESS ROUTING POINT TO POINT
+    # source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\Export\Sites Outside 3758 in Buffer 10KM Star.xlsx"
+    # target_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\pole_KAI_clean_V2 - Copy.xlsx"
+    # k_final = 1
+
+    # export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\Export GH"
+    # os.makedirs(export_dir, exist_ok=True)
+
+    # nearest_point_to_point(source_path, target_path, export_dir, k_final=1, cutoff=10000)
+
+    # PROCESS ROUTING POINT TO LINE
+    source_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Sitelist Only TBG Ontop BA DRM 2025-2026-v1.xlsx"
+    line_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Compiled Fiber Route.parquet"
     k_final = 1
 
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\STAR DESIGN SITE SELECTION SURGE 3K\Export GH"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Export GH"
     os.makedirs(export_dir, exist_ok=True)
 
-    nearest_point_to_point(source_path, target_path, export_dir, k_final=1, cutoff=10000)
+    nearest_point_to_point(source_path, line_path, export_dir, k_final=1, cutoff=10000)
+    

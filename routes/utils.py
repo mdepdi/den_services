@@ -24,6 +24,7 @@ from modules.kml import validate_kmz_design
 from service.utils.get_homepass import get_homepass
 from service.utils.intersite_utils import takeout_ring
 from service.utils.poi_remarking import poi_remarking
+from service.utils.fiber_utils import fiber_utilization
 
 # EXPORT DIR
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -105,6 +106,94 @@ async def task_homepass(
             homepass_gdf.to_file(gpkg_path, driver="GPKG")
             zf.write(gpkg_path, arcname=os.path.basename(gpkg_path))
             os.remove(gpkg_path)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")
+
+    # --- FileResponse ---
+    return FileResponse(
+        path=zip_path,
+        media_type="application/zip",
+        filename=os.path.basename(zip_path),
+    )
+
+# =============================
+# FIBER UTILIZATION
+# =============================
+@router.post("/fiber_utilization", tags=["Utils"])
+async def task_fiber_utilization(
+    source_linestring: UploadFile = File(..., description="GPKG, Parquet, or Shapefile containing source linestring data."),
+    target_linestring: UploadFile = File(..., description="GPKG, Parquet, or Shapefile containing target linestring data if None using existing fiber."),
+    tolerance: int = Form(20, description="Cable tolerance to identify overlapping in meters.")
+    ):
+    """
+    Get length of overlapping cable.
+    Returns a ZIP file with the results.
+    """
+    # Read boundary data
+    logger.info(f"🌏 Execute | Fiber Utilization")
+    
+    # Source Linestring
+    filename = os.path.basename(source_linestring.filename).split(".")[0]
+    suffix = os.path.splitext(source_linestring.filename)[1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_sourceline:
+        tmp_sourceline.write(source_linestring.file.read())
+        tmp_sourceline_path = tmp_sourceline.name
+    
+    if suffix in ['.kmz', '.kml', '.gpkg', '.parquet', '.shp']:
+        sourceline_gdf = read_gdf(tmp_sourceline_path, geom_type="line")
+        logger.info(f"📥 Reading sourceline file: {source_linestring.filename}")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported source line file format. Supported formats are KMZ, KML, GPKG, Parquet, and Shapefile.")
+    
+    for geom_type in sourceline_gdf.geom_type:
+        if geom_type not in ['LineString', 'MultiLineString']:
+            raise HTTPException(status_code=400, detail=f"Invalid file format {geom_type}")
+
+    # Target Linestring
+    suffix = os.path.splitext(target_linestring.filename)[1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_targetline:
+        tmp_targetline.write(target_linestring.file.read())
+        tmp_targetline_path = tmp_targetline.name
+    
+    if suffix in ['.kmz', '.kml', '.gpkg', '.parquet', '.shp']:
+        targetline_gdf = read_gdf(tmp_targetline_path, geom_type="line")
+        logger.info(f"📥 Reading target line file: {target_linestring.filename}")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported target line file format. Supported formats are KMZ, KML, GPKG, Parquet, and Shapefile.")
+    
+    for geom_type in targetline_gdf.geom_type:
+        if geom_type not in ['LineString', 'MultiLineString']:
+            raise HTTPException(status_code=400, detail=f"Invalid file format {geom_type}")
+
+    # Process Fiber Utilization
+    try:
+        compiled_gdf, route_gdf = fiber_utilization(sourceline_gdf, targetline_gdf, tolerance=tolerance)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error: {e}")
+    
+    # --- save outputs ---
+    job_id = uuid4().hex[:8]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_base = f"Fiber Utilization_{filename}"
+
+    result_dir = os.path.join(EXPORT_DIR, "Utils", "Fiber Utilization")
+    os.makedirs(result_dir, exist_ok=True)
+    zip_path = f"{result_dir}/{out_base}.zip"
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            # XLSX
+            xlsx_path = f"{result_dir}/{out_base}.xlsx"
+            route_gdf.drop(columns="geometry").to_excel(xlsx_path, index=False)
+            zf.write(xlsx_path, arcname=os.path.basename(xlsx_path))
+            os.remove(xlsx_path)
+
+            # PARQUET
+            parquet_path = f"{result_dir}/{out_base}.parquet"
+            compiled_gdf.to_parquet(parquet_path, index=False)
+            zf.write(parquet_path, arcname=os.path.basename(parquet_path))
+            os.remove(parquet_path)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to build ZIP: {e}")

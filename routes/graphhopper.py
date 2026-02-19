@@ -1,5 +1,6 @@
 import geopandas as gpd
 import pandas as pd
+import numpy as np
 import os
 import tempfile
 import zipfile
@@ -224,7 +225,7 @@ async def nearest_line(
         return {f"Source excel file: {str(e)}"}
     
     # Verify Linestring
-    if isinstance(linestring_file, UploadFile):
+    if isinstance(linestring_file, UploadFile) or linestring_file is not None:
         try:
             suffix = os.path.splitext(linestring_file.filename)[1].lower()
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_linestring:
@@ -235,32 +236,41 @@ async def nearest_line(
                 linestring_gdf = read_gdf(tmp_linestring_path, geom_type="line")
                 linestring_gdf = sanitize_header(linestring_gdf, lowercase=True)
 
-                if "site_id" not in linestring_gdf.columns:
-                    unique_col = get_unique_col(linestring_gdf)
-                    if unique_col is None:
-                        raise ValueError(f"No unique column found in linestring data")
             else:
                 raise ValueError(f"Unsupported format {suffix}")
         
             # Linestring to Points
             points_fiber = point_coordinates(linestring_gdf)
             group = auto_group(points_fiber, distance=300)
+            group = group.to_crs(epsg=4326)
             points_fiber = gpd.sjoin(points_fiber, group[['geometry', 'region']]).drop(columns='index_right')
             points_fiber = points_fiber.drop_duplicates(subset='region')
             points_fiber.columns = points_fiber.columns.str.lower()
             points_fiber = points_fiber.to_crs(epsg=4326)
             
             if 'name' in points_fiber.columns:
-                points_fiber['site_id'] = points_fiber['name'] + "_" + str(points_fiber.index + 1)
+                # base id from name
+                points_fiber['site_id'] = points_fiber['name'].astype(str).str.replace(separator, ":")
+
+                # create incremental counter per name
+                counts = points_fiber.groupby('site_id').cumcount()
+
+                # only add suffix where duplicate (count > 0)
+                mask = counts > 0
+                points_fiber.loc[mask, 'site_id'] = (
+                    points_fiber.loc[mask, 'site_id']
+                    + "_"
+                    + counts[mask].astype(str)
+                )
             else:
-                points_fiber['site_id'] = str(points_fiber.index + 1)
+                points_fiber['site_id'] = (points_fiber.index + 1).astype(str)
                 
             points_fiber['long'] = points_fiber.geometry.x
             points_fiber['lat'] = points_fiber.geometry.y
         except Exception as e:
             return {f"Target excel file: {str(e)}"}
     else:
-        fiber = fr"{MAINDATA_DIR}\06. FO TBG\Compile FO Route Only June 2025\FO TBG Only_01062025.parquet"
+        fiber = fr"{MAINDATA_DIR}/06. FO TBG/Compile FO Route Only June 2025/FO TBG Only_01062025.parquet"
         dirname = os.path.dirname(fiber)
         basename = os.path.basename(fiber).split(".")[0]
         point_path = os.path.join(dirname, f"Points_{basename}.parquet")

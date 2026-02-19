@@ -8,7 +8,7 @@ def report_state(task, *, state, message="", current=None, total=None, extra=Non
     """
     meta = {
         "state": state,
-        "status": message,
+        "status": str(message),
         "ts": time.time(),
     }
 

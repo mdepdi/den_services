@@ -1,7 +1,7 @@
 services:
   celery_concurrent:
     build: .
-    command: celery -A celery_app worker -Q concurrent --pool=prefork --concurrency=8 --loglevel=info --without-gossip --without-mingle
+    command: celery -A celery_app:celery_app worker -Q concurrent --pool=prefork --concurrency=8 --loglevel=info --without-gossip --without-mingle
     user: "0:0"
     volumes:
       - ./data:/mnt/data:ro
@@ -20,7 +20,7 @@ services:
       - tbg-network
   celery_heavy:
     build: .
-    command: celery -A celery_app worker -Q heavy --pool=solo --loglevel=info --without-gossip --without-mingle
+    command: celery -A celery_app:celery_app worker -Q heavy --pool=solo --loglevel=info --without-gossip --without-mingle
     user: "0:0"
     volumes:
       - ./data:/mnt/data:ro
@@ -40,7 +40,7 @@ services:
 
   flower:
     build: .
-    command: celery -A celery_app flower --port=5555
+    command: celery -A celery_app:celery_app flower --port=5555 --basic-auth=${FLOWER_USER}:${FLOWER_PWD}
     user: "0:0"
     volumes:
       - ./data:/mnt/data:ro

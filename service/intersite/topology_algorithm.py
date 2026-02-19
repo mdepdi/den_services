@@ -84,12 +84,12 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     # ------------------
     sitelist_gdf['site_id'] = (
         sitelist_gdf['site_id']
-        .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
+        .str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True)
     )
 
     sitelist_gdf['site_name'] = (
         sitelist_gdf['site_name']
-        .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
+        .str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True)
     )
 
 

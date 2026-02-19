@@ -1155,11 +1155,11 @@ def save_kml(
             region_points['program'] = 'N/A'
 
         used_columns = {
-            "ring_name": "Ring ID",
             "site_id": "Site ID",
             "site_name": "Site Name" if "site_name" in region_points.columns else "N/A",
             "long": "Long",
             "lat": "Lat",
+            "ring_name": "Ring ID",
             "region": "Region",
             "vendor": "Vendor" if "vendor" in region_points.columns else "N/A",
             "program": "Program" if "program" in region_points.columns else "N/A",
@@ -1169,15 +1169,15 @@ def save_kml(
         # SANITIZE SITE NAME
         points['site_id'] = (
             points['site_id']
-            .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
+            .str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True)
         )
 
         points['site_name'] = (
             points['site_name']
-            .str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True)
+            .str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True)
         )
-        topology['name'] = (topology['name'].str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True))
-        paths['name'] = (paths['name'].str.replace(r"[()\[\]/\s.\<>\"':&]+", "_", regex=True))
+        topology['name'] = (topology['name'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
+        paths['name'] = (paths['name'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
 
         available_col = [col for col in used_columns.keys() if col in region_points.columns]
         ring_list = region_points['ring_name'].dropna().unique().tolist()
@@ -1263,6 +1263,16 @@ def save_intersite(
     logger.info("🧩 Exporting supervised outputs (Parquet, KML, Excel).")
     topology = create_topology(points, paths, sequential=False)
 
+    # SANITIZE NUMBERED
+    topology['name'] = (topology['name'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
+    paths['name'] = (paths['name'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
+    
+    paths['name'] = (paths['name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
+    points['site_id'] = points['site_id'].astype(str).str.replace(r"_\d{1,3}(?=;|$)$", "", regex=True)
+    points['site_name'] = points['site_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)$", "", regex=True)
+    paths['ring_name'] = (paths['ring_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
+    points['ring_name'] = (points['ring_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
+    
     # FO UTILIZATION
     paths = paths.reset_index(drop=True)
     paths['num'] = paths.index + 1
