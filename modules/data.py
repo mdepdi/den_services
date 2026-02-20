@@ -268,10 +268,13 @@ def read_gdf(
                 geom_type = str(geom_type).lower()
                 match geom_type:
                     case 'point':
+                        point = point.dropna(how="all", axis=1)
                         return point
                     case 'line':
+                        line = line.dropna(how="all", axis=1)
                         return line
                     case 'polygon':
+                        polygon = polygon.dropna(how="all", axis=1)
                         return polygon
             else:
                 raise ValueError("Unsupported file format. Supported formats are: Parquet, GeoJSON, Shapefile, GPKG, and TAB.")

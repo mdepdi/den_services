@@ -2147,7 +2147,6 @@ def main_boq(
                 interval_pole_m = interval_pole_m,
                 cable_percentage = cable_percentage,
                 cable_multiplier = cable_multiplier,
-                sclc_enabled = sclc_enabled,
                 device_in_site = device_in_site,
                 device_in_branch = device_in_branch,
                 connector_in_site = connector_in_site,
@@ -2166,21 +2165,42 @@ def main_boq(
 
 
 if __name__ == "__main__":
-
-    # ==============
-    # BOQ GENERATION
-    # ==============
-
-    kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL New Sites Batch 15.kmz"
-    export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL New Sites Batch 15")
+    kmz_design = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SHORT MMP XL\Export\Intersite Design_Supervised.kmz"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\SHORT MMP XL\Export"
     os.makedirs(export_dir, exist_ok=True)
 
-    boq_generation(
-        kmz_ipl,
+    points, lines = validate_kmz_design(kmz_design)
+
+    main_boq(
+        points=points,
+        lines=lines,
         export_dir=export_dir,
         sep=";",
         operator="xl",
-        cable_percentage=15,
-        device_in_site="OTB",
-        device_in_branch="ODP",
+        ipl_route="existing_fiber",
+        boq_type="mmp",
+        interval_pole_m= 80,
+        cable_percentage= 10,
+        cable_multiplier= 1,
+        device_in_branch = None,
+        device_in_site = "ODP",
+        program_name= "Intersite FO",
     )
+
+    # # ==============
+    # # BOQ GENERATION
+    # # ==============
+
+    # kmz_ipl = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL New Sites Batch 15.kmz"
+    # export_dir = (r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\DEBUG HUSEIN\APD IPL New Sites Batch 15")
+    # os.makedirs(export_dir, exist_ok=True)
+
+    # boq_generation(
+    #     kmz_ipl,
+    #     export_dir=export_dir,
+    #     sep=";",
+    #     operator="xl",
+    #     cable_percentage=15,
+    #     device_in_site="OTB",
+    #     device_in_branch="ODP",
+    # )

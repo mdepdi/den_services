@@ -564,12 +564,14 @@ def ring_cluster(cluster_args):
     hex_list = identify_hexagon(cluster_site, type="convex")
     roads = retrieve_roads(hex_list, type="roads").to_crs(epsg=3857)
     nodes = retrieve_roads(hex_list, type="nodes").to_crs(epsg=3857)
-    G = build_graph(roads, graph_type=graph_type, ref_fo=ref_fo, cable_cost=cable_cost, avoid_railway=False)
+    G = build_graph(roads, graph_type=graph_type, ref_fo=ref_fo, cable_cost=cable_cost, avoid_railway=True)
 
-    node_sindex = nodes.sindex
-    cluster_site["nearest_node"] = cluster_site.geometry.apply(
-        lambda geom: nodes.at[node_sindex.nearest(geom)[1][0], "node_id"]
-    )
+    # node_sindex = nodes.sindex
+    # cluster_site["nearest_node"] = cluster_site.geometry.apply(
+    #     lambda geom: nodes.at[node_sindex.nearest(geom)[1][0], "node_id"]
+    # )
+    nearest = gpd.sjoin_nearest(cluster_site, nodes[["geometry", "node_id"]], how="left")
+    cluster_site["nearest_node"] = nearest["node_id"].values
 
     fo_hub = cluster_site[cluster_site["site_type"].str.lower().str.contains("hub")].copy()
     sitelist = cluster_site[~cluster_site["site_type"].str.lower().str.contains("hub")].copy()
@@ -789,9 +791,7 @@ def ring_parallel(
 
     os.makedirs(export_dir, exist_ok=True)
     clusters = sorted(clustered_sites[cluster_col].unique().tolist())
-    logger.info(
-        f"ℹ️ Area={area} | Total clusters={len(clusters):,} to process in parallel."
-    )
+    logger.info(f"ℹ️ Area={area} | Total clusters={len(clusters):,} to process in parallel.")
 
     cluster_args = []
     for cluster in clusters:

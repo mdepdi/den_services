@@ -378,10 +378,11 @@ def main_fixroute(
     logger.info(f"ℹ️ All files saved to: {export_dir}")
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Export\20260219_060735_Graphhopper_Nearest_Point_Task\Grapphopper_Routing_Result.xlsx"
-    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\FIBER DESIGN SURGE\Export\Fix Route"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Debug Miss Points\Mapped Fix Route.xlsx"
+    export_dir = fr"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Debug Miss Points\Mapped Fix Route"
     program ="Star Design Surge"
     sep=";"
+    operator="surge"
     spof_threshold = 3000
 
 
@@ -395,6 +396,7 @@ if __name__ == "__main__":
         export_dir=export_dir,
         program=program,
         sep=sep,
+        operator=operator,
         spof_threshold=spof_threshold,
         graph_type="full_weighted"
     )

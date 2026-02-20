@@ -82,6 +82,7 @@ class RoutePreference(str, Enum):
 class DeviceType(str, Enum):
     OTB = "OTB"
     ODP = "ODP"
+    NONE = "NONE"
 
 class ConnectorType(str, Enum):
     SC = "SC"
@@ -222,6 +223,11 @@ async def boq_intersite_route(
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
+    if (device_in_branch != DeviceType.ODP) and (device_in_site != DeviceType.ODP):
+        raise ValueError("🔴 ODP must be enabled, either in branch or in site.")
+
+    device_in_site = None if device_in_site == DeviceType.NONE else DeviceType(device_in_site)
+    device_in_branch = None if device_in_branch == DeviceType.NONE else DeviceType(device_in_branch)
 
     suffix = os.path.splitext(ipl_file.filename)[1].lower()
     filename = os.path.splitext(ipl_file.filename)[0]
@@ -312,6 +318,11 @@ async def boq_mmp_route(
     boq_upload = os.path.join(UPLOAD_DIR, date_today, "Intersite", "BOQ")
     os.makedirs(boq_upload, exist_ok=True)
 
+    if (device_in_branch != DeviceType.ODP) and (device_in_site != DeviceType.ODP):
+        raise ValueError("🔴 ODP must be enabled, either in branch or in site.")
+
+    device_in_site = None if device_in_site == DeviceType.NONE else DeviceType(device_in_site)
+    device_in_branch = None if device_in_branch == DeviceType.NONE else DeviceType(device_in_branch)
 
     suffix = os.path.splitext(ipl_file.filename)[1].lower()
     filename = os.path.splitext(ipl_file.filename)[0]
