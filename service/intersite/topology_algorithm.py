@@ -75,6 +75,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         # group = auto_group(sitelist_gdf)
         # sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']], how='left').drop(columns='index_right')
         # sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
+
         sitelist_gdf = admin_information(sitelist_gdf)
         sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["site_id", "Provinsi"])
         sitelist_gdf['region'] = sitelist_gdf['Provinsi']
@@ -112,8 +113,22 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
             logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
             line_gdf['ring_name'] = line_gdf['name']
         else:
-            logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
-            line_gdf['ring_name'] = line_gdf['name'] + "_" + line_gdf.index.astype(str)
+            logger.info(f"ℹ️ Found 'name' columns as Ring ID but not unique, adjust incremental.")
+            line_gdf['ring_name'] = line_gdf['name']
+            duplicated = line_gdf[line_gdf.duplicated(subset="name", keep=False)]
+            recorded = {}
+            for idx, row in duplicated.iterrows():
+                name = row['name']
+                geom = row['geometry']
+                if name in recorded.keys():
+                    recorded[name] += 1
+                else:
+                    recorded[name] = 1
+
+                num = recorded[name]
+                new_id = f"{name}_{num}"
+                line_gdf.at[idx, "ring_name"] = new_id
+                print(f"ℹ️ Update Ring ID: {name} to {new_id}")
 
     for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
@@ -144,7 +159,6 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
                             'lat': point.y,
                             'geometry': point
                         })
-                continue
             else:
                 geom = merged
 
@@ -269,7 +283,7 @@ def main_topology(
 
     if task_celery:
         task_celery.update_state(state="PROGRESS", meta={"status": "Starting Fix Route Topology Based"})
-        
+
     result = main_fixroute(
         template_df=site_data,
         export_dir=design_dir,
@@ -286,9 +300,9 @@ def main_topology(
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Template_Topology_Based.xlsx"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Template_Topology_New.xlsx"
     line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site_New"
     program = "3152 Topology"
     sep=";"
     graph_type = "weighted_roads"

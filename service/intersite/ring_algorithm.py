@@ -1267,11 +1267,11 @@ def save_intersite(
     topology['name'] = (topology['name'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
     paths['name'] = (paths['name'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
     
-    paths['name'] = (paths['name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
-    points['site_id'] = points['site_id'].astype(str).str.replace(r"_\d{1,3}(?=;|$)$", "", regex=True)
-    points['site_name'] = points['site_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)$", "", regex=True)
-    paths['ring_name'] = (paths['ring_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
-    points['ring_name'] = (points['ring_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
+    # paths['name'] = (paths['name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
+    # points['site_id'] = points['site_id'].astype(str).str.replace(r"_\d{1,3}(?=;|$)$", "", regex=True)
+    # points['site_name'] = points['site_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)$", "", regex=True)
+    # paths['ring_name'] = (paths['ring_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
+    # points['ring_name'] = (points['ring_name'].astype(str).str.replace(r"_\d{1,3}(?=;|$)", "", regex=True))
     
     # FO UTILIZATION
     paths = paths.reset_index(drop=True)

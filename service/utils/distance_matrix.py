@@ -82,22 +82,23 @@ def nearest_targets_kdtree(
     return out
 
 if __name__ == "__main__":
-    excel_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W2\SURGE SITE ASESSMENT\Sitelist Compiled 725 Not Found_5K_DRM.xlsx"
+    excel_path = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Template_Topology_Based.xlsx"
     filename = os.path.splitext(os.path.basename(excel_path))[0]
     directory = os.path.dirname(excel_path)
 
     sitelist = pd.read_excel(excel_path)
     print(f"ℹ️ Total Sitelist to Process: {len(sitelist):,} records.")
 
-    sitelist = read_gdf(sitelist, long_col="Longitude", lat_col="Latitude")
-    sitelist = sitelist.drop_duplicates(subset="Site ID")
-    print(sitelist['Source'].value_counts())
+    sitelist = read_gdf(sitelist, long_col="long", lat_col="lat")
+    sitelist["site_id"] = sitelist["site_id"].astype(str)
+    sitelist["site_name"] = sitelist["site_name"].astype(str)
+    sitelist = sitelist.drop_duplicates(subset="site_id")
 
-    unique_col = get_unique_col(sitelist)
-    sitelist[unique_col] = sitelist[unique_col].astype(str)
+    # unique_col = get_unique_col(sitelist)
+    # sitelist[unique_col] = sitelist[unique_col].astype(str)
 
     # Start Distance Matrix
-    identified_nearest = nearest_targets_kdtree(sitelist, sitelist, unique_col, to_crs=3857, k=3, prefix="nearest")
+    identified_nearest = nearest_targets_kdtree(sitelist, sitelist, "site_id", to_crs=3857, k=3, prefix="nearest")
 
     export_dir = os.path.join(directory, "Distance_Matrix")
     os.makedirs(export_dir, exist_ok=True)

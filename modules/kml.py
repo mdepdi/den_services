@@ -408,7 +408,6 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
 
     # POINT EXISTING
     points_existing['site_id'] = points_existing['name'].str.strip()
-    points_existing['site_id'] = (points_existing['site_id'].str.replace(r'\s*\[.*\]$', '', regex=True))
     points_existing['site_name'] = points_existing['Site_Name'] if "Site_Name" in points_existing.columns else points_existing['name']
     points_existing['site_name'] = np.where(points_existing['site_name'].isna(), points_existing['site_id'], points_existing['site_name'])
 
