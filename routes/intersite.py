@@ -708,7 +708,7 @@ async def topology_intersite(
     )
 
     with pd.ExcelWriter(excel_path) as xls:
-        sitelist.to_excel(xls, sheet_name="sitelist")
+        sitelist.drop(columns="geometry").to_excel(xls, sheet_name="sitelist", index=False)
 
     topology_gdf.to_parquet(topology_path, index=False)
     logger.info(f"📥 Temporary Excel data saved to: {excel_path}")
@@ -778,14 +778,14 @@ async def implementation_intersite(
             point_kmz, line_kmz = validate_kmz_design(tmp_fiber_path, sep=separator.value)
         else:
             return {
-                "error": f"Unsupported topology file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."
+                "error": f"Unsupported design file format {suffix}. Supported formats are GPKG, Parquet, and Shapefile."
             }
     except Exception as e:
-        return {"error": f"Failed to read topology file: {str(e)}"}
+        return {"error": f"Failed to read design file: {str(e)}"}
 
     # SAVE DATA
-    points_path = os.path.join(boq_upload,f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_points_kmz_{uuid4().hex}.parquet",)
-    lines_path = os.path.join(boq_upload,f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_lines_kmz_{uuid4().hex}.parquet",)
+    points_path = os.path.join(boq_upload,f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_points_kmz_{uuid4().hex}.parquet")
+    lines_path = os.path.join(boq_upload,f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_lines_kmz_{uuid4().hex}.parquet")
 
     point_kmz.to_parquet(points_path, index=False)
     line_kmz.to_parquet(lines_path, index=False)

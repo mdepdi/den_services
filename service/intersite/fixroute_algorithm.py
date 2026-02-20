@@ -229,7 +229,6 @@ def parallel_fixroute(
                         state="PROGRESS",
                         meta={"status": (f"Completed {len(all_new_points)}/{total_process} rings.")},
                     )
-                    
             except Exception as e:
                 logger.info(f"❌ Error processing ring {ring}: {e}")
                 continue

@@ -8,7 +8,7 @@ import re
 from datetime import datetime
 from time import time
 from shapely.geometry import Point
-from shapely.ops import linemerge
+from shapely.ops import linemerge, unary_union
 from tqdm import tqdm
 from pathlib import Path
 
@@ -60,6 +60,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     line_gdf = line_gdf.to_crs(epsg=3857)
     sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
     line_gdf = line_gdf.drop(columns=['ring_name','region'], errors='ignore')
+    line_gdf = line_gdf.drop_duplicates(subset=["geometry"])
 
     # ----------------------------------------------------------------------
     # Ensure Required Columns
@@ -77,7 +78,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         # sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
 
         sitelist_gdf = admin_information(sitelist_gdf)
-        sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["site_id", "Provinsi"])
+        sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["site_id", "geometry"])
         sitelist_gdf['region'] = sitelist_gdf['Provinsi']
 
     # ------------------
@@ -108,13 +109,16 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
     # ----------------------------------------------------------------------
     point_topology = []
     if 'name' in line_gdf.columns:
+        line_gdf['name'] = line_gdf['name'].astype(str).str.replace(r";\s*(connection|route)(?:_\d+)?$", "", case=False, regex=True)
         is_unique_id = line_gdf['name'].is_unique
+
         if is_unique_id:
             logger.info(f"ℹ️ Unique ID found using 'name' columns as Ring ID.")
             line_gdf['ring_name'] = line_gdf['name']
         else:
             logger.info(f"ℹ️ Found 'name' columns as Ring ID but not unique, adjust incremental.")
             line_gdf['ring_name'] = line_gdf['name']
+
             duplicated = line_gdf[line_gdf.duplicated(subset="name", keep=False)]
             recorded = {}
             for idx, row in duplicated.iterrows():
@@ -132,6 +136,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
 
     for idx, row in tqdm(line_gdf.iterrows(), total=len(line_gdf), desc="Extract Topology Coordinate"):
         geom = row.geometry
+        geom = unary_union(geom)
         ring_name = row.get("ring_name", None)
 
         if ring_name == "":
@@ -142,11 +147,22 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
             if merged.geom_type == "MultiLineString":
                 for part in merged:
                     coords = list(part.coords)
+                    recorded = []
                     for num, coord in enumerate(coords):
                         point = Point(coord)
                         last_idx = len(coords) - 1
 
-                        flag = 'Start' if num == 0 else 'End' if num == last_idx and len(coords) > 2  else 'Middle'
+                        # Check distance to visited
+                        min_dist = None
+                        for prev in recorded:
+                            dist_to_prev = point.distance(prev)
+                            if dist_to_prev < 50:
+                                min_dist = dist_to_prev
+                            
+                        if min_dist is not None and num != last_idx:
+                            continue
+                        
+                        flag = 'Start' if num == 0 else 'End' if (num == last_idx and len(coords) > 2)  else 'Middle'
                         site_type = "FO Hub" if flag in ['Start', 'End'] else "Site List"
 
                         point_topology.append({
@@ -159,17 +175,29 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
                             'lat': point.y,
                             'geometry': point
                         })
+                        recorded.append(point)
             else:
                 geom = merged
 
         # Handle normal line
         coords = list(geom.coords)
         last_idx = len(coords) - 1
+        recorded = []
 
         for num, coord in enumerate(coords):
             point = Point(coord)
-            flag = 'Start' if num == 0 else 'End' if num == last_idx and len(coords) > 2 else 'Middle'
+            flag = 'Start' if num == 0 else 'End' if (num == last_idx and len(coords) > 2) else 'Middle'
             site_type = "FO Hub" if flag in ['Start', 'End'] else "Site List"
+
+            # Check distance to visited
+            min_dist = None
+            for prev in recorded:
+                dist_to_prev = point.distance(prev)
+                if dist_to_prev < 50:
+                    min_dist = dist_to_prev
+                
+            if min_dist is not None and num != last_idx:
+                continue
 
             point_topology.append({
                 'ring_id': idx,
@@ -181,6 +209,7 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
                 'lat': point.y,
                 'geometry': point
             })
+            recorded.append(point)
 
     point_topology = gpd.GeoDataFrame(point_topology, geometry='geometry', crs=line_gdf.crs)
 
@@ -217,10 +246,14 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
 
         ring_data = ring_data.sort_values("num").reset_index(drop=True)
         total_data = len(ring_data)
+
+        if total_data == 2:
+            ring_data.loc[0, 'site_type'] = "FO Hub"
+            ring_data.loc[-1, 'site_type'] = "Site List"
         
         for sitetype in ['FO Hub', 'Site List']:
             if sitetype not in ring_data['site_type'].unique().tolist():
-                print(f"{site_type} not found in ring '{ring}'. Check your topology line or excel sheet.")
+                logger.error(f"{sitetype} not found in ring '{ring}'. Check your topology line or excel sheet.")
 
         for i in range(total_data - 1):
             a = ring_data.iloc[i].drop(['geometry', 'region', 'ring_name'])
@@ -296,10 +329,10 @@ def main_topology(
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Template_Topology_New.xlsx"
-    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site.kmz"
-    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology 3152 Site_New"
-    program = "3152 Topology"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\20260220_095208_template_8d33a8d58cb645a48ae50af0d3323827.xlsx"
+    line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\Topology Fixed.parquet"
+    export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\Export"
+    program = "Surge Fiber Design"
     sep=";"
     graph_type = "weighted_roads"
     operator = 'surge'
@@ -310,6 +343,7 @@ if __name__ == "__main__":
         export_dir=export_dir,
         sep=sep,
         program=program,
+        spof_threshold=1000,
         operator=operator,
         graph_type=graph_type,
         distance_tolerance=500
