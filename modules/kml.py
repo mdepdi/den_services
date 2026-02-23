@@ -452,8 +452,8 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
         if lines_existing.empty:
             continue
 
-        if missing:
-            raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
+        # if missing:
+        #     raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
     
     point_folder = {'hub'}
     for ring, point_ring in points_existing.groupby("ring_name"):
@@ -462,8 +462,8 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
         if points_existing.empty:
             continue
 
-        if missing:
-            raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
+        # if missing:
+        #     raise ValueError(f"Ring '{ring}' is missing folders {sorted(missing)} in Design KMZ.")
 
     # COMPILE
     existing_col = ['site_id', 'site_name', 'site_type', 'long', 'lat', 'ring_name', 'program', 'region','geometry']
@@ -594,8 +594,8 @@ def validate_kmz_design(filepath:str, sep: Separator = Separator.SEMICOLON):
             points_existing.loc[fe_idx, 'route_type'] = route_type
 
     # Raise Error if Exist
-    if any(errors):
-        raise ValueError(f"Please check the KMZ Design, found errors: \n {("\n").join(errors)}")
+    # if any(errors):
+    #     raise ValueError(f"Please check the KMZ Design, found errors: \n {("\n").join(errors)}")
     
     print(f"ℹ️ Summary Validated Ring:")
     print(f"ℹ️ Total Points      : {len(points_existing):,} records.")

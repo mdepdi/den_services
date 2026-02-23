@@ -73,16 +73,11 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         sitelist_gdf['site_name'] = sitelist_gdf['site_id']
 
     if 'region' not in sitelist_gdf.columns:
-        # group = auto_group(sitelist_gdf)
-        # sitelist_gdf = gpd.sjoin(sitelist_gdf, group[['region', 'geometry']], how='left').drop(columns='index_right')
-        # sitelist_gdf['region'] = "Area" + "_" + sitelist_gdf['region'].astype(str)
-
         sitelist_gdf = admin_information(sitelist_gdf)
-        sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["site_id", "geometry"])
         sitelist_gdf['region'] = sitelist_gdf['Provinsi']
 
     # ------------------
-    # SANITIZE SITE NAME
+    # Sanitize ID
     # ------------------
     sitelist_gdf['site_id'] = (
         sitelist_gdf['site_id']
@@ -94,6 +89,40 @@ def topology_algo(sitelist_gdf:gpd.GeoDataFrame, line_gdf:gpd.GeoDataFrame, dist
         .str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True)
     )
 
+    # ------------------
+    # Build Unique ID
+    # ------------------
+    sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["site_id", "geometry"])
+    sitelist_gdf = sitelist_gdf.sort_values(by=["ring_name", "site_id"])
+    region = auto_group(sitelist_gdf, distance=1)
+    region = region.rename(columns={"region":"group"})
+
+    sitelist_gdf = sitelist_gdf.to_crs(epsg=3857)
+    region = region.to_crs(epsg=3857)
+
+    sitelist_gdf = gpd.sjoin(sitelist_gdf, region[["group", "geometry"]], how="left").drop(columns="index_right")
+    sitelist_gdf = sitelist_gdf.drop_duplicates(subset=["group", "site_id"])
+    duplicated = sitelist_gdf[sitelist_gdf.duplicated(subset="site_id", keep=False)]
+    duplicated = duplicated.sort_values(by="site_id")
+
+    recorded_site = {}
+    for idx, row in duplicated.iterrows():
+        site_id = row['site_id']
+        geom = row['geometry']
+        if site_id in recorded_site.keys():
+            recorded_site[site_id] += 1
+        else:
+            recorded_site[site_id] = 1
+
+        num = recorded_site[site_id]
+        new_id = f"{site_id}_{num:03d}"
+        sitelist_gdf.at[idx, "site_id"] = new_id
+        sitelist_gdf.at[idx, "site_name"] = new_id
+        print(f"ℹ️ Update Site ID: {site_id} with geom {geom} to {new_id}")
+
+    sitelist_gdf["site_id"] = sitelist_gdf["site_id"].astype(str)
+    sitelist_gdf['site_id'] = (sitelist_gdf['site_id'].str.replace(r"[()\[\]/\<>\"':&]+", "_", regex=True))
+    sitelist_gdf["site_name"] = sitelist_gdf["site_id"].astype(str)
 
     # ----------------------------------------------------------------------
     # Validate line geometries
@@ -329,7 +358,7 @@ def main_topology(
     return result
 
 if __name__ == "__main__":
-    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\20260220_095208_template_8d33a8d58cb645a48ae50af0d3323827.xlsx"
+    excel_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\20260220_095208_Template Unique.xlsx"
     line_file = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\Topology Fixed.parquet"
     export_dir = r"D:\JACOBS\PROJECT\TASK\2026\FEB\W3\DEBUG\ANDO\Topology Design 20022026\Export"
     program = "Surge Fiber Design"

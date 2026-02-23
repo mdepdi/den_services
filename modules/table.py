@@ -57,8 +57,8 @@ def sanitize_header(df:pd.DataFrame|gpd.GeoDataFrame, preview_row = 5, lowercase
     df.columns = [col.split('.')[0] for col in df.columns]
     df.columns = [col.strip().replace('\n', '') for col in df.columns]
     df.columns = df.columns.str.replace("*", "")
-    text_cols = df.select_dtypes(include=["object", "string"]).columns
-    df[text_cols] = df[text_cols].apply(lambda col: col.astype(str).str.strip())
+    # text_cols = df.select_dtypes(include=["object", "string"]).columns
+    # df[text_cols] = df[text_cols].apply(lambda col: col.astype(str).str.strip())
 
     if lowercase:
         df.columns = df.columns.str.lower().str.strip().str.replace(" ", "_")
